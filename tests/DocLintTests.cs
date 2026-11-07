@@ -36,6 +36,16 @@ public class DocLintTests
     }
 
     [Fact]
+    public void StartNeedsNoDoc()
+    {
+        var warnings = Lint("""
+            routine start() -> None
+                return
+            """);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
     public void MissingAndUnknownParamLinesWarn()
     {
         var warnings = Lint("""

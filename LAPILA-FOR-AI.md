@@ -131,7 +131,7 @@ routine start() -> None
 - `#` for comments, `###` for Markdown doc comments directly above a declaration, field, or choice member.
   `;` is not a comment (it was until 2026-09-28) and is rejected.
 - **You should give every routine a doc comment**, secret ones, externals, and a protocol's required routines included
-  (a convention: the builder only warns). It sits
+  (a convention: the builder only warns, and not for the entry point `routine start() -> None`). It sits
   above the annotation lines and reads, in this order: what the routine does in one or two plain sentences (from its
   real behavior), `:typeparam T:` for its own type parameters, `:param name:` for every parameter but `me` in
   order, `:returns:` unless it returns `None`, then `:throws:` ("Throws `IndexOutOfBoundsError` when ...", or "Crashes with" in an `infallible` or
@@ -2682,7 +2682,7 @@ Every build error and warning has a code. The builder prints it in front of the 
 
 ```
 error[LP-S007]: main.lpa:2:14: unknown name 'y'
-warning[LP-W305]: main.lpa:1:1: routine 'start' has no doc comment: write ### lines above it ...
+warning[LP-W305]: main.lpa:5:1: routine 'area' has no doc comment: write ### lines above it ...
 ```
 
 A code is `LP-`, a family letter and a number. `G` is a source that does not read (lexer and parser), `S` is a source

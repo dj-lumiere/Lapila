@@ -32,14 +32,17 @@ public static class DocLint
             };
             foreach (var r in routines)
             {
-                // The `start` the builder makes of a script's top-level lines has no line of its own to document.
-                if (r.Source is not null || r.IsScript) continue;
+                // The `start` the builder makes of a script's top-level lines has no line of its own to document, and a
+                // written `routine start() -> None` is the program's entry point, with nothing to describe either.
+                if (r.Source is not null || r.IsScript || IsEntryPoint(r)) continue;
                 if (linesOf(r.File) is not { } lines) continue;
                 Routine(r, lines, warnings);
             }
         }
         return warnings;
     }
+
+    private static bool IsEntryPoint(RoutineDecl r) => r.Name == "start" && r.Owner is null && r.Params.Count == 0;
 
     /// Whether a file is held to the rule: not under a `tests`, `playground`, `scratch`, or `generated` directory.
     public static bool IsLibraryFile(string file)
