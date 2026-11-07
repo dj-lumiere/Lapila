@@ -335,6 +335,9 @@ S 709 CrashableObeyedByNonCrashableKind
 S 710 InvalidGeneratedInnatePlacement
 S 712 ThrowsListIncomplete
 S 713 ThrowsListMisplaced
+S 714 DispatchTypeHashCollision
+S 715 ProtocolRoutineNotDispatchable
+S 716 TypeParameterValueIntoProtocolPlace
 S 752 VariantGenerationError
 S 754 ErrorHandlingTypeAsParameter
 S 755 ErrorHandlingTypeAsMemberVariable
