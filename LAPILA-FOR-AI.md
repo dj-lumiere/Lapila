@@ -816,7 +816,7 @@ routine start() -> None
   `throw` leaves it, so the lines after a `loop` without a `break` never run, and a routine that ends with such a loop
   needs nothing after it. It takes `with` and `then` like the others. `while` is not a keyword: a loop written with it
   is a build error pointing to `until` / `loop`, and so is `each x in xs`, pointing to `for`. `until true` (the body never runs) and `until false` (write
-  `loop`, the language server offers the fix) are warnings. `break`
+  `loop`, the language server offers the fix, and on an `if` line it offers three `refactor.rewrite` actions: invert (needs a plain `else`), exit early with `return` or `continue`, and merge a nested `if` into `if a and b`; `<` flips only between integers and `Decimal` it can tell, other comparisons are wrapped in `not (...)`) are warnings. `break`
   leaves the loop (it takes no value: a result a `break` decides goes in a place borrowed before the loop), `continue` starts the next
   pass.
 - **Carried values.** `until n <= 1 with n: U64 = start, steps: U64 = 0` names what each pass changes, each with its

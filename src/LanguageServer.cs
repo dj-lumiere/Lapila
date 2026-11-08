@@ -171,6 +171,7 @@ public static partial class LanguageServer
         lock (Documents) text = Documents.TryGetValue(uri, out var doc) ? doc.Text : null;
         if (text is null) return actions;
         string[] lines = text.Split('\n');
+        foreach (var refactor in RefactorActions(uri, text, first, last)) actions.Add(refactor);
         for (int line = Math.Max(0, first); line <= last && line < lines.Length; line++)
         {
             string l = lines[line].TrimEnd('\r');
