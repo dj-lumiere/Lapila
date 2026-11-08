@@ -25,9 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-linux-gnu
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86-linux-gnu
           - os: windows-latest
             target: x86_64-windows-msvc
@@ -233,7 +233,7 @@ jobs:
   # emulator). Catches backend crashes and lowering gaps, such as llvm.minimum on 32-bit ARM.
   cross-check:
     name: cross-check (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -299,7 +299,7 @@ jobs:
   # back.
   freestanding:
     name: freestanding (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -407,7 +407,7 @@ jobs:
   # undefined. Other undefined symbols (the C library's) are the link's business and not checked here.
   hosted-32-bit-int128:
     name: hosted 32-bit 128-bit helpers (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -481,7 +481,7 @@ jobs:
   # B16, and millions of random operand pairs, against the hardware and libgcc's conversions. It runs on every core
   # in release mode and fails on any mismatch.
   soft-float-exhaustive:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
