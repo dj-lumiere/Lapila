@@ -70,6 +70,7 @@ public static partial class LanguageServer
                             ["documentSymbolProvider"] = true,
                             ["inlayHintProvider"] = true,
                             ["codeActionProvider"] = true,
+                            ["documentOnTypeFormattingProvider"] = new JsonObject { ["firstTriggerCharacter"] = "#" },
                         },
                         ["serverInfo"] = new JsonObject { ["name"] = "lapila-lsp", ["version"] = "0.1" },
                     });
@@ -133,6 +134,11 @@ public static partial class LanguageServer
                 case "textDocument/inlayHint":
                     Reply(id, InlayHints(p!["textDocument"]!["uri"]!.GetValue<string>()));
                     break;
+                case "textDocument/onTypeFormatting":
+                    Reply(id, p!["ch"]?.GetValue<string>() == "#"
+                        ? DocFrameOnType(p["textDocument"]!["uri"]!.GetValue<string>(), p["position"]!["line"]!.GetValue<int>())
+                        : new JsonArray());
+                    break;
                 case "textDocument/codeAction":
                     Reply(id, CodeActions(p!["textDocument"]!["uri"]!.GetValue<string>(), p["range"]!["start"]!["line"]!.GetValue<int>(),
                         p["range"]!["end"]!["line"]!.GetValue<int>()));
@@ -172,6 +178,8 @@ public static partial class LanguageServer
         if (text is null) return actions;
         string[] lines = text.Split('\n');
         foreach (var refactor in RefactorActions(uri, text, first, last)) actions.Add(refactor);
+        foreach (var (title, start, end, newText) in DocFixes(text, first, last))
+            actions.Add(QuickFix(uri, title, start, 0, end, lines[end].TrimEnd('\r').Length, newText));
         for (int line = Math.Max(0, first); line <= last && line < lines.Length; line++)
         {
             string l = lines[line].TrimEnd('\r');

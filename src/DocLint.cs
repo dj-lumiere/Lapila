@@ -1,7 +1,7 @@
 namespace Lapila;
 
 /// The style warnings for doc comments. Every routine in a library or example file, private ones and a concept's
-/// required routines included, carries a `///` doc comment right above it (past its annotation lines): what it does, a
+/// required routines included, carries a `###` doc comment right above it (past its annotation lines): what it does, a
 /// `:param name:` line for each parameter but `me`, and a `:returns:` line unless it returns None. Four warnings: no
 /// doc comment, a parameter without its `:param` line, a `:param` line for a name that isn't a parameter, and a
 /// routine that returns a value with no `:returns:` line.
@@ -76,7 +76,7 @@ public static class DocLint
                 + $"{r.ReturnType}");
     }
 
-    /// The `///` lines right above a 1-based line, past any annotation lines (`@track_caller`), without their markers;
+    /// The `###` lines right above a 1-based line, past any annotation lines (`@track_caller`), without their markers;
     /// null when there are none.
     public static List<string>? DocAbove(IReadOnlyList<string> lines, int line)
     {

@@ -16,7 +16,7 @@ public static partial class LanguageServer
 
     private static JsonObject CompletionOptions() => new()
     {
-        ["triggerCharacters"] = new JsonArray(".", "[", "("),
+        ["triggerCharacters"] = new JsonArray(".", "[", "(", "#"),
         ["resolveProvider"] = true,
     };
 
@@ -36,6 +36,12 @@ public static partial class LanguageServer
         var lines = text.Replace("\r\n", "\n").Split('\n');
         if (line >= lines.Length) return result;
         string before = lines[line][..Math.Min(character, lines[line].Length)];
+        // `###` alone above a declaration: its doc comment's frame.
+        if (DocFrameCompletion(text, line, character) is { } frame)
+        {
+            items.Add(frame);
+            return result;
+        }
         // Inside a comment or a string there's nothing to complete.
         if (before.Contains("#", StringComparison.Ordinal) || before.Count(c => c == '"') % 2 == 1) return result;
 
