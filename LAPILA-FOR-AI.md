@@ -373,7 +373,9 @@ routine start() -> None
     own `drop` included (its `destruct` would read the view). Use it before, or end `m` after its last use; for a
     STACK place in a body, borrow it outside the body or keep the value, not the view. A routine keeps a view when its
     body stores it in what another parameter reaches (`xs.add_last(m.getslice())`, `keep(out: q, v: m.getslice())`),
-    which the build works out from the bodies, so `q` carries `m` from the call on.
+    which the build works out from the bodies, so `q` carries `m` from the call on. A place lent where the routine takes a
+    view (`keep(out: q, v: m)` with `m: &S64`) counts as a view of it. A call through a routine value (`f.call(q, v)`)
+    names no body to read, so it is taken to keep each view it is handed in each other value it is handed that can hold one.
   - **Every view has a source, and two kinds of source never end.** The memory of a global, a preset, a text
     literal, and an `at` address is never given back: a view of it goes anywhere, and only a call that may move a
     global moves what it holds (below). The builder doesn't follow a view made from an `Addr` (`a.to[@T]()`,

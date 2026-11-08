@@ -1,0 +1,32 @@
+# A place lent where a routine takes a view, and the routine keeps it in a list of the caller: the list holds a view of the place.
+
+import Hosted
+import Collections
+
+### Gives the second.
+### :param a: One.
+### :param b: Two.
+### :returns: The second.
+routine second(a: @S64, b: @S64) -> @S64
+    return b
+
+### Keeps a view in a list.
+### :param out: The list.
+### :param v: The view.
+routine keep_in(out: @List[@S64], v: @S64) -> None
+    out.add_last(v)
+    return
+
+record Ops
+    op: Callable[(@List[@S64], @S64), None]
+
+### A direct call keeps a view in a list another argument reaches.
+routine start() -> None
+    
+    xs: &List[@S64] <- List[@S64].construct(HEAP)
+    b: &S64 <- 2 from HEAP
+    keep_in(xs, b)
+    drop b
+    Console.show("{xs.getitem(0).peek()}")
+    drop xs
+    return

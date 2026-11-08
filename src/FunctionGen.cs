@@ -6986,6 +6986,7 @@ public sealed partial class FunctionGen
         Val fp = Eval(callee, ct);
         var args = argExprs.Select((a, i) => EvalArg(a, ct.Params[i], i + 1)).ToList();
         RecordIndirectCall(callee, ct, argExprs, pos);
+        NoteIndirectKeepsViews(ct, argExprs, pos);
         if (ct.IsOpen) return EmitOpenIndirect(fp, ct, args, pos);
         if (ct.Failable)
         {

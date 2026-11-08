@@ -1,0 +1,25 @@
+# A view a routine value read out of a field gives back carries the sources of the views it was handed, as a direct call's does.
+
+import Hosted
+
+### Gives the second.
+### :param a: One.
+### :param b: Two.
+### :returns: The second.
+routine second(a: @S64, b: @S64) -> @S64
+    return b
+
+record Ops
+    op: Callable[(@S64, @S64), @S64]
+
+### Through a routine value read from a field.
+routine start() -> None
+    ops: &Ops <- Ops(op: second.to[Callable]())
+    a: &S64 <- 1 from HEAP
+    b: &S64 <- 2 from HEAP
+    f: Callable[(@S64, @S64), @S64] = ops.op.peek()
+    r: @S64 = f.call(a, b)
+    drop b
+    Console.show("{r.peek()}")
+    drop a
+    return

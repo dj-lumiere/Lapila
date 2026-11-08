@@ -1,0 +1,1 @@
+'xs' holds a view of 'b', and it is used after drop b on line 29 ended it, so what 'xs' holds there points at memory that is gone: finish with 'xs' before line 29, or end 'b' after 'xs's last use

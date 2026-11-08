@@ -754,6 +754,9 @@ public sealed partial class FunctionGen
         for (int from = 0; from < parts.Count; from++)
         {
             var roots = ViewRoots(parts[from]);
+            // A place of this routine lent where the callee takes a view (`keep_in(xs, b)` with `b: &S64` and a `@S64`
+            // parameter) is a view of that place: kept, the holder holds a view of it.
+            if (LentPlace(parts[from], callee.Params.ElementAtOrDefault(from)) is { } lent) roots.Add(lent);
             // A handle handed by value (a ticket or memory into a list, `ts.add_last(t)`) is kept itself, not a view of
             // it: the holder holds the views the handle holds, and the handle's own end is the hand-over.
             if ((parts[from] is StealExpr { Value: ValueRef stolen } ? stolen : parts[from]) is ValueRef handedOver
@@ -772,6 +775,39 @@ public sealed partial class FunctionGen
                     {
                         _viewNames.Add(holder);
                         Mem(new MemoryRules.MayHoldViewOf(holder, root, callee.Symbol, from, into, plan.Pos));
+                    }
+            }
+        }
+    }
+
+    /// The place `e` names when it is a place of this routine lent where `param`, a view, is taken, or null.
+    private string? LentPlace(Expr e, DType? param) =>
+        param is PtrType && e is ValueRef place && ResolveRoot(place.Name) is var root && _memTracked.Contains(root)
+            ? root
+            : null;
+
+    /// A call through a routine value names no routine whose body says what it keeps, so it is taken to keep each view
+    /// it is handed (or place it is lent) in each other value of this routine it is handed that can hold one: from
+    /// there on, that value holds a view of the memory, as after a direct call that keeps it.
+    private void NoteIndirectKeepsViews(CallableType ct, List<Expr> argExprs, Pos pos)
+    {
+        if (!MemOn) return;
+        for (int from = 0; from < argExprs.Count; from++)
+        {
+            var roots = ViewRoots(argExprs[from]);
+            if (LentPlace(argExprs[from], ct.Params.ElementAtOrDefault(from)) is { } lent) roots.Add(lent);
+            if (roots.Count == 0) continue;
+            for (int into = 0; into < argExprs.Count; into++)
+            {
+                if (into == from || RootName(argExprs[into]) is not { } named || _routineParams.ContainsKey(named) || !BoundInRoutine(named)
+                    || ct.Params.ElementAtOrDefault(into) is not PtrType { Pointee: { } held } || !CarriesAddress(held))
+                    continue;
+                string holder = ResolveRoot(named);
+                foreach (var root in roots)
+                    if (root != holder)
+                    {
+                        _viewNames.Add(holder);
+                        Mem(new MemoryRules.HoldsViewOf(holder, root, pos));
                     }
             }
         }

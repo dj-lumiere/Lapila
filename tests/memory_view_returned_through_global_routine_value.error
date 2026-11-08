@@ -1,0 +1,1 @@
+'r' holds a view of 'b', and it is used after drop b on line 20 ended it, so what 'r' holds there points at memory that is gone: finish with 'r' before line 20, or end 'b' after 'r's last use
