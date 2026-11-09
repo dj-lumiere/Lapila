@@ -1,5 +1,5 @@
-# An access is taken from the AccessManager, so it is given back on every path: a path that returns while it is held
-# is a build error.
+# An access is taken from the AccessManager and given back on every path: the path that returns early gives it back
+# through the builder's drop at the exit, and a second bump takes it again without waiting for itself.
 
 import Hosted
 
@@ -14,5 +14,8 @@ routine bump(by: U64) -> None
     return
 
 routine start() -> None
+    bump(0)
     bump(1)
+    bump(2)
+    Console.show("{COUNTER.load()}")
     return

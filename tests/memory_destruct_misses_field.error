@@ -1,1 +1,1 @@
-'Q.destruct' never gives back 'me.m', and a destruct gives back every BorrowedSlice, BorrowedCell, and entity the value holds: drop me.m here (or me.m.give_back())
+'Q.destruct' never drops 'me.m', and a destruct the type writes replaces the builder's walk over its fields, so it drops every BorrowedSlice, BorrowedCell, and entity the value holds itself: drop me.m here

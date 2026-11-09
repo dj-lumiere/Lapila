@@ -1,0 +1,9 @@
+# Memory taken in a routine and never dropped by hand: the builder gives it back where the routine returns.
+
+import Hosted
+
+routine start() -> None
+    m: &[Byte] <- BorrowedSlice[Byte].construct(count: 4, manager: HEAP)
+
+    Console.show("{m.count()}")
+    return

@@ -1,5 +1,6 @@
 # A poke into a global that holds an entity ends the value it held first: the second poke runs the first value's
-# destruct, here and from another routine, and a poke into a hollow global ends nothing.
+# destruct, here and from another routine, and a poke into a hollow global ends nothing. The program's end drops the
+# last one.
 import Hosted
 
 global G: &Noisy

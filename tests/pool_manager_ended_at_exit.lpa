@@ -1,7 +1,8 @@
-# The pool is held and ended like any entity: a pool that is not ended when start returns is a build error.
+# The pool is held and ended like any entity: the builder ends it where start returns.
 
 import Hosted
 
 routine start() -> None
     pool: &PoolManager <- PoolManager.set_up(memory: PAGES) from HEAP
+    Console.show("set up")
     return

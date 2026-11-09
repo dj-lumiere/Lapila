@@ -17,9 +17,14 @@ public static class MemoryRules
 {
     public abstract record Event(Pos Pos);
 
-    /// The builder gives back the STACK place `Name` at an exit of its body: its group ends there unless the program
-    /// ended it first, and nothing is reported either way.
-    public sealed record AutoEnd(string Name, Pos Pos) : Event(Pos);
+    /// The builder drops what `Name` holds at an exit of its body: its group ends there unless the program ended it
+    /// first, and nothing is reported either way.
+    public sealed record AutoEnd(string Name, Pos Pos) : Event(Pos)
+    {
+        /// `Name` is a hold (not a STACK place): what it held and handed to another name (a copy, a slot, a call that may
+        /// keep it) is that name's to end, so the drop doesn't end it.
+        public bool Hold { get; init; }
+    }
 
     /// A new group, named by `Name`: memory a call or an `at` literal gave, or a parameter handed in.
     public sealed record Acquire(string Name, string What, Pos Pos) : Event(Pos)
@@ -203,6 +208,9 @@ public static class MemoryRules
     /// into `Holder`, which gives it back from then on.
     public sealed record KeptInto(string Name, string Holder, string Callee, int From, int Into, string How, Pos Pos) : Event(Pos);
 
+    /// `Name` went to a call that may keep it or give it back: the builder's drop at the body's exit leaves it alone.
+    private sealed record HandedAway(string Name, Pos Pos) : Event(Pos);
+
     /// The ticket `Ticket` was handed into `Holder`, a value of this routine (a list of tickets): the accesses its work
     /// was handed are the holder's work's now, until `Wait` (`ts.retrieve_all()`) waits for it.
     public sealed record WorkKept(string Ticket, string Holder, string Wait, Pos Pos) : Event(Pos);
@@ -321,13 +329,17 @@ public static class MemoryRules
         public HashSet<string> HollowSlots = [];
         public HashSet<string> Filled = [];
 
+        /// The names whose group went to another name (a copy, a slot, a call that may keep it): the builder's drop of
+        /// such a hold leaves the group to that name.
+        public HashSet<string> Moved = [];
+
         public State Copy() => new()
         {
             Names = new(Names), Groups = new(Groups), Views = new(Views), Stale = new(Stale), Holding = new(Holding),
             ContentHolders = ContentHolders.ToDictionary(h => h.Key, h => new HashSet<(string, string, string?)>(h.Value)),
             ViewGroups = new(ViewGroups), HeldViews = HeldViews.ToDictionary(h => h.Key, h => new HashSet<string>(h.Value)),
             CallerHeldEnded = new(CallerHeldEnded), HollowSlots = new(HollowSlots), Filled = new(Filled), Managers = new(Managers),
-            Working = new(Working), Changed = new(Changed), Lent = new(Lent),
+            Working = new(Working), Changed = new(Changed), Lent = new(Lent), Moved = new(Moved),
         };
 
         /// The same state with its groups named by the first handle that names each, so states that differ only in
@@ -361,6 +373,7 @@ public static class MemoryRules
                 Managers = Managers.Where(rename.ContainsKey).Select(id => rename[id]).ToHashSet(),
                 Working = new(Working), Changed = new(Changed),
                 Lent = Lent.Where(l => rename.ContainsKey(l.Key)).ToDictionary(l => rename[l.Key], l => l.Value),
+                Moved = new(Moved),
             };
         }
 
@@ -383,7 +396,8 @@ public static class MemoryRules
             + "|" + string.Join(";", Managers.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Working.Keys.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Changed.Order(StringComparer.Ordinal))
-            + "|" + string.Join(";", Lent.OrderBy(l => l.Key, StringComparer.Ordinal).Select(l => $"{l.Key}>{l.Value.Ticket}"));
+            + "|" + string.Join(";", Lent.OrderBy(l => l.Key, StringComparer.Ordinal).Select(l => $"{l.Key}>{l.Value.Ticket}"))
+            + "|" + string.Join(";", Moved.Order(StringComparer.Ordinal));
     }
 
     /// The errors of one routine: each a message at its place, first one first. `routineWide` names the handles every
@@ -442,8 +456,12 @@ public static class MemoryRules
             var arms = new Stack<State>();
             // An access handed to a routine that keeps it in a value of this routine (`accesses.add_last(held)`) ends
             // there, handed into that value: the use is the hand-over.
+            // Either way the builder's drop at the body's exit leaves it alone: whoever took it ends it.
             var flow = list.SelectMany(e => e is KeptInto k
-                ? keeps?.Invoke(k.Callee, k.From, k.Into) == true ? [new End(k.Name, k.How, k.Pos) { Into = k.Holder }] : []
+                ? keeps?.Invoke(k.Callee, k.From, k.Into) == true
+                    ? [new HandedAway(k.Name, k.Pos), new End(k.Name, k.How, k.Pos) { Into = k.Holder }]
+                    : [new HandedAway(k.Name, k.Pos)]
+                : e is MayEndAccess may ? [new HandedAway(may.Name, may.Pos), e]
                 : new[] { e }).ToList();
             var handedInto = flow.OfType<End>().Where(x => x.Into is not null).Select(x => (x.Name, x.Pos)).ToHashSet();
             foreach (var e in flow)
@@ -477,6 +495,7 @@ public static class MemoryRules
                         string id = $"{block}:{a.Name}:{a.Pos}";
                         state.Groups[id] = new Group(a.Shown ?? a.Name, a.Pos, null, null, a.Entity, a.Field, a.Access, a.Run, a.Work, a.Once);
                         state.Names[a.Name] = id;
+                        state.Moved.Remove(a.Name);
                         break;
                     }
                     case MayAcquireAccess ma when effects?.ReturnsAccess?.Invoke(ma.Callee) == true:
@@ -497,13 +516,19 @@ public static class MemoryRules
                         else state.Groups[id] = g with { Ended = me.Pos, How = me.How };
                         break;
                     }
+                    case HandedAway away:
+                        state.Moved.Add(away.Name);
+                        break;
                     case AutoEnd ae:
+                        if (ae.Hold && state.Moved.Contains(ae.Name)) break;
                         if (state.Names.TryGetValue(ae.Name, out var autoId) && state.Groups.TryGetValue(autoId, out var autoGroup)
                             && autoGroup.Ended is null)
                             state.Groups[autoId] = autoGroup with { Ended = ae.Pos, How = $"{AutoEndHow} '{ae.Name}'" };
                         break;
                     case Alias al:
                         if (state.Names.TryGetValue(al.Of, out var of)) state.Names[al.Name] = of;
+                        state.Moved.Add(al.Of);
+                        state.Moved.Remove(al.Name);
                         break;
                     case End end:
                     {
@@ -578,6 +603,8 @@ public static class MemoryRules
                                   + $"overwrites it: give it back first (drop {st.Slot})");
                         if (st.From is { } from && state.Names.TryGetValue(from, out var fromId)) state.Names[st.Slot] = fromId;
                         else state.Names.Remove(st.Slot);
+                        if (st.From is { } movedFrom) state.Moved.Add(movedFrom);
+                        state.Moved.Remove(st.Slot);
                         if (st.Hollow) state.HollowSlots.Add(st.Slot);
                         else state.HollowSlots.Remove(st.Slot);
                         state.Filled.RemoveWhere(f => f.StartsWith(st.Slot + ".", StringComparison.Ordinal));
@@ -812,6 +839,8 @@ public static class MemoryRules
                             if (Sees(name) && !(loop && NamedByPass(name))) next.Names[name] = id;
                         foreach (var (param, arg) in ex.Args)
                             if (state.Names.TryGetValue(arg, out var id)) next.Names[param] = id;
+                        foreach (var gone in state.Moved)
+                            if (Sees(gone)) next.Moved.Add(gone);
                         foreach (var (view, root) in state.Views)
                             if (Sees(view))
                             {

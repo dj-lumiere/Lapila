@@ -312,7 +312,7 @@ routine @BitList.eq(other: @Me) -> Bool
 routine @BitList.destruct() -> None
     if me.storage.manager.peek().to[Addr]().is_hollow()
         return
-    me.storage.give_back()
+    drop me.storage
     me.count.poke(0)
     return
 

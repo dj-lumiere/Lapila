@@ -4,23 +4,33 @@ namespace Lapila;
 
 /// `x: &T <- value [from manager]`: a line that borrows. With a `&T` / `&[T]` declared, it borrows a place from the
 /// manager (STACK when none is named) and puts the value in it: three steps, the manager's borrow, the BorrowedCell or BorrowedSlice
-/// made over the place, and the store. From STACK the three are one frame slot with no fields, and the builder gives
-/// it back at every exit of its body, the last one first (a `drop` the program writes first is not repeated), running
-/// the value's `destruct`. Anything else that is given back (an access, a thread ticket, a BorrowedCell or a BorrowedSlice a routine
-/// returns) is the result of the call on the right, bound to the name, and the program writes its `drop`.
+/// made over the place, and the store. From STACK the three are one frame slot with no fields. Anything else that is
+/// given back (an access, a thread ticket, a BorrowedCell or a BorrowedSlice a routine returns) is the result of the
+/// call on the right, bound to the name. Either way the builder drops what the name still holds at every exit of its
+/// body, the last one made first (a `drop` the program writes first, a steal, or a return is not repeated), running the
+/// value's `destruct`.
 public sealed partial class FunctionGen
 {
-    /// A STACK place: the frame slot and, when its value has something to give back, the flag that says it is still
-    /// borrowed (cleared by a drop or a steal the program writes, so the builder's drop doesn't run twice).
+    /// Something the builder drops at the exits of a body: a STACK place (the frame slot), or a hold, a name the routine
+    /// holds something by that isn't a frame slot of its own (memory from a manager, an access, a ticket, a parameter
+    /// handed in by value, an arm's payload). `Flag` says it still holds something: a drop, a steal, a return or a hand
+    /// over the program writes clears it, so the builder's drop doesn't run twice.
     private sealed record StackPlace(string Name, string? Flag, Pos Pos)
     {
         /// Whether the builder gives it back: false for a value it can't drop itself, which the program ends.
         public bool Auto { get; init; } = true;
+
+        /// For a hold, the name's value when it was taken: a name bound again since (an inner body's) is another value,
+        /// which went with its body. Null for a STACK place.
+        public string? HoldOp { get; init; }
     }
 
-    /// The STACK places of the bodies the builder is in, outermost first: [0] is the routine's own (its head lines),
-    /// [1] a block's lines, and each body inside adds one.
+    /// What the builder drops at the exits of the bodies it is in, outermost first: [0] is the routine's own (its head
+    /// lines and the parameters it was handed), [1] a block's lines, and each body inside adds one.
     private readonly List<List<StackPlace>> _boxScopes = [[]];
+
+    /// The names a jump or a `continue with` hands on at the exit being emitted: their holds go along, not dropped.
+    private readonly HashSet<string> _handedOn = [];
 
     /// The STACK places by name, for the routines a `&T` takes (`load`, `store`, `getview`, `take`).
     private readonly Dictionary<string, StackPlace> _stackPlaces = [];
@@ -219,10 +229,9 @@ public sealed partial class FunctionGen
         _stackPlaces[name] = place;
     }
 
-    /// Whether the builder's drop of a STACK place holding `held` runs a destruct: the value has something to give back.
-    /// A variant is ended by the program. A Slots is an entity, which the builder ends element by element, the last
-    /// first.
-    private bool GivenBackAtExit(DType held) => HasReleaseDuty(held) && held is not (VariantType or ArrayType { IsSlots: false });
+    /// Whether the builder's drop of a place holding `held` runs a destruct: the value has something to give back. An
+    /// array is dropped element by element, the last first. A value with nothing to give back gets no drop at all.
+    private bool GivenBackAtExit(DType held) => HasReleaseDuty(held);
 
     /// The flags' first values, written in the start block: no STACK place is borrowed yet.
     private readonly List<string> _flagInits = [];
@@ -235,28 +244,43 @@ public sealed partial class FunctionGen
         if (e is ValueRef held) SetHold(held.Name, false);
     }
 
-    // ── What a failure passing on gives back ────────────────────────────────
+    // ── What the builder drops at a body's exits ────────────────────────────
 
     /// Something the routine holds by a name of its own: a `<-` binding of something borrowed (memory, an access, an
-    /// entity, a ticket) or a parameter handed in by value. `Flag` says the program still holds it under that name, and
-    /// the program's own end clears it (drop, steal, return, handing it over). `Op` is the name's value when it was
-    /// taken, `Depth` the body it was taken in.
+    /// entity, a ticket), a parameter handed in by value, or an arm's payload. `Flag` says the program still holds it
+    /// under that name, and the program's own end clears it (drop, steal, return, handing it over). `Op` is the name's
+    /// value when it was taken, `Depth` the body it was taken in.
     private sealed record FailureHold(string Name, string Flag, string Op, int Depth);
 
     /// The holds of the bodies the builder is in, in the order they were taken.
     private readonly List<FailureHold> _failureHolds = [];
 
-    /// A written return or throw ends what the routine holds in its lines, which the memory check follows. A failure
-    /// that passes on in the middle of a line (a bare call in a recovering form, or the failures a `when check` leaves)
-    /// has no line of its own, so the builder ends there what the routine still holds: `name` is one such.
-    private void HoldUntilFailure(string name, bool fromStart = false)
+    /// `name` holds something the builder drops at every exit of the body it is in (its end, a return, a written throw,
+    /// a failure passing on in the middle of a line, a break or continue out of it, a jump), unless the program ended it
+    /// or handed it on first. `fromStart` holds a parameter from the routine's first line on.
+    private void HoldUntilExit(string name, Pos pos, bool fromStart = false)
     {
-        if (!Emitting || !_values.TryGetValue(name, out var v)) return;
+        if (!Emitting || !(fromStart ? _routineValues : _values).TryGetValue(name, out var v)) return;
         string flag = $"%held.{_allocas.Count}";
         _allocas.Add($"{flag} = alloca i1");
         _flagInits.Add($"store i1 {(fromStart ? "true" : "false")}, ptr {flag}");
         if (!fromStart && !_cur.Terminated) Line($"store i1 true, ptr {flag}");
-        _failureHolds.Add(new FailureHold(name, flag, v.Op, fromStart ? 0 : _boxScopes.Count - 1));
+        int depth = fromStart ? 0 : _boxScopes.Count - 1;
+        _failureHolds.Add(new FailureHold(name, flag, v.Op, depth));
+        _boxScopes[depth].Add(new StackPlace(name, flag, pos) { HoldOp = v.Op });
+    }
+
+    /// The names a jump or a `continue with` hands on: what they hold goes to the next block or round, so the drops at
+    /// this exit leave them alone.
+    private void HandOn(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            SetHold(name, false);
+            if (_stackPlaces.TryGetValue(name, out var place) && place.Flag is { } flag && !_cur.Terminated)
+                Line($"store i1 false, ptr {flag}");
+            _handedOn.Add(name);
+        }
     }
 
     /// The program ended `name` (or put a new value under it): its hold's flag says so.
@@ -289,29 +313,6 @@ public sealed partial class FunctionGen
         }
     }
 
-    /// Ends what the routine still holds, the last taken first, where a failure passes on to its caller.
-    private void GiveBackHolds(Pos pos)
-    {
-        for (int i = _failureHolds.Count - 1; i >= 0 && !_cur.Terminated; i--)
-        {
-            var hold = _failureHolds[i];
-            // A name bound again since (an inner body's) is another value: this one went with its body.
-            if (!_values.TryGetValue(hold.Name, out var now) || now.Op != hold.Op) continue;
-            var drop = NewLBlock("failback");
-            var after = NewLBlock("failedback");
-            string held = EmitTmp($"load i1, ptr {hold.Flag}");
-            Terminate($"br i1 {held}, label %{drop.Label}, label %{after.Label}");
-            _cur = drop;
-            bool muted = _memMuted;
-            _memMuted = true;
-            try { EmitStmtCore(new DropStmt(new ValueRef(hold.Name, pos), pos)); }
-            finally { _memMuted = muted; }
-            Line($"store i1 false, ptr {hold.Flag}");
-            Terminate($"br label %{after.Label}");
-            _cur = after;
-        }
-    }
-
     /// A whole new value put into a STACK place the program gave back or handed over (`steal t`, then `t.poke(v)`):
     /// the place holds something again, so the builder's drop at the exit runs again.
     private void StackPlaceRefilled(CallPlan plan, Instance sig)
@@ -326,8 +327,8 @@ public sealed partial class FunctionGen
             Line($"store i1 true, ptr {flag}");
     }
 
-    /// Gives back the STACK places of the scopes from `from` on, innermost first and each scope's last place first:
-    /// the value's destruct where it has one and the place is still borrowed, and the memory check's AutoEnd.
+    /// Drops what the scopes from `from` on still hold, innermost first and in each scope the last one made first: the
+    /// value's destruct where it has one and the name still holds it, and the memory check's AutoEnd.
     private void GiveBackStackPlaces(int from, Pos pos)
     {
         if (_cur.Terminated) return;
@@ -335,8 +336,13 @@ public sealed partial class FunctionGen
             for (int i = _boxScopes[s].Count - 1; i >= 0; i--)
             {
                 var place = _boxScopes[s][i];
-                if (!place.Auto) continue;
-                Mem(new MemoryRules.AutoEnd(place.Name, pos));
+                // One handed on goes along, and a hold's name bound again since (an inner body's) is another value.
+                if (!place.Auto || _handedOn.Contains(place.Name)) continue;
+                if (place.HoldOp is { } op)
+                {
+                    if (!_values.TryGetValue(place.Name, out var now) || now.Op != op) continue;
+                }
+                else Mem(new MemoryRules.AutoEnd(place.Name, pos));
                 if (place.Flag is not { } flag) continue;
                 var drop = NewLBlock("giveback");
                 var after = NewLBlock("givenback");
@@ -355,6 +361,8 @@ public sealed partial class FunctionGen
                 Line($"store i1 false, ptr {flag}");
                 Terminate($"br label %{after.Label}");
                 _cur = after;
+                // A hold's AutoEnd comes after its drop: it clears the hold's flag, which the drop above reads.
+                if (place.HoldOp is not null) Mem(new MemoryRules.AutoEnd(place.Name, pos) { Hold = true });
             }
     }
 

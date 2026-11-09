@@ -1,4 +1,4 @@
-# A place borrowed from HEAP is given back by the program: a missing drop is a build error.
+# A place borrowed from HEAP holds memory the builder gives back where the routine returns, as for a STACK place.
 
 import Hosted
 

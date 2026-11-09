@@ -300,7 +300,7 @@ routine @List[T].destruct() -> None
     count: U64 = me.count.peek()
     for i in 0 til count
         drop first.stride(i)
-    me.storage.give_back()
+    drop me.storage
     me.count.poke(0)
     return
 

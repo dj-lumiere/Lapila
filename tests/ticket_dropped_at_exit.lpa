@@ -1,4 +1,4 @@
-# A thread ticket is borrowed with <- and given back with drop: a missing drop is a build error.
+# A thread ticket is borrowed with <- and given back with drop: the builder drops it where start returns.
 
 import Hosted
 

@@ -1,4 +1,4 @@
-# A generic routine takes memory over and never gives it back.
+# A generic routine takes memory over and leaves it: the builder drops the parameter where the routine returns.
 
 import Hosted
 

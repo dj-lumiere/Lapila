@@ -374,10 +374,10 @@ routine @Set[T].destruct() -> None
         if states.stride(i).peek() == 1
             drop keys.stride(i)
     if not me.keys.manager.peek().to[Addr]().is_hollow()
-        me.keys.give_back()
-        me.hashes.give_back()
-        me.entry_states.give_back()
-        me.slots.give_back()
+        drop me.keys
+        drop me.hashes
+        drop me.entry_states
+        drop me.slots
     me.count.poke(0)
     me.entries_count.poke(0)
     return

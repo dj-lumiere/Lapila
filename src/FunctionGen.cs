@@ -227,17 +227,17 @@ public sealed partial class FunctionGen
     private DType? FieldHeld(Expr place) =>
         InferQuiet(place) is PtrType { Pointee: { } held } && held is not PtrType && Tracked(held) ? held : null;
 
-    /// A destruct that never gives back a field of me holding memory or an entity (on no path: no drop, give_back,
-    /// destruct_all, take, or steal of it) leaves that memory behind.
+    /// A destruct the type writes replaces the builder's walk, so it drops each field of me that holds memory or an
+    /// entity itself: one it never drops on any path (no drop, destruct_all, take, or steal of it) leaves that behind.
     private void CheckDestructGivesBack()
     {
         if (!MemOn || _destructFields.Count == 0) return;
         var ended = _memEvents.Values.SelectMany(list => list).OfType<MemoryRules.End>().Select(e => e.Name).ToHashSet();
         foreach (var key in _destructFields.Order(StringComparer.Ordinal))
             if (!ended.Contains(key))
-                throw Err(Li.NeverGivenBack, _decl.Pos, $"'{_decl.DisplayName}' never gives back '{key}', and a destruct gives back every BorrowedSlice, BorrowedCell, "
-                    + $"and entity the value holds: drop {key} here (or {key}.give_back()), or take it out with steal {key} as old "
-                    + "and hand it on");
+                throw Err(Li.NeverGivenBack, _decl.Pos, $"'{_decl.DisplayName}' never drops '{key}', and a destruct the type writes replaces the builder's "
+                    + $"walk over its fields, so it drops every BorrowedSlice, BorrowedCell, and entity the value holds itself: drop {key} here, or take "
+                    + $"it out with steal {key} as old and hand it on");
     }
 
     /// Whether a value of `t` is a BorrowedCell or a BorrowedSlice itself (not a slot of one).
@@ -442,10 +442,7 @@ public sealed partial class FunctionGen
             && cell.Decl.Module == Compiler.SystemModule && !expected.Equals(cell) && expected.Equals(cellHeld);
         Val v;
         if (valueOfCell)
-        {
             v = Eval(new MethodCallExpr(r, "take", [], [], r.Pos), expected);
-            EvalAny(new MethodCallExpr(r, "give_back", [], [], r.Pos));
-        }
         else
             v = fromSlot
                 ? Eval(new MethodCallExpr(r, "peek", [], [], r.Pos) { Builder = true }, expected)
@@ -495,6 +492,8 @@ public sealed partial class FunctionGen
         var taken = new StealExpr(st.From, st.Pos) { Place = true };
         EmitStmt(new BindStmt(st.Name, new TypeRef("$stolen", [], st.NamePos) { Known = new PtrType(held) },
             new ClaimExpr(st.Pos) { Contents = taken }, st.Pos));
+        // The value taken out is the routine's now, in a frame slot the builder drops at the body's exits.
+        if (!_cur.Terminated) RegisterStackPlace(st.Name, st.Pos);
         if (fromKept is not null) _maybeHollow[st.Name] = fromKept;
         // Left hollow, zeroed in place.
         EvalAny(new MethodCallExpr(st.From, "zeroinit", [], [new IntLit(1, st.Pos)], st.Pos));
@@ -641,6 +640,7 @@ public sealed partial class FunctionGen
         EmitStmt(new BindStmt(st.Name, new TypeRef("$stolen", [], st.NamePos) { Known = new PtrType(held) },
             new ClaimExpr(st.Pos) { Contents = taken }, st.Pos));
         if (_cur.Terminated) return;
+        RegisterStackPlace(st.Name, st.Pos);
         // For the memory rules the place is taken out and filled again on this line: the poke below is that refill.
         if (MemOn && PlaceKey(st.From) is { } key)
         {
@@ -1131,6 +1131,40 @@ public sealed partial class FunctionGen
         finally { _memMuted = muted; }
     }
 
+    /// The program ends when `start` returns: each of the program's globals that holds something is dropped there, the
+    /// last one declared first (the order they were made in, reversed), unless it is hollow (all zero: never filled, or
+    /// dropped or stolen already). The standard library's globals are the runtime's own and stay.
+    private void DropGlobalsAtEnd(Pos pos)
+    {
+        if (!Emitting || _cur.Terminated) return;
+        var globals = _c.ProgramGlobals().OrderBy(g => g.Decl.File, StringComparer.Ordinal).ThenBy(g => g.Decl.Pos.Line).ThenBy(g => g.Decl.Pos.Col).ToList();
+        bool muted = _memMuted;
+        _memMuted = true;
+        _tearingDown++;
+        try
+        {
+            for (int i = globals.Count - 1; i >= 0 && !_cur.Terminated; i--)
+            {
+                var decl = globals[i].Decl;
+                var global = new PresetRef(null, decl.Name, pos) { Path = decl.File == _decl.File ? null : decl.Module };
+                if (!HasReleaseDuty(InferQuiet(global))) continue;
+                string hollow = EvalAny(new MethodCallExpr(global, "holds_hollow", [], [], pos)).Op;
+                var drop = NewLBlock("globalend");
+                var after = NewLBlock("globalended");
+                Terminate($"br i1 {hollow}, label %{after.Label}, label %{drop.Label}");
+                _cur = drop;
+                EmitStmtCore(new DropStmt(global, pos));
+                if (!_cur.Terminated) Terminate($"br label %{after.Label}");
+                _cur = after;
+            }
+        }
+        finally
+        {
+            _memMuted = muted;
+            _tearingDown--;
+        }
+    }
+
     /// A global that holds a BorrowedCell or a BorrowedSlice lives as long as the program: it always holds one value (`.hollow()` to
     /// start with), and a routine changes it only with `replace`, which gives the old memory back first. The program's
     /// end gives the last one back (the process's memory goes with it, and a device without an OS runs until reset), so
@@ -1363,8 +1397,8 @@ public sealed partial class FunctionGen
         }
         if (receiver is not null)
         {
-            // In a destruct, a field of me given back with give_back() or moved out with take() ends there too.
-            bool fieldEnds = _destructFields.Contains(receiver) && sig.Decl.Name is "give_back" or "take";
+            // In a destruct, a field of me moved out with take() ends there too.
+            bool fieldEnds = _destructFields.Contains(receiver) && sig.Decl.Name is "take";
             Mem(sig.Decl.Name is "destruct" or "destruct_all"
                 ? new MemoryRules.End(receiver, sig.Decl.Name is "destruct" ? $"drop {receiver}" : $"{receiver}.destruct_all()", plan.Pos)
                 : fieldEnds ? new MemoryRules.End(receiver, $"{receiver}.{sig.Decl.Name}()", plan.Pos)
@@ -1581,7 +1615,9 @@ public sealed partial class FunctionGen
         if (Debug) BeginSubprogram();
         if (Debug && _traced && _c.TraceFromStack) _c.NoteTracedSubprogram(_sp, _decl.DisplayName, FramePlace.File.Replace('\\', '/'));
         EmitHead();
-        foreach (var name in handedIn) HoldUntilFailure(name, fromStart: true);
+        // A parameter handed in by value is the routine's to end: the builder drops it at every exit the program didn't
+        // end it or hand it on before.
+        foreach (var name in handedIn) HoldUntilExit(name, _decl.Params.First(p => p.Name == name).Pos, fromStart: true);
         foreach (var b in blocks) EmitBlock(b);
         _c.NoteExpensiveCalls(ExpensiveCallLint.Check(_decl, _expensiveCalls));
         // A place reached through a parameter, `me`, or a global outlives the routine: one is from outside when its root
@@ -1900,8 +1936,9 @@ public sealed partial class FunctionGen
     {
         if (_memReturnValue is { } returned) MemTakeAlong(returned, "returned");
         _memReturnValue = null;
-        // Every STACK place still borrowed goes back, the last one first, then the frame itself.
+        // What the routine still holds is dropped, the last one made first, then the frame itself goes back.
         GiveBackStackPlaces(0, _memReturnPos ?? _decl.Pos);
+        if (Compiler.IsEntryRoutine(_decl) && _decl.Name == Compiler.StartName) DropGlobalsAtEnd(_memReturnPos ?? _decl.Pos);
         Mem(new MemoryRules.Exit(null, true, [], _memReturnPos ?? _decl.Pos));
         if (FrameCalls && _c.FrameCall("give_back_frame") is { } giveBack) Line(giveBack);
         if (_traced && !_c.TraceFromStack) Line(_c.TraceCall("trace_pop"));
@@ -1979,22 +2016,26 @@ public sealed partial class FunctionGen
                 (_blockRecords.TryGetValue(b.Name, out var records) ? records : _blockRecords[b.Name] = [])
                     .AddRange(ValueRecords(b.Params[i].Name, ParamOp(b.Name, b.Params[i].Name), types[i], b.Source ?? b.Params[i].Pos));
         }
-        // What the jump handed this block is its own now: a failure passing on gives it back.
-        for (int i = 0; i < b.Params.Count; i++)
-            if (MemOn && ManagedValue(types[i]) && types[i] is not PtrType && GivenBackAtExit(types[i]))
-                HoldUntilFailure(b.Params[i].Name);
-
-        EmitLines(b.Stmts);
+        // What the jump handed this block is its own now: the builder drops it at the block's exits unless it is
+        // ended or handed on first.
+        EmitLines(b.Stmts, () =>
+        {
+            for (int i = 0; i < b.Params.Count; i++)
+                if (MemOn && ManagedValue(types[i]) && types[i] is not PtrType && GivenBackAtExit(types[i]))
+                    HoldUntilExit(b.Params[i].Name, b.Params[i].Pos);
+        });
         if (!_cur.Terminated)
             throw Err(Li.ReturnForm, b.Pos, b.Name == "entry"
                 ? $"the lines of routine '{_decl.DisplayName}' can run off their end: end them with return (or a jump, or a call that never returns)"
                 : $"block '{b.Name}' can run off its end: end it with return, a jump, or a call that never returns");
     }
 
-    /// The lines of a body, one after another. A line after one that left the body can't run, and says so.
-    private void EmitLines(List<Stmt> body)
+    /// The lines of a body, one after another. A line after one that left the body can't run, and says so. `holds`
+    /// runs once the body's scope is open: the holds it takes (a block's parameters, an arm's payload) are the body's.
+    private void EmitLines(List<Stmt> body, Action? holds = null)
     {
         _boxScopes.Add([]);
+        holds?.Invoke();
         foreach (var s in body)
         {
             if (_cur.Terminated)
@@ -2176,13 +2217,13 @@ public sealed partial class FunctionGen
                 var (lowered, stack) = LowerBorrow(borrow);
                 EmitStmtCore(lowered);
                 if (stack && !_cur.Terminated) RegisterStackPlace(lowered.Name, lowered.Pos);
-                // Something borrowed the program gives back itself: a failure passing on in the middle of a line gives
-                // it back too.
+                // Something borrowed from a manager (or a call that hands it over): the builder drops it at every exit
+                // of the body, unless the program ended it or handed it on first.
                 else if (MemOn && !_cur.Terminated && lowered.Type is { Name: "PointedCell" }
                          && (_memTracked.Contains(lowered.Name) || _accessViews.Contains(lowered.Name))
                          && _values.TryGetValue(lowered.Name, out var borrowedSlot) && borrowedSlot.Type is PtrType { Pointee: { } borrowedHeld }
                          && GivenBackAtExit(borrowedHeld))
-                    HoldUntilFailure(lowered.Name);
+                    HoldUntilExit(lowered.Name, lowered.Pos);
                 break;
             }
             case BindStmt b:
@@ -2399,6 +2440,22 @@ public sealed partial class FunctionGen
                         EvalAny(d.Value);
                     throw Err(Li.NothingToGiveBack, d.Pos, $"{new Printer().Expr(d.Value, 0)} has nothing to give back ({InferQuiet(d.Value)?.Name ?? "its type"} "
                         + "writes no destruct): leave the drop out");
+                }
+                // A variant with no destruct of its own (an anonymous one, `Counter | ParseFailed`): dropping it takes its
+                // value out and drops that, as the walk the builder writes for a named variant does.
+                if (d.Value is ValueRef
+                    && (InferQuiet(d.Value) is PtrType { Pointee: VariantType placed } ? placed : InferQuiet(d.Value) as VariantType) is { } union
+                    && _c.MethodCandidates(union, "destruct", _env.File, d.Pos).Count == 0)
+                {
+                    var arms = new List<WhenArm>();
+                    foreach (var leaf in union.Leaves)
+                    {
+                        var held = HasReleaseDuty(leaf) ? new ValueRef($"$dropped{_tmp++}", d.Pos) : null;
+                        arms.Add(new WhenArm(null, [new IsPattern(new TypeRef("$leaf", [], d.Pos) { Known = leaf }, held, d.Pos)],
+                            held is null ? [new NothingStmt(d.Pos)] : [new DropStmt(held, d.Pos)], d.Pos));
+                    }
+                    EmitStmtCore(new WhenStmt(new StealExpr(d.Value, d.Pos), arms, d.Pos));
+                    break;
                 }
                 // An array has no destruct of its own: dropping it drops each element, the last first, and the array
                 // ends as one.
@@ -3984,7 +4041,15 @@ public sealed partial class FunctionGen
             var before = _values.Keys.ToHashSet();
             bind?.Invoke();
             var bound = _values.Keys.Where(k => !before.Contains(k)).ToList();
-            EmitLines(arm.Body);
+            // What the arm's payload holds is the arm's: the builder drops it at the arm's exits unless the arm ends it
+            // or hands it on. An arm without lines carries it to the lines after the when.
+            EmitLines(arm.Body, arm.Body.Count == 0 ? null : () =>
+            {
+                foreach (var name in bound)
+                    if (MemOn && _memTracked.Contains(name) && _values.TryGetValue(name, out var payload)
+                        && GivenBackAtExit(payload.Type is PtrType { Pointee: { } inPlace } ? inPlace : payload.Type))
+                        HoldUntilExit(name, arm.Pos);
+            });
             if (!_cur.Terminated)
             {
                 if (frame is not null)
@@ -6293,6 +6358,11 @@ public sealed partial class FunctionGen
         if (m.Name == "unmap" && (rt is PtrType { Pointee: { } mapped } ? mapped : rt) is RecordType { Decl.Name: "FileStorage" })
             throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method 'unmap': a FileStorage is given back with drop, which writes changed pages "
                 + "back and unmaps it");
+        // One verb gives back what a place holds: drop.
+        if (m is { Name: "give_back" or "release" or "free", Args.Count: 0 }
+            && (rt is PtrType { Pointee: { } placed } ? placed : rt) is RecordType { Decl.Name: "BorrowedCell" or "BorrowedSlice", Decl.IsLibrary: true })
+            throw Err(Li.RemovedMethod, m.Pos, $"{rt} has no method '{m.Name}': what a place holds is given back with drop, "
+                + $"drop {new Printer().Expr(m.Receiver, 0)}");
         if (OldSpellings.OldRoutineName(m.Name) is { } renamed)
             throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method '{m.Name}': {renamed}");
         throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method '{m.Name}'");
@@ -7466,8 +7536,11 @@ public sealed partial class FunctionGen
         try
         {
             var ops = j.Args.Select((a, i) => Eval(a, types[i]).Op).ToList();
-            // A block's lines are a scope of their own: its STACK places go back before the jump.
+            // A block's lines are a scope of their own: what it still holds is dropped before the jump, except what the
+            // jump hands to the next block.
+            HandOn(j.Args.Select(MemName).OfType<string>());
             GiveBackStackPlaces(1, j.Pos);
+            _handedOn.Clear();
             if (MemOn)
             {
                 for (int i = 0; i < j.Args.Count; i++)
@@ -7872,7 +7945,9 @@ public sealed partial class FunctionGen
                 if (range.Inclusive) ops.Add(EmitTmp($"icmp ne {range.Type.Llvm} {index}, {range.To.Op}"));
             }
         }
+        HandOn(passed.Select(p => p.Arg));
         GiveBackStackPlaces(loop.BoxDepth, c.Pos);
+        _handedOn.Clear();
         MemEdge(loop.HeaderRegion, loop.HeaderNames, passed, c.Pos);
         loop.Incoming.Add((_cur.Label, ops));
         Terminate($"br label %{loop.Header.Label}");

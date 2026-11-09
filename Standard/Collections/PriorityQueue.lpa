@@ -318,8 +318,8 @@ routine @PriorityQueue[TPriority, TElement].destruct() -> None
     if me.priorities.manager.peek().to[Addr]().is_hollow()
         return
     me.drop_entries()
-    me.priorities.give_back()
-    me.elements.give_back()
+    drop me.priorities
+    drop me.elements
     me.count.poke(0)
     return
 

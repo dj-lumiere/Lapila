@@ -1,0 +1,27 @@
+# A FileStorage is borrowed from OsFileManager with <- and given back with drop: 'change' never drops it, and the
+# builder's drop where it returns writes the changed cell back, so the file says so afterward.
+
+import Hosted
+
+### Changes the first byte of the file through a FileStorage it leaves to the builder to drop.
+### :param f: The file.
+routine change(f: @File) -> None
+    s: FileStorage[Byte] <- OsFileManager.storage[Byte](at: f, write: true, start: 0,
+        count: U64.MAX)
+    s[0] = Byte('J')
+    return
+
+routine start() -> None
+    tmp: &Directory <- OsEnvironment.temp_directory(HEAP)
+    root: &Directory <- tmp.go_to(name: "lapila_fs_storage_dropped", manager: HEAP)
+
+    try OsFileManager.delete_all(at: root, manager: HEAP)
+    OsFileManager.make_directory(at: root, parents: true)
+    bytes: &File <- root.file(name: "bytes.bin", manager: HEAP)
+    OsFileManager.make_file(at: bytes, replacing: false)
+    OsFileManager.write_all(at: bytes, data: "hello")
+    change(f: bytes)
+    after: &[Byte] <- OsFileManager.read_all(at: bytes, manager: HEAP)
+    Console.show("after: {after.getslice()}")
+    try OsFileManager.delete_all(at: root, manager: HEAP)
+    return

@@ -1,4 +1,4 @@
-# An entity's destruct never gives back its BorrowedSlice field.
+# An entity's destruct never drops its BorrowedSlice field.
 
 import Hosted
 

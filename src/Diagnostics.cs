@@ -194,7 +194,7 @@ public static class Li
     public static readonly Code ManagerFill = S(1102, "ManagerFill", "A place filled from a manager the wrong way.");
     public static readonly Code BorrowForm = S(1103, "BorrowForm", "A borrow written wrongly (<-, from STACK, &T forms).");
     public static readonly Code GlobalMemoryOverwritten = S(1104, "GlobalMemoryOverwritten", "A global that holds memory, overwritten or never given back.");
-    public static readonly Code NeverGivenBack = S(1105, "NeverGivenBack", "A value with something to give back that the routine never gives back.");
+    public static readonly Code NeverGivenBack = S(1105, "NeverGivenBack", "A destruct the type writes that never drops a field holding memory or an entity.");
     public static readonly Code ReadOnlyWrite = S(1106, "ReadOnlyWrite", "A write into memory that is read-only (a preset, a text literal, a view of one).");
     public static readonly Code SharedAccessWrite = S(1107, "SharedAccessWrite", "A write or a reshaping through a shared read access.");
     public static readonly Code ThreadLocalAddress = S(1108, "ThreadLocalAddress", "The address of a thread-local variable kept or handed to another thread.");

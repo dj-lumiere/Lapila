@@ -1,4 +1,4 @@
-# Memory a block holds goes along to the next block, or is dropped first: here the jump leaves it behind.
+# Memory a block holds goes along to the next block, or is dropped: the builder drops what a jump leaves behind.
 
 import Hosted
 
@@ -9,4 +9,5 @@ routine start() -> None
     jump next()
 
     block next()
+        Console.show("next")
         return

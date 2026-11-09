@@ -1,4 +1,4 @@
-# The access a routine returns is one the caller holds: a caller that never gives it back is a build error.
+# The access a routine returns is one the caller holds: the builder gives it back where the caller returns.
 
 import Hosted
 
@@ -12,4 +12,5 @@ routine open_counter() -> Authorized[U64]
 routine start() -> None
     held: Authorized[U64] <- open_counter()
     held.getview().poke(3)
+    Console.show("{held.getview().peek()}")
     return

@@ -1,4 +1,4 @@
-# The Counter a when moved into its arm ends in that arm: an arm that neither drops it nor hands it on is an error.
+# The Counter a when moved into its arm ends in that arm: an arm that neither drops it nor hands it on has the builder drop it at the arm's end.
 import Hosted
 
 define Opened = Counter | ParseFailed
@@ -16,8 +16,9 @@ record ParseFailed
 common routine Counter.construct() -> Me
     return Me(count: 0)
 
-### Releases nothing: a Counter holds no memory.
+### Says that it ends.
 routine @Counter.destruct() -> None
+    Console.show("counter ends")
     return
 
 ### A counter, or why not.
@@ -31,6 +32,7 @@ routine open(n: S64) -> Opened
 ### Observes one.
 routine start() -> None
     when open(1)
-        is Counter as c => Console.show("a counter")
+        is Counter as c => Console.show("a counter at {c.count.peek()}")
         is ParseFailed => Console.show("failed")
+    Console.show("after")
     return

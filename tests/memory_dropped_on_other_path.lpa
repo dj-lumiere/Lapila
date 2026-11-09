@@ -1,4 +1,4 @@
-# Memory is given back on every path: here one branch drops it and the other returns without.
+# One branch drops the memory, the other returns without: the builder drops it there, and not again on the first.
 
 import Hosted
 
@@ -7,6 +7,7 @@ routine start() -> None
 
     if m.count() == 4
         drop m
+        Console.show("dropped by hand")
         return
     else
         return

@@ -325,7 +325,7 @@ routine @RotatableList[T].destruct() -> None
     if me.storage.manager.peek().to[Addr]().is_hollow()
         return
     me.drop_elements()
-    me.storage.give_back()
+    drop me.storage
     me.start.poke(0)
     me.count.poke(0)
     return

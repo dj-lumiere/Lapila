@@ -243,9 +243,9 @@ public sealed partial class FunctionGen
     {
         _c.AddThrows(_inst, failures);
         string carrier = Compiler.CarrierName(_inst);
+        // The line's temporaries end first, then the return drops what the routine still holds.
         for (int i = _statementTemps.Count - 1; i >= 0; i--)
             DropTemp(_statementTemps[i].Name, pos);
-        GiveBackHolds(pos);
         string own = CarrierOutSlot(carrier);
         string tag = EmitTmp($"load i64, ptr {CarrierField(slot, carrierLlvm, 0)}");
         Line($"store i64 {tag}, ptr {CarrierField(own, carrier, 0)}");
@@ -929,7 +929,6 @@ public sealed partial class FunctionGen
             {
                 for (int i = _statementTemps.Count - 1; i >= 0; i--)
                     DropTemp(_statementTemps[i].Name, w.Pos);
-                GiveBackHolds(w.Pos);
                 if (!Emitting) Return($"ret {carrier} poison");
                 else ReturnFailure(slot, llvm, w.Pos);
             }
