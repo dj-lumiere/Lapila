@@ -6129,6 +6129,11 @@ public sealed partial class FunctionGen
         }
         if (ManagedMemory(TryInfer(m.Receiver)) is { Decl.Name: "BorrowedSlice" } && OldMemoryElementCall(m) is { } older)
             throw Err(Li.RemovedMethod, m.Pos, older);
+        // One verb gives back what a place holds: drop. A place's name reads as its view, so the place is asked for here,
+        // before the call is planned on the view.
+        if (m is { Name: "give_back" or "release" or "free", Args.Count: 0 } && ManagedMemory(TryInfer(m.Receiver)) is { } placed)
+            throw Err(Li.RemovedMethod, m.Pos, $"{placed} has no method '{m.Name}': what a place holds is given back with drop, "
+                + $"drop {new Printer().Expr(m.Receiver, 0)}");
         if (IndirectCall(m) is not null || AddrOfCallable(m) is not null) return null;
 
         // `elems : @@S32 = arr.to()`: a conversion without its type takes the type its value goes to.
@@ -6358,11 +6363,6 @@ public sealed partial class FunctionGen
         if (m.Name == "unmap" && (rt is PtrType { Pointee: { } mapped } ? mapped : rt) is RecordType { Decl.Name: "FileStorage" })
             throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method 'unmap': a FileStorage is given back with drop, which writes changed pages "
                 + "back and unmaps it");
-        // One verb gives back what a place holds: drop.
-        if (m is { Name: "give_back" or "release" or "free", Args.Count: 0 }
-            && (rt is PtrType { Pointee: { } placed } ? placed : rt) is RecordType { Decl.Name: "BorrowedCell" or "BorrowedSlice", Decl.IsLibrary: true })
-            throw Err(Li.RemovedMethod, m.Pos, $"{rt} has no method '{m.Name}': what a place holds is given back with drop, "
-                + $"drop {new Printer().Expr(m.Receiver, 0)}");
         if (OldSpellings.OldRoutineName(m.Name) is { } renamed)
             throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method '{m.Name}': {renamed}");
         throw Err(Li.MethodNotFound, m.Pos, $"{rt} has no method '{m.Name}'");

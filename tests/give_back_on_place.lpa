@@ -1,0 +1,7 @@
+### A place's memory goes back with drop: give_back on a &[T] names drop instead.
+import Hosted
+
+routine start() -> None
+    buf: &[S64] <- [0] * 4 from HEAP
+    buf.give_back()
+    return
