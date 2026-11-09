@@ -70,7 +70,6 @@ needs RecordType T, U64 COUNT
         made.add(steal first.stride(i))
     then
         # every value went into the sorted list: the list's places are hollow
-        drop items
         return made
 
 ### A SortedList of the values of a Slots, drawing its storage from `manager`. The array is taken over: its values go
@@ -94,7 +93,6 @@ needs U64 COUNT
         made.add(steal first.stride(i))
     then
         # every value went into the sorted list: the list's places are hollow
-        drop items
         return made
 
 ### The number of elements currently stored.
@@ -248,7 +246,6 @@ routine @SortedList[T].rank(value: T) -> U64
 
     rank: U64 = me.bound(value: probe, or_equal: false)
 
-    drop probe
     return rank
 
 ### Whether an element equal to the one at `value` is in the list, read through its place.
@@ -270,7 +267,6 @@ routine @SortedList[T].has(value: T) -> Bool
 
     there: Bool = me.has(probe)
 
-    drop probe
     return there
 
 ### Whether the one at `value` is not there: the opposite of `has`.

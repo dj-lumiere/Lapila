@@ -79,16 +79,6 @@ secret common routine PatternCompiler.construct(code: @[U32], mode: U32,
         eithers: .construct(manager), names: .construct(manager), captures: .construct(manager),
         class: .construct(manager), error: PatternErrorKind.NONE, error_at: 0)
 
-### Gives back the compiler's lists.
-secret routine @PatternCompiler.destruct() -> None
-    drop me.instructions
-    drop me.ranges
-    drop me.eithers
-    drop me.names
-    drop me.captures
-    drop me.class
-    return
-
 ### Keeps the first error found.
 ### :param kind: What went wrong.
 ### :param at: The word index where it was found.
@@ -388,7 +378,6 @@ secret routine @PatternCompiler.negate_class() -> None
         me.class.clear()
         for j: U64 in 0 til outside.count()
             me.class.add_last(outside.getitem(j))
-        drop outside
         return
 
 ### Writes the class being built as one instruction: UNIT for a single unit, else CLASS over its ranges. A class with
@@ -550,8 +539,6 @@ secret routine @PatternCompiler.compile_either(at: U64, fold: Bool, depth: U64,
         me.eithers.add_last(join)
         for k: U64 in 0 til n
             me.eithers.add_last(starts.getitem(k))
-        drop starts
-        drop ends
         return next
 
 ### Writes a repetition: the piece once per required round, then a loop that prefers another round (no limit) or one
@@ -604,7 +591,6 @@ secret routine @PatternCompiler.compile_optional_rounds(child: U64, rounds: U64,
         out: U32 = me.next_pc()
         for j: U64 in 0 til splits.count()
             me.patch(pc: splits.getitem(j), operand: 2, value: out)
-        drop splits
         return
 
 ### Compiles a piece tree into a program.
@@ -626,7 +612,6 @@ routine compile_pattern(code: @[U32], mode: U32, manager: @MemoryManager) -> Bor
         drop compiler
         throw error
     program: &[U32] <- compiler.assemble(mode, manager)
-    drop compiler
     return program
 
 ### Puts the header, the instructions, the ranges, the either table and the names together in one block.

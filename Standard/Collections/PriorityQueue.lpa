@@ -74,7 +74,6 @@ needs RecordType TPriority, RecordType TElement, U64 COUNT
         made.add(priority, element)
     then
         # every value went into the priority queue: the list's places are hollow
-        drop items
         return made
 
 ### The number of entries currently stored.
@@ -378,7 +377,6 @@ needs TPriority obeys Diagnosable, TElement obeys Diagnosable, TWriter obeys Wri
         write_str(out, text: ": ")
         elements.stride(entry.at).diagnose_into(out)
     write_str(out, text: "]")
-    drop shown
     return
 
 ### Makes a `ShownEntry` from its fields.

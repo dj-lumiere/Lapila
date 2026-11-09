@@ -63,7 +63,6 @@ needs RecordType T, U64 COUNT
         drop made.add(steal first.stride(i))
     then
         # every value went into the set: the list's places are hollow
-        drop items
         return made
 
 ### A Set of the values of a Slots, drawing its storage from `manager`. The array is taken over: its values go
@@ -87,7 +86,6 @@ needs U64 COUNT
         drop made.add(steal first.stride(i))
     then
         # every value went into the set: the list's places are hollow
-        drop items
         return made
 
 ### The number of elements currently stored.
@@ -172,7 +170,6 @@ routine @Set[T].has(key: T) -> Bool
 
     there: Bool = me.has(probe)
 
-    drop probe
     return there
 
 ### Whether the element at `key` is not there: the opposite of `has`.
@@ -260,15 +257,7 @@ secret routine @Set[T].rehash(new_capacity: U64) -> Bool
                             old_hashes: @U64 = hashes.data.peek()
                             hash: U64 = old_hashes.stride(i).peek()
                             me.add_direct(key: steal old_keys.stride(i), hash)
-                    drop keys
-                    drop hashes
-                    drop entry_states
-                    drop slots
                     return true
-    drop keys
-    drop hashes
-    drop entry_states
-    drop slots
     return false
 
 ### Makes room for one more entry: the first insertion rehashes into 8 slots, and the tables double once one more
@@ -297,7 +286,6 @@ routine @Set[T].add_direct(key: T, hash: U64) -> Bool
     entry_idx: U64 = slots.stride(slot).peek()
     if entry_idx < SET_SLOT_TOMBSTONE
         # an equal element is already there: the new one ends here
-        drop probe
         return false
     new_idx: U64 = me.entries_count.peek()
     keys: @T = me.keys.data.peek()
@@ -359,7 +347,6 @@ routine @Set[T].remove(key: T) -> Bool
 
     removed: Bool = me.remove(probe)
 
-    drop probe
     return removed
 
 ### Ends every element (drop: an element with something to give back gives it back, a plain value gives nothing),

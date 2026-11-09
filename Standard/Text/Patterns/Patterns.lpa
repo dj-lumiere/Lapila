@@ -374,7 +374,6 @@ secret routine find_slots(program: Program, input: PatternInput, from: U64,
 
     if find_match(search: Search(program, input), from, slots: slots.getslice(), manager)
         return slots
-    drop slots
     return None()
 
 ### Whether the whole text matches the pattern.
@@ -524,7 +523,6 @@ secret routine replace_all(program: Program, input: PatternInput, with: @[Byte],
 
         for i: U64 in 0 til out.count()
             result.getslot(i).poke(out.getitem(i))
-        drop out
         return result
 
 ### The parts of the text between the matches (as `find_all` finds them), the part before the first and the part

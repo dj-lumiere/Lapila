@@ -287,14 +287,12 @@ routine @ConsoleInput.read_into(buffer: @Byte, count: U64) -> U64
             return when read
                 is U64 as n => n
         elseif not b.fill(STDIN_SOURCE)
-            drop held
             return 0
     available: U64 = b.end.peek() - b.start.peek()
     n: U64 = available.min(count)
     buffer.copy(src: b.bytes.getview().to[@Byte]().stride(b.start.peek()), count: n)
     next_start: U64 = b.start.peek() + n
     next_start.poke_into(b.start)
-    drop held
     return n
 
 ### Skips white space and reads the next word (spaces, tabs, and line ends separate words) as a T, straight from the
@@ -386,7 +384,6 @@ common routine Console.ask_all(manager: @MemoryManager) -> BorrowedSlice[Byte]
             is FsError => 0
         if n2 == 0
             all: &[Byte] <- text.take_all()
-            drop text
             return all
         text.append(chunk, n: n2, manager)
 
@@ -423,7 +420,6 @@ needs TSource obeys RawReader
             drop text
             if any
                 return trim_cr(steal rest)
-            drop rest
             return None()
         from: U64 = me.start.peek()
         end: U64 = me.end.peek()
@@ -523,7 +519,6 @@ needs TSource obeys RawReader
                 text.append(chunk: single, n: 1, manager)
                 break
             is None =>
-                drop text
                 return None()
 
     # The rest of the word, up to the next white space (put back) or the end of the input.
@@ -538,7 +533,6 @@ needs TSource obeys RawReader
                 text.append(chunk: single, n: 1, manager)
             is None => break
     word: &[Byte] <- text.take_all()
-    drop text
     return word
 
 ### Whether standard input is a terminal (a console on Windows), not a pipe or a file.

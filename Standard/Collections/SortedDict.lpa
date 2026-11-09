@@ -72,7 +72,6 @@ needs RecordType TKey, RecordType TValue, U64 COUNT
         made.setitem(key, value)
     then
         # every value went into the sorted dict: the list's places are hollow
-        drop items
         return made
 
 ### The number of entries currently stored.
@@ -272,7 +271,6 @@ routine @SortedDict[TKey, TValue].has_key(key: TKey) -> Bool
 
     there: Bool = me.has_key(probe)
 
-    drop probe
     return there
 
 ### Whether the key at `key` is not a key: the opposite of `has_key`.
@@ -768,7 +766,6 @@ routine @SortedDict[TKey, TValue].remove(key: TKey) -> Bool
 
     removed: Bool = me.remove(probe)
 
-    drop probe
     return removed
 
 ### Ends the keys and values of this node and every node below it (drop) and frees the nodes through `manager`. An

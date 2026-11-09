@@ -232,7 +232,6 @@ secret routine @ThreadPoolManager.queue(passable: @PassableFiberSlot) -> None
     # the pool may end.
     me.epoch.fetch_add_unbroken(1)
     wake_all(me.epoch)
-    drop held
     return
 
 ### The passable fiber at the front of the queue, taken out, or null.
@@ -242,7 +241,6 @@ secret routine @ThreadPoolManager.take() -> @PassableFiberSlot?
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     first: @PassableFiberSlot? = me.first.peek().to[@PassableFiberSlot?]()
     if first.is_absent()
-        drop held
         return None()
     passable: @PassableFiberSlot = first.unwrap()
     next: @PassableFiberSlot? = passable.next.peek().to[@PassableFiberSlot?]()
@@ -250,7 +248,6 @@ secret routine @ThreadPoolManager.take() -> @PassableFiberSlot?
     if next.is_absent()
         me.last.poke(Addr.zero())
     passable.next.poke(Addr.zero())
-    drop held
     return passable
 
 ### Puts `fiber`, a pool's fiber a wake made ready, in the queue of woken fibers and wakes the threads.
@@ -263,7 +260,6 @@ secret routine @ThreadPoolManager.queue_woken(fiber: @FiberState) -> None
     # the pool may end.
     me.epoch.fetch_add_unbroken(1)
     wake_all(me.epoch)
-    drop held
     return
 
 ### The fiber at the front of the queue of woken fibers, taken out, or null.
@@ -272,10 +268,8 @@ secret routine @ThreadPoolManager.queue_woken(fiber: @FiberState) -> None
 secret routine @ThreadPoolManager.take_woken() -> @FiberState?
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     if me.woken.is_empty()
-        drop held
         return None()
     fiber: @FiberState = me.woken.remove_first()
-    drop held
     return fiber
 
 ### Keeps `fiber`, whose passable fiber is over, for the next passable fiber.
@@ -285,7 +279,6 @@ secret routine @ThreadPoolManager.keep_fiber(fiber: @FiberState) -> None
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     fiber.next_idle.poke(me.spare.peek())
     me.spare.poke(fiber.to[Addr]())
-    drop held
     return
 
 ### A fiber for a passable fiber: one kept from an earlier passable fiber, or a new one with a stack of its own.
@@ -322,7 +315,6 @@ secret routine @ThreadPoolManager.take_fiber() -> @FiberState
     held2: Authorized[U8] <- me.guard.get_exclusive_access()
     fiber.next_all.poke(me.fibers.peek())
     me.fibers.poke(fiber.to[Addr]())
-    drop held2
     return fiber
 
 ### Makes `fiber` one of this thread's: it counts among FIBERS' busy fibers instead of its last manager's, and goes in

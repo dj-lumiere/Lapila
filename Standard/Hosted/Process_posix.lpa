@@ -562,8 +562,6 @@ common routine ProcessManager.create_process(program: @[Byte], args: @[@[Byte]],
             # Every descriptor still open, the prepared strings, and the captured bytes nothing took.
             pipes.close_all()
             p.release(manager)
-            drop out
-            drop err
             return made
         is ProcessError as error =>
             pipes.close_all()

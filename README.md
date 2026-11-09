@@ -9,7 +9,7 @@
 
 <p align="center"><strong>Piece by piece, in the order you read it.</strong></p>
 
-<p align="center">A statement-centred low-level language: a value is bound once, memory comes from a manager and is given back by hand, and the build checks it.</p>
+<p align="center">A statement-centred low-level language: a value is bound once, memory comes from a manager, and what a scope still holds is dropped at its end, which the build checks.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.5.0-informational.svg" alt="Version 0.5.0">
@@ -27,7 +27,8 @@
 
 Lapila (`.lpa`) keeps every step of a program on the page, and keeps writing it bearable. Nothing happens between
 the lines: a value is bound once and never reassigned, a load and a store are calls you can see (`p.peek()`,
-`p.poke(v)`), memory is taken from a manager and given back by hand, and the builder checks that it was.
+`p.poke(v)`), memory is taken from a manager, and what a scope still holds is dropped at its end, the last one made
+first (a `drop` ends it earlier), which the builder checks.
 
 ```lapila
 routine two_sum(list: @[S32], target: S32) -> Optional[(U64, U64)]

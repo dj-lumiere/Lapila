@@ -311,10 +311,8 @@ routine blocked_until_cancelled(waiter: Waiter) -> Bool
 routine @WorkSlot.register(waiter: Waiter) -> Bool
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     if me.is_finished()
-        drop held
         return true
     me.waiter.poke(waiter)
-    drop held
     return false
 
 ### Forgets `waiter` if it is the one woken when the work finishes: a wait on several tickets that is over.
@@ -324,7 +322,6 @@ routine @WorkSlot.unregister(waiter: Waiter) -> None
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     if me.waiter.peek() == waiter
         me.waiter.zeroinit(1)
-    drop held
     return
 
 ### Marks the work finished and wakes whoever waits for it: the thread that runs it calls this once the routine
@@ -339,7 +336,6 @@ routine @WorkSlot.complete() -> None
     waiter: Waiter = me.waiter.peek()
     me.waiter.zeroinit(1)
     waiter.wake()
-    drop held
     return
 
 ### The place of the finished work's result, the front of its block.
@@ -373,7 +369,6 @@ routine @WorkSlot.request_cancel() -> None
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     blocked: Waiter = me.blocked.peek()
     blocked.wake()
-    drop held
     return
 
 ### Ends the ticket that holds the slot: destructs the last work's block (a result nobody retrieved ends there), gives

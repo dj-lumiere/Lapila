@@ -240,7 +240,6 @@ routine @ChannelCore[T].transmit(value: T) -> None
             throw ChannelClosedError()
         if me.count.peek() < me.items.count()
             me.push(value: steal value)
-            drop held
             return
         node.next.poke(me.putters.peek())
         me.putters.poke(node.to[Addr]())
@@ -266,7 +265,6 @@ routine @ChannelCore[T].transmit_if_room(value: T) -> T?
         drop held
         return steal value
     me.push(value: steal value)
-    drop held
     return None()
 
 ### Takes the oldest value, waiting while there is none.
@@ -303,7 +301,6 @@ routine @ChannelCore[T].receive() -> T
 routine @ChannelCore[T].add_transmitter() -> None
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     me.transmitters.poke(me.transmitters.peek() + 1)
-    drop held
     return
 
 ### Counts one more receiver.
@@ -311,7 +308,6 @@ routine @ChannelCore[T].add_transmitter() -> None
 routine @ChannelCore[T].add_receiver() -> None
     held: Authorized[U8] <- me.guard.get_exclusive_access()
     me.receivers.poke(me.receivers.peek() + 1)
-    drop held
     return
 
 ### One transmitter is done: once every transmitter is, the waiting receivers wake to take what is left.
@@ -325,7 +321,6 @@ routine @ChannelCore[T].close_transmitting() -> None
         throw UnacceptedValueError(description: "Every transmitter of this channel has closed already.")
     me.transmitters.poke(me.transmitters.peek() - 1)
     wake_list(me.getters.peek().to[@ChannelWait?]())
-    drop held
     return
 
 ### One receiver is done: once every receiver is, the values left are dropped and the waiting transmitters wake.
@@ -341,7 +336,6 @@ routine @ChannelCore[T].close_receiving() -> None
     if me.receivers.peek() == 0
         me.drop_values()
         wake_list(me.putters.peek().to[@ChannelWait?]())
-    drop held
     return
 
 ### Ends the values the channel still holds, the oldest first, and gives its room back.

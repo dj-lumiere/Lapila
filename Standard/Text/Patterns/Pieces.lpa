@@ -215,7 +215,6 @@ secret routine set_tree(chars: @[Byte], negated: Bool,
         tree.getslot(3 + i * 2).poke(points.getitem(i))
         tree.getslot(4 + i * 2).poke(points.getitem(i))
     then
-        drop points
         return tree
 
 ### One character from `from` to `to`, both included.
@@ -418,8 +417,6 @@ secret routine capture_tree(name: @[Byte], code: @BorrowedSlice[U32]) -> Borrowe
         head.add_last(points.getitem(i))
     tree: &[U32] <- wrap(head: head.getview(), child: code)
 
-    drop points
-    drop head
     return tree
 
 ### The piece, with the text it matches kept under `name`: `m.group(name)` gives it.
@@ -481,7 +478,6 @@ secret routine text_branches(kind: U32, pieces: @[TextPiece]) -> BorrowedSlice[U
     tree: &[U32] <- BorrowedSlice[U32].construct(values: words.getview(), times: 1,
         manager: manager)
 
-    drop words
     return tree
 
 ### A node of several pieces' trees, the pieces given back.
@@ -505,7 +501,6 @@ secret routine bytes_branches(kind: U32, pieces: @[BytesPiece]) -> BorrowedSlice
     tree: &[U32] <- BorrowedSlice[U32].construct(values: words.getview(), times: 1,
         manager: manager)
 
-    drop words
     return tree
 
 ### One of the pieces: the one that matches the longest text at that place (the first one written, of those as

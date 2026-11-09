@@ -128,18 +128,6 @@ secret common routine RoundRobinThread.construct(stack: StackManager, state: Rou
         entry: None(), arg: Addr.zero(), plain_entry: None(), trace_depth: 0, number: 0,
         thread_locals: Addr.zero())
 
-### Gives the boot flow's and the idle thread's stack managers back (the memory under them is the program's).
-@target(arch: "aarch64", os: "none")
-secret routine @RoundRobinThread.destruct() -> None
-    drop me.stack
-    return
-
-### Gives the boot flow's record back. The region's memory is the program's: it outlives the manager.
-@target(arch: "aarch64", os: "none")
-routine @ThreadManagerByRoundRobin.destruct() -> None
-    drop me.boot
-    return
-
 ### Makes a manager whose threads live in the `size` bytes at `region`, each in a slot of `stack_size` bytes, and run
 ### for `slice` at a time.
 ### :param region: The first byte of the memory for the threads, 16-byte aligned (a global array, say).

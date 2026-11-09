@@ -80,11 +80,6 @@ secret common routine RegexReader.construct(input: PatternInput, bytes: Bool,
     return Me(input, pos: 0, out: .construct(manager), bytes, dot_all: false, multiline: false,
         ignore_case: false, groups: 0, error: RegexErrorKind.NONE, error_at: 0)
 
-### Gives back the tree.
-secret routine @RegexReader.destruct() -> None
-    drop me.out
-    return
-
 ### Keeps the first error.
 ### :param kind: What went wrong.
 ### :param at: Where.
@@ -653,5 +648,4 @@ routine read_regex(input: PatternInput, bytes: Bool, manager: @MemoryManager) ->
         tree.add_last(NODE_IGNORE_CASE)
     for i: U64 in 0 til reader.out.count()
         tree.add_last(reader.out.getitem(i))
-    drop reader
     return tree

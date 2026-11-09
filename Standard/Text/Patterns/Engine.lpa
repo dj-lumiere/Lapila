@@ -909,7 +909,6 @@ routine @Walker.replay(search: Search) -> None
         me.run(search, walk)
         me.replay(search)
     then
-        drop decisions
         return
 
 # -- searching ---------------------------------------------------------------------------------------------------
@@ -928,11 +927,9 @@ routine find_match(search: Search, from: U64, slots: @[U64], manager: @MemoryMan
     for s: U64 in 0 til slots.count()
         slots.getslot(s).poke(NO_POSITION)
     if from > search.input.count()
-        drop threads
         return false
     leftmost: Leftmost = threads.leftmost(search, from, whole: false)
     if not leftmost.found
-        drop threads
         return false
     walker: &Walker <- .construct(slots, threads, manager)
     walk: Walk = Walk(first_pc: 0, start: leftmost.start, limit: leftmost.reach, join: NO_JOIN,
@@ -941,8 +938,6 @@ routine find_match(search: Search, from: U64, slots: @[U64], manager: @MemoryMan
     slots.getslot(0).poke(leftmost.start)
     slots.getslot(1).poke(end)
     walker.replay(search)
-    drop walker
-    drop threads
     return true
 
 ### Whether the whole input matches the program.

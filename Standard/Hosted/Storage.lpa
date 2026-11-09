@@ -178,7 +178,6 @@ secret routine unescaped(text: @[Byte], manager: @MemoryManager) -> BorrowedSlic
         continue with i: i + 1
     then
         text_copy: &[Byte] <- copied(text: out.getview(), manager)
-        drop out
         return text_copy
 
 ### The whole file at path, empty when it can't be read, in memory from manager.
@@ -202,7 +201,6 @@ secret routine sys_number(path: @[Byte], manager: @MemoryManager) -> U64
     text: &[Byte] <- text_of(path, manager)
 
     n: U64 = leading_number(text.getslice())
-    drop text
     return n
 
 ### The partition whose /sys/class/block directory (or /sys/dev/block link) is `sys`, its name `name`.
@@ -247,11 +245,6 @@ secret routine linux_partition(sys: @[Byte], name: @[Byte], mounts: @[Byte],
     facts: PartitionFacts = PartitionFacts(name, device: device.getslice(),
         mounted_at: at.getslice(), file_system: m.file_system, size)
     made: &PartitionManager <- partition_from(facts, manager)
-    drop at
-    drop device
-    drop dev_text
-    drop size_path
-    drop dev_path
     return made
 
 ### The devices in /sys/block that hold a medium, with their sizes.
@@ -299,7 +292,6 @@ secret routine partitions(manager: @MemoryManager) -> List[PartitionManager]
     opened: Bool = try iter.open_path("/sys/class/block")
     if not opened
         iter.close()
-        drop mounts
         return list
     loop
         entry: Optional[DirEntry] = try iter.emit()
@@ -319,7 +311,6 @@ secret routine partitions(manager: @MemoryManager) -> List[PartitionManager]
                 drop sys
             is None => break
     iter.close()
-    drop mounts
     return list
 
 ### The partition whose /sys/dev/block link is `sys`, named by the directory the link resolves to ("sda1").
@@ -341,7 +332,6 @@ secret routine linux_partition_at(sys: @[Byte], key: @[Byte], mounts: @[Byte],
             drop resolved
         is FsError => nothing
     made: &PartitionManager <- linux_partition(sys, name: name.getslice(), mounts, manager)
-    drop name
     return made
 
 ### The partition the existing path is on: its device found through /sys/dev/block, and its mount in
@@ -365,9 +355,6 @@ secret routine partition_of(path: @[Byte], manager: @MemoryManager) -> Partition
     if is_present(sys.getview())
         made: &PartitionManager <- linux_partition_at(sys: sys.getview(), key: key.getview(),
             mounts: mounts.getslice(), manager)
-        drop mounts
-        drop sys
-        drop key
         return made
     m: MountLine = when mount_of(mounts: mounts.getslice(), key: key.getview())
         is MountLine as line => line
@@ -379,10 +366,6 @@ secret routine partition_of(path: @[Byte], manager: @MemoryManager) -> Partition
     facts: PartitionFacts = PartitionFacts(name, device: "", mounted_at: at.getslice(),
         file_system: m.file_system, size: 0)
     unmounted: &PartitionManager <- partition_from(facts, manager)
-    drop at
-    drop mounts
-    drop sys
-    drop key
     return unmounted
 
 # -- macOS -------------------------------------------------------------------------------
@@ -536,7 +519,6 @@ secret routine storage_devices(manager: @MemoryManager) -> List[StorageManager]
             continue
         if not has_storage(list, name: disk)
             list.add_last(StorageManager(name: copied(text: disk, manager), size: 0))
-    drop parts
     return list
 
 ### The partition the existing path is on, from statfs.
@@ -637,8 +619,6 @@ secret routine windows_partition(root: @U16, manager: @MemoryManager) -> Partiti
     facts: PartitionFacts = PartitionFacts(name, device: "", mounted_at: path,
         file_system: fs_name.getslice(), size: total.load())
     made: &PartitionManager <- partition_from(facts, manager)
-    drop fs_name
-    drop at
     return made
 
 ### Every drive letter's partition.

@@ -46,8 +46,8 @@ rename it to `.lpa`, and `[package] tessera-version` is a build error that names
 
 A program's entry point is `routine start() -> None`, and a nonzero exit status is `set_exit_code(n)` (Hosted)
 before it returns. The entry file may instead write its lines at the top level (script mode): they are `start`, run
-top to bottom with declarations seen everywhere, and the end of the file is its `return` (the builder gives the
-STACK places back there, and every other place must be given back by then). A routine can't read a top-level binding (pass it, or use a `global`),
+top to bottom with declarations seen everywhere, and the end of the file is its `return` (the builder drops there
+what the lines still hold, the last one made first). A routine can't read a top-level binding (pass it, or use a `global`),
 an imported file has no top-level lines, and a file with them declares no `start`. A file may start with `module A/B` and `import` lines. Name lookup follows
 modules: a file sees its own module, `System` and every module under it (always seen: the built-in types,
 `Optional`, `Check`, `None`, `@[T]`, `BorrowedSlice`, `BorrowedCell`, the protocols, formatting, the memory managers, `HEAP`), and what
@@ -196,16 +196,26 @@ routine start() -> None
   a place: n: &S64 <- value"). A call that returns the BorrowedCell / BorrowedSlice itself is bound with `<-` too: `m: &[U8] <-
   BorrowedSlice[U8].construct(count: 4, manager: HEAP)` (the name holds what the manager lent). `local` is not a statement (a
   line starting with it is a build error that shows both forms), and is an ordinary name otherwise.
-- **Giving a place back.** A `<-` name owes a give back (`drop`). STACK places: the builder gives them back at every
-  exit of the body they are in (its end, `return`, `break` / `continue` out of a loop, a value `when`'s `becomes`),
-  the last one borrowed first, running the value's `destruct`: `xs: &List[S64] <- .construct(HEAP)` gives its heap
-  storage back at that exit too. The program doesn't write their `drop`. It may `drop xs` early, and the builder
-  then doesn't drop it again. A place from another manager (`from HEAP`, a call returning a BorrowedCell / BorrowedSlice) and an access:
-  the program writes `drop`, and a missing one is a build error ("'cell' holds a &S64 (from line 6)
-  that hasn't ended when 'start' returns here: drop cell, return it, or hand it over with steal cell"). A STACK place
-  handed over with `steal t` and filled again with `t.poke(v)` holds a value again, which the builder gives back at
-  the exit like the first one. A STACK place
-  of a variant is ended by the program too (the same error when it isn't). A STACK `&[T]` takes an array literal with a count the build knows (a literal count or a preset)
+- **The builder drops what a scope still holds (SBRM).** Every value has a manager (a heap's, `PAGES`, or the running
+  flow's `StackManager` for a STACK place), and a `&T` knows its manager. At every exit of a body (its end, `return`,
+  a written `throw`, a failure passing on in the middle of a line, `break` / `continue` out of a loop, a value
+  `when`'s `becomes`, a `jump` out of a block) the builder drops each name of that body that still holds something,
+  the last one made first, running the value's `destruct`: a STACK place (`xs: &List[S64] <- .construct(HEAP)` gives
+  its heap storage back there), a place from another manager (`cell: &S64 <- 5 from HEAP`, a call returning a
+  BorrowedCell / BorrowedSlice), an access, a ticket, a mapped file's storage, a pool, a variant's place, the value a
+  `when` arm takes out (`is Counter as c` drops `c` at the arm's end), the value `steal place as old` takes out, a
+  block's parameters, and a parameter handed in by value (`routine keep(x: Noisy)`: `x` is dropped on every way out,
+  failures included, unless the routine handed it on). The program doesn't write those drops. A name the program
+  ended or handed on first (`drop x`, `steal x`, `return x`, `x` handed to a routine that takes it by value, a jump or
+  `continue with` that passes it) is not dropped again, so an early `drop` is fine and a `drop` right before the end
+  repeats nothing. Where the drop does nothing (a plain number, a record with nothing to give back) the builder writes
+  nothing, so this costs nothing. For several values dropped by hand, the reverse of the order they were made in is
+  the recommended order. A STACK place handed over with `steal t` and filled again with `t.poke(v)` holds a value
+  again, which the builder drops at the exit like the first one. A value a loop carries (`with`) and the element a
+  `for` hands out are passed on by the program each round (`continue with`), so the memory check still follows them:
+  one that ends nowhere is a build error ("'m' holds a &[Byte] (from line 6) that hasn't ended when 'start' returns
+  here: drop m, return it, or hand it over with steal m"), and so is memory that only a second name of it (a copy of
+  the handle) still holds. A STACK `&[T]` takes an array literal with a count the build knows (a literal count or a preset)
   and holds values with nothing to give back ("a &[List[S64]] from STACK holds values with nothing to give back").
   A place borrowed in a loop body is borrowed again and given back on every pass, so it can't carry a value from
   one pass to the next: borrow it before the loop, or carry the value with `with`.
@@ -254,8 +264,10 @@ routine start() -> None
   manager}`, `BorrowedSlice.lpa`) are places BORROWED from a `MemoryManager`, and both are ENTITIES (Entities, below): never
   copied, bound with `<-` (`m: &[Byte] <- BorrowedSlice[Byte].construct(count: 4, manager: manager)`), every
   routine takes `me` by its address (`routine @BorrowedSlice[T].getslot(...)`). The block holds the values and nothing else,
-  plain `T` values in a row. Given back exactly once, with the statement `drop m`, by `return m`, or by handing it on
-  with `steal m` to a routine that takes a `BorrowedSlice` / `BorrowedCell` by value (that routine gives it back then). `drop x` is
+  plain `T` values in a row. Given back exactly once, with the statement `drop m` (or the builder's drop at the end of
+  its scope), by `return m`, or by handing it on with `steal m` to a routine that takes a `BorrowedSlice` /
+  `BorrowedCell` by value (that routine gives it back then). `drop` is the one verb that gives back: a `&T` or `&[T]`
+  has no `give_back`, `release` or `free` (each is a build error that says `drop x`). `drop x` is
   `x.destruct()`, and a `BorrowedCell` / `BorrowedSlice` holds its manager, so its `destruct` gives the memory back to it (a `BorrowedCell`'s ends its value first, so `drop node` of a `&Node` from HEAP runs the Node's destruct): a program never writes `x.destruct()` itself (a build error: "a value is given back with drop:
   drop x"), only a type's own `destruct` body gives its members back. `drop` leaves the place hollow (all zero): it holds
   nothing, `drop` on it does nothing, a read crashes with `UnacceptedValueError`.
@@ -270,9 +282,11 @@ routine start() -> None
   `construct(count, manager)` (uninitialized, failable: it throws `OutOfMemoryError` when the manager has no memory to give or the size of `count` values doesn't
   fit in U64, which `check BorrowedSlice[T].construct(...)` receives), `count()`, `swap(first, second)`, `keep_first(n)` (only the first n in use, no
   copy), `duplicate()` (memory of its own), `replace(value: new)`, `take()` (moves the memory out, leaving this one
-  empty with the same manager), `give_back()`, `resize(n)` (failable like `construct`), `to[@T]()` (the first value's
-  address, for C), and `destruct_all()` (destructs every value, then gives the memory back). A `BorrowedCell[T]` has `load()`,
-  `store(v)`, `getview()` (its `@T`), `take()`, `give_back()` (the memory back to its manager, after a `take()`), `duplicate()`,
+  empty with the same manager), `resize(n)` (failable like `construct`), `to[@T]()` (the first value's
+  address, for C), and `destruct_all()` (destructs every value, then gives the memory back). Its `drop` gives the memory
+  back and keeps the manager, so a later `resize` draws from it again (what a collection's `destruct` does with its
+  storage). A `BorrowedCell[T]` has `load()`, `store(v)`, `getview()` (its `@T`), `take()` (moves the value out, gives the
+  memory back to its manager and leaves the box hollow, so its `drop` afterward does nothing), `duplicate()`,
   `replace(value: new)`. A place borrowed from a manager (`fresh: &Box <- Box.construct(3) from HEAP`) stolen where the value
   goes (`xs.add_last(steal fresh)` on a `List[Box]`) moves the value out and gives the memory back, and into a `List[Box?]` the place itself goes. `Items[T, COUNT]` is the run of
   values whose count is in the type, a record (a value), and `Slots[T, COUNT]` the entity with the same layout for any
@@ -322,7 +336,8 @@ routine start() -> None
 - **Memory from a manager is written with `from`.** `words: &[U64] <- [0] * n from HEAP` (the count
   may be a runtime value: it calls `BorrowedSlice[T].construct(values: @[T], times: U64, manager)`),
   `node: &Node <- (value: 1, next: None()) from HEAP`, and `x: &S64 <- 10 from HEAP` (they
-  call `BorrowedCell[T].construct(value, manager)`). The program gives these back with `drop`. With `try` or `check`
+  call `BorrowedCell[T].construct(value, manager)`). The builder drops these at the end of their scope, and the program
+  may `drop` one earlier. With `try` or `check`
   in front of the value the line receives both failures, the value's own and the manager having no memory:
   `x: &Box? <- try Box.construct(value: 7) from HEAP` gives None, `x: Check[&Box] <- check ... from m` the failure
   (`OutOfMemoryError` or the value's). It calls `BorrowedCell[T].construct_or_fail(value, manager)`: the value is made
@@ -336,14 +351,15 @@ routine start() -> None
   come from a manager: given back exactly once or handed over, empty or not. 3. A `@T` / `@[T]` viewing this
   routine's memory (a STACK place, a frame span) does not leave the routine. 4. A routine that moves memory (the build finds it from the body)
   isn't called while that memory is viewed. 5. A global `&T` / `&[T]` holding memory is changed with
-  `replace`, and the last one is given back when the program ends. The build checks all five, as below, in every routine: an instance of
+  `replace`, and the last one is dropped when the program ends. The build checks all five, as below, in every routine: an instance of
   a generic routine is checked with its type parameters bound (`keep[BorrowedSlice[S64]]` is followed like a routine that takes
   a `BorrowedSlice[S64]`), and an error in one says which instance (`(in keep with T = BorrowedSlice[S64])`). Build errors unless marked.
 - **The group check (rule 2).** A BorrowedCell / BorrowedSlice is an entity, so the entity
   rules apply: it lives in a place, and it ends exactly once on every path (`drop m`, `return m`, handed over with
-  `steal m`, handed over to an entity's field, or the builder's give back of a STACK place). The errors and their fixes:
-  - `'m' holds a &[Byte] (from line N) that hasn't ended when 'r' returns here`: drop it, return it, or hand it
-    on. Also what a path that skips the release gets (dropped in one arm of an `if`, not the other).
+  `steal m`, handed over to an entity's field, or the builder's drop at the end of its scope). The errors and their fixes:
+  - `'m' holds a &[Byte] (from line N) that hasn't ended when 'r' returns here`: what the builder doesn't drop by
+    itself (a value a loop carries, the element a `for` hands out, memory only a copy of its handle still holds)
+    ended on no path. Drop it, return it, or hand it on.
   - `'m' ended already (drop m on line N), and a &[Byte] ends once` (a second `drop`, or a drop after
     `steal m`), and `'m' is used after drop m on line N ended it`: a place dropped or handed over is gone. A `drop`
     leaves the place empty at run time, but the build counts the drop: the place holds nothing again until a value is
@@ -354,9 +370,10 @@ routine start() -> None
     or an entity is changed with `q.m.replace(value: new)` (it gives the old one back first). A `poke` into it is allowed
     only while it holds nothing: after `steal q.m as old`, or when its place was emptied with `zeroinit(1)` and the field
     wasn't poked since.
-  - `'Q.destruct' never gives back 'me.m'`: a `destruct` gives back every field of `me` that holds a BorrowedSlice, a BorrowedCell, or an
-    entity (`drop me.m`, `me.m.give_back()`, `me.m.destruct_all()`, `me.m.take()`, or `steal me.m as old` handed on) on
-    some path. A path that returns early (the field is hollow there) is allowed. Giving one back twice on a path is
+  - `'Q.destruct' never drops 'me.m'` (`LP-S1105`): a `destruct` the type writes replaces the builder's walk over its
+    fields, so it drops every field of `me` that holds a BorrowedSlice, a BorrowedCell, or an entity itself (`drop me.m`,
+    `me.m.destruct_all()`, `me.m.take()`, or `steal me.m as old` handed on) on some path. What it does with a raw `Addr`
+    is the author's and isn't checked. A path that returns early (the field is hollow there) is allowed. Giving one back twice on a path is
     `'me.m' ended already` or `'me.m' is used after drop me.m`.
   - **A view can't be used after its source place has ended.** Every `@T` / `@[T]` carries the places it was made
     from, its sources: `m.getslice()`, `m.getslot(i)`, `stride`, `offset`, `to[@U]()`, a `&T` lent where a `@T` goes,
@@ -365,7 +382,7 @@ routine start() -> None
     holding one, carries the sources of every view and place handed to it (`first(m: m)`, `Pair(a: x.getview(), b:
     1)`, `m.find(x)`), except what goes in with `steal` and what the routine takes as an `Addr` or a plain number. A
     source ends at `drop m`, at `steal m` or when `m` is handed to a routine that takes it by value (a routine that gives
-    a place back takes it by value, so the caller writes `steal`), and at the builder's give back of a STACK place
+    a place back takes it by value, so the caller writes `steal`), and at the builder's drop at the end of a body
     (the end of the body that borrowed it, each pass of a loop body included). Using the view after that, on any path,
     is `'v', a view of 'm', is used after drop m on line N ended it` (`steal m on line N ended it, and whoever took it
     may give it back`, `the body that borrowed 'xs' on line N gave it back at its end (line M)`, M the body's last
@@ -412,9 +429,9 @@ routine start() -> None
     `PoolManager.remove(s)` takes effect at once (every `fetch` of the stamp fails, a second `remove` of it throws `StaleStampError`) and does
     not run the `destruct` or reuse the slot, so an `@E` fetched earlier stays valid. `PoolManager.sweep()` runs the `destruct` of the removed
     entities and frees their slots, a freed slot coming back with a higher generation (time proportional to how many were removed), so call it
-    where no earlier view is in use. The pool is an entity the program ends: `drop pool` (or the builder's give back of its STACK place) makes
+    where no earlier view is in use. The pool is an entity that ends like any other: `drop pool` (or the builder's drop at the end of its scope) makes
     every stamp stale first, then runs each remaining entity's `destruct` (which cleans up only its own entity: a `fetch` of another pooled
-    entity there is a stale stamp) and releases the range. A pool not ended when `start` returns is a build error. One pool at a time: a
+    entity there is a stale stamp) and releases the range. One pool at a time: a
     second `set_up` while one lives is `UnacceptedValueError`. Generations only go up across pools, so a stamp of an ended pool never
     matches a later pool's slot, and when they reach `U32.MAX - 1` the next `set_up` is refused. A slot whose generation reaches `U32.MAX`
     is retired. Entities sit in 4,096-slot chunks per type taken from one reserved range and never move (slot address = range start +
@@ -442,8 +459,10 @@ routine start() -> None
 - **Accesses (rule 2 too).** An access (`Authorized[T]` or `ReadAuthorized[T]` for one value, `AuthorizedSlice[T]` or
   `ReadAuthorizedSlice[T]` for a run, Accesses and waits, below) is taken
   from the `AccessManager`, so the group check follows it like memory from a manager, across routines too:
-  - `'counter' holds an exclusive access (taken on line N) that isn't given back before 'r' returns here`: give it back
-    on every path (`drop held`), or return it (the caller then holds it and gives it back).
+  - An access bound to a name (`held: Authorized[U64] <- counter.get_exclusive_access()`) is given back by the
+    builder's drop at the end of its scope, by `drop held` before that, or returned (the caller then holds it).
+    `'counter' holds an exclusive access (taken on line N) that isn't given back before 'r' returns here` is what an
+    access the builder can't drop by itself gets (one handed to a routine that may keep it, and doesn't).
   - `'held' gives back an exclusive access to 'counter' that was given back already`: an access is given back once.
   - `'held' is the view of an exclusive access to 'counter', given back (...), so another thread or fiber may be
     changing what it sees`: the access and every view made from it (`held.getview()`) are used only while it is held.
@@ -594,14 +613,13 @@ routine start() -> None
     grow(xs)
     again: @S64 = xs.getslot(0)  # take it again after
     ```
-- **A global holding a BorrowedCell / BorrowedSlice (rule 5).** `global CACHE: &[Byte]` (no literal) is a global holding a `BorrowedSlice`,
+- **A global holding a BorrowedCell / BorrowedSlice (rule 5).** `lateinit global CACHE: &[Byte]` (no literal) is a global holding a `BorrowedSlice`,
   hollow until `CACHE.replace(value: ...)`. Only `replace` changes it (it gives the old memory back, then stores the
   new one: `poke` is an error), and no other routine than `start` drops it. Nothing has to: a global lives as long as
-  the program, and its memory is given back when the program ends (the process's memory goes with it, and a device
-  without an OS runs until reset).
+  the program, and the builder drops it where `start` returns (below).
 
   ```lapila
-  global CACHE: &[Byte]
+  lateinit global CACHE: &[Byte]
 
   routine refill(count: U64, fill: Byte) -> None
       CACHE.replace(value: BorrowedSlice[Byte].construct(values: [fill], times: count, manager: HEAP))
@@ -612,8 +630,12 @@ routine start() -> None
       return
   ```
 
-  `BorrowedCell[T].replace` works the same. `BorrowedSlice[T].give_back()` gives the memory back and keeps the manager, so a later
-  `resize` draws from it again (what a collection's `destruct` does with its storage).
+  `BorrowedCell[T].replace` works the same.
+- **The program's end drops the globals.** Where `start` returns, the builder drops each of the program's globals that
+  holds something (memory, an entity), the last one declared first, the reverse of the order they were made in. A
+  global that is hollow there (never filled, or dropped or stolen already) is left alone. The standard library's own
+  globals (the managers' tables, the runtime's state) are not dropped. A preset is read-only data in the program image
+  and holds nothing to drop.
 - **Every memory region has a manager** (all in System/Memory: the protocols, the hosted managers, and the
   ones without an OS). A manager is named for what it manages. A heap's obeys `HeapManageable` (blocks given back in any
   order): `HeapManagerByC` (C's malloc / realloc / free, nothing in front of the blocks) and `HeapManagerByCheckedHeap` (the heap
@@ -701,7 +723,8 @@ routine start() -> None
   slot (a global like that, or a STACK place `x: &Noisy`) ends what the slot held itself: once `v` is made, a slot that
   isn't hollow (all zero, checked at run time, since any routine may fill a global) has its value's `destruct` run
   first. `drop G` and `steal x as old` leave the slot hollow, and `steal G as old inject new` hands the old value to
-  `old`, so nothing is ended twice. The program's end doesn't run a global entity's `destruct`.
+  `old`, so nothing is ended twice. The program's end drops a global entity that isn't hollow (its `destruct` runs), the
+  last global declared first.
 - One C name has one signature: two `@external("c")` routines of one symbol (or an `@export` of it) whose types
   differ are a build error ("'abs' is declared at f.lpa:7:1 as (S32) -> S32, and here as (S64, S64) -> B64: one C
   routine has one signature"). Declare it once, with the types its C declaration has.
@@ -1536,7 +1559,11 @@ routine start() -> None
   `BorrowedCell`, a `BorrowedSlice` or an entity gives back. A type of plain data (numbers, `Bool`, choices,
   addresses, records and variants of those) needs neither: `Point(x: 1, y: 2)` makes it, and its walk is empty, so
   nothing is called. A plain type used where generic code asks for `Destructible[T]` (`destruct_all`) declares a
-  `destruct` that does nothing. A golden test's `<name>.destructs` holds the walks the builder writes for the
+  `destruct` that does nothing. A written `destruct` that only drops the fields one by one is the walk itself: leave it
+  out. `drop` never fails: a `destruct` is a wall, so a failure inside it stops the program on the spot. Cleanup that
+  can fail (a flush, the last write, a close that reports an error) goes in a routine of its own that returns its
+  failure, which the program calls before the `drop` (or before the scope ends).
+  A golden test's `<name>.destructs` holds the walks the builder writes for the
   program's own types as Lapila source, each marked `@derived(implicit)` after a comment naming its type and where it
   is, and `lapila test` compares them.
 
@@ -1561,8 +1588,9 @@ routine start() -> None
   address, `@Counter`: `x: Counter = ...` is a build error ("a Counter is an entity, which lives in a place: x:
   &Counter <- ..."). Its routines take
   `me` by its address, `routine @Counter.f(...)` (`routine Counter.f(...)` is a build error). A parameter that takes one over (`c: Counter`) is a place of the routine
-  inside it, which the routine ends (`drop`, `return`, or hand on). Every entity declares `construct` and has a `destruct` (its own or the builder's walk), and its life ends
-  exactly once on every path, like memory from a manager: the builder's give back of a STACK place, or `drop`.
+  inside it: the routine may end it (`drop`, `return`, or hand on), and the builder drops it on every other way out
+  (the end, an early `return`, a `throw`, a failure passing on, a cancelled work returning). Every entity declares `construct` and has a `destruct` (its own or the builder's walk), and its life ends
+  exactly once on every path, like memory from a manager: the builder's drop at the end of its scope, or `drop`.
 - A manager is named for what it manages. When there are several ways to manage it, the way comes after `By`:
   `HeapManagerByC`, `HeapManagerByCAligned`, `HeapManagerByCheckedHeap`, `PageManagerByOs` (the old `CHeapManager`,
   `AlignedHeapManager`, `CheckedHeapManager`, `OsPageManager` are build errors naming the new name). A manager with no
@@ -1639,7 +1667,8 @@ routine start() -> None
   copies an element, is a build error for an entity element that points at `getslot`.
 - `steal` and `drop` mark what matters: a hand-over and a give-back of something with a release duty (its type writes
   a destruct, or it is a BorrowedCell, a BorrowedSlice, an entity, or a value holding one). `drop x` calls x's destruct, and x ends
-  there. In code that names its types, `steal x` or `drop x` on a value with nothing to give back is a build error
+  there. `drop` is an operator, and the member routine `destruct` is what defines it for a type. A `drop` is written
+  only to end something before its scope does: at the scope's end the builder drops it anyway. In code that names its types, `steal x` or `drop x` on a value with nothing to give back is a build error
   (the value is copied, the drop does nothing): leave the marker out. Where x's written type is a type parameter
   (`T`, `@T`, `List[T]`, `Me` of a generic type), both are always allowed and written once for any T: for an entity T
   they hand it over and end it, for a record T steal is the value and drop does nothing. `drop` on a value that isn't a place
@@ -1920,7 +1949,7 @@ is), and a routine that calls one on a collection parameter moves it too, which 
 | Type | Key operations | Iteration order |
 |------|----------------|-----------------|
 | `Items[T, COUNT]` | a record, `needs RecordType T`: `[a, b]` literal, `getslot`, `getitem` (on a value or a pointer: `[2, 3, 5].getitem(i)`), `setitem`, `swap` (through a pointer), `getview()` (through a pointer, the view of every element), `getslice`, `shift_left`, `shift_right`, `copy`, `take_at(index, end)` (takes the element out and closes the gap) | index |
-| `Slots[T, COUNT]` | an entity, any `T`, the same `[COUNT x T]` layout: `[a, b]` literal (`s: &Slots[Counter, 2] <- [...]`), `getslot`, `getitem` (records only), `swap`, `getview()`, `getslice`, `shift_left`, `shift_right`, `copy`, `take_at`, `destruct_all` (no `destruct`: `drop`, and the builder's give back of a STACK place, drop each element, the last first, and a Slots of plain values ends as one) | index |
+| `Slots[T, COUNT]` | an entity, any `T`, the same `[COUNT x T]` layout: `[a, b]` literal (`s: &Slots[Counter, 2] <- [...]`), `getslot`, `getitem` (records only), `swap`, `getview()`, `getslice`, `shift_left`, `shift_right`, `copy`, `take_at`, `destruct_all` (no `destruct`: `drop`, and the builder's drop at a scope's end, drop each element, the last first, and a Slots of plain values ends as one) | index |
 | `List[T]` | `add_last`, `remove_last`, `getitem`, `setitem`, `getslot`, `swap`, `getslice`, `getview`, `clear`, `reserve` | index |
 | `RotatableList[T]` | `add_first`, `add_last`, `remove_first`, `remove_last`, `getitem`, `setitem`, `getslot`, `swap` | front to back |
 | `Dict[TKey, TValue]` | `setitem` (adds or replaces), `getitem`, `has_key` / `lacks_key`, `remove` | **insertion order (guaranteed)** |
@@ -2016,7 +2045,7 @@ ticket's `destruct()`: it destructs a result nobody retrieved (dropped before `r
 the block goes back, for each ticket of a list too (`give_back_all()`, `drop ts`). More work put on a ticket that still
 holds the last result destructs that result first (no build error, no crash). A retrieved result isn't destructed
 again. The work's routine gets the arguments when it runs, cancelled or not, so it
-ends them (`look(item: Noisy)` drops `item` on its `cancel_requested()` path too, the build checks it), and the
+ends them (`look(item: Noisy)` has `item` dropped by the builder on its `cancel_requested()` path too), and the
 block's destruct only ends what is still in it.
 
 **Threads, fibers, and passable fibers are tickets.** A manager lends one, and it is used in one flow, top to
@@ -2026,9 +2055,10 @@ Thread[S64] <- ..."), `t.put_work(steal work)` (a `Work[T]`, it runs from here o
 waiting, `r: S64 = t.retrieve()`, which waits until the work has finished and gives its result, then more
 work on the same ticket or `drop t`, which gives the ticket back. `t.waitfor(5s).retrieve()` waits at most that long
 (`waitfor(timeout)` takes a `Duration` and holds for the next `retrieve`) and throws `TaskTimeoutError` when the time
-runs out first (`try` gives `None`, or `false` for a `Thread[None]`). Every ticket bound with `<-` is given back with
-`drop` on every path, once, or handed to a routine that takes it (a `List` of tickets): a missing drop, a second one,
-and a use after it are build errors, as for every `<-` binding. `T` is the result type, `Thread[None]` for none
+runs out first (`try` gives `None`, or `false` for a `Thread[None]`). Every ticket bound with `<-` is given back once on
+every path, by `drop t`, the builder's drop at the end of its scope, or handed to a routine that takes it (a `List` of
+tickets): a second drop and a use after it are build errors, as for every `<-` binding. A ticket whose work still runs
+where it is dropped crashes with `TicketBusyError`, so retrieve its work before the scope ends. `T` is the result type, `Thread[None]` for none
 (`t.retrieve()` then only waits). The work runs a copy of its block in memory from the memory manager the thread
 manager holds. An access the work's routine takes
 is borrowed in a name first, handed to the work by that name, and dropped after the ticket's `retrieve`: one borrowed
@@ -2275,8 +2305,9 @@ is failable and throws one of `FsError`'s crashables: a bare call that fails sto
 - file storage: `storage[T](at, write, start, count)` maps the file as cells of `T` (`StorageCell[T]`: `Byte`, or
   `Char`, four bytes each, UTF-32LE), `count` cells from cell `start` (`U64.MAX` to the end), clamped to the whole
   cells the file has. It lends a `FileStorage[T]`, an entity borrowed with `<-` and given back with `drop`, which
-  writes changed pages back and unmaps it (`s: FileStorage[Byte] <- OsFileManager.storage[Byte](...)`, then `drop s`: a
-  missing drop, a second one, a use after it, and `=` are build errors, and there is no `unmap()`). It has `count()`, `s[i]`
+  writes changed pages back and unmaps it (`s: FileStorage[Byte] <- OsFileManager.storage[Byte](...)`, then `drop s` or the
+  builder's drop at the end of its scope: a second drop, a use after it, and `=` are build errors, and there is no
+  `unmap()`). Writing back can fail, and a drop can't: call the failable `flush()` first where a failed write matters. It has `count()`, `s[i]`
   (failable: `IndexOutOfBoundsError`, `InvalidCellError`), `s[i] = v`, `data()`, the failable `flush()`, `prefetch()`,
   `advise_sequential()`, and `take_mapping()` (takes the mapping out, so `drop` unmaps nothing). A cell past `count()` crashes with `IndexOutOfBoundsError`, a
   write to one mapped without `write` and a `Char` cell that isn't a Unicode scalar with `UnacceptedValueError`. It never
@@ -2839,7 +2870,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S1102`: A place filled from a manager the wrong way.
 - `LP-S1103`: A borrow written wrongly (<-, from STACK, &T forms).
 - `LP-S1104`: A global that holds memory, overwritten or never given back.
-- `LP-S1105`: A value with something to give back that the routine never gives back.
+- `LP-S1105`: A destruct the type writes that never drops a field holding memory or an entity.
 - `LP-S1106`: A write into memory that is read-only (a preset, a text literal, a view of one).
 - `LP-S1107`: A write or a reshaping through a shared read access.
 - `LP-S1108`: The address of a thread-local variable kept or handed to another thread.

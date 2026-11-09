@@ -63,7 +63,6 @@ needs RecordType T, U64 COUNT
         drop made.add(steal first.stride(i))
     then
         # every value went into the sorted set: the list's places are hollow
-        drop items
         return made
 
 ### A SortedSet of the values of a Slots, drawing its storage from `manager`. The array is taken over: its values go
@@ -87,7 +86,6 @@ needs U64 COUNT
         drop made.add(steal first.stride(i))
     then
         # every value went into the sorted set: the list's places are hollow
-        drop items
         return made
 
 ### The number of elements currently stored.
@@ -220,7 +218,6 @@ routine @SortedSet[T].has(key: T) -> Bool
 
     there: Bool = me.has(probe)
 
-    drop probe
     return there
 
 ### Whether the one at `key` is not there: the opposite of `has`.
@@ -353,7 +350,6 @@ routine @SortedSetNode[T].insert_nonfull(key: T, manager: @MemoryManager) -> Boo
     values2: (U64, @Me) = when
         full =>
             if not me.split_child(index: slot, manager)
-                drop probe
                 return false
             cmp: S32 = probe.compare(me.keys.getslot(slot))
             go_right: Bool = cmp > 0
@@ -377,7 +373,6 @@ routine @SortedSet[T].add(key: T) -> Bool
     probe: &T <- steal key
 
     if me.has(probe)
-        drop probe
         return false
     manager: @MemoryManager = me.manager.peek()
     root_or_none: @SortedSetNode[T]? = me.root.peek()
@@ -650,7 +645,6 @@ routine @SortedSet[T].remove(key: T) -> Bool
 
     removed: Bool = me.remove(probe)
 
-    drop probe
     return removed
 
 ### Ends the keys of this node and every node below it (drop) and frees the nodes through `manager`. An internal node has

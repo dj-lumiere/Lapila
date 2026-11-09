@@ -49,7 +49,6 @@ needs RecordType T, U64 COUNT
         made.add_last(steal first.stride(i))
     then
         # every value went into the circular list: the list's places are hollow
-        drop items
         return made
 
 ### A RotatableList of the values of a Slots, drawing its storage from `manager`. The array is taken over: its values go
@@ -73,7 +72,6 @@ needs U64 COUNT
         made.add_last(steal first.stride(i))
     then
         # every value went into the circular list: the list's places are hollow
-        drop items
         return made
 
 ### The number of elements currently stored.

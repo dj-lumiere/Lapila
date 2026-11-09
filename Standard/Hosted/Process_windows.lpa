@@ -640,12 +640,6 @@ secret record Launch
 secret common routine PipeReader.construct(pipe: Addr, buffer: CaptureBuffer) -> Me
     return Me(pipe, buffer: steal buffer)
 
-### Gives the buffer's memory back.
-@target(os: "windows")
-secret routine @PipeReader.destruct() -> None
-    drop me.buffer
-    return
-
 ### No handles at all: what a run starts from, so closing them is right on every path.
 ### :returns: The {Handles} with every handle null.
 @target(os: "windows")
@@ -925,7 +919,6 @@ secret routine read_both(out_pipe: Addr, out: @CaptureBuffer, err: @PipeReader,
         helper.put_callable(entry: read_pipe.to[Callable](), args: err)
         read_into(pipe: out_pipe, buffer: out, manager)
         helper.work_slot().wait()
-        drop helper
         return
     if has_err
         read_pipe(err)

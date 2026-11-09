@@ -67,7 +67,6 @@ needs RecordType TKey, RecordType TValue, U64 COUNT
         made.setitem(key, value)
     then
         # every value went into the dict: the list's places are hollow
-        drop items
         return made
 
 ### The number of entries currently stored.
@@ -147,7 +146,6 @@ secret routine @Dict[TKey, TValue].find_value(key: TKey) -> U64
 
     found: U64 = me.find(probe)
 
-    drop probe
     return found
 
 ### Whether the key at `key` is present, read through its place.
@@ -257,9 +255,7 @@ secret routine @Dict[TKey, TValue].rehash(new_capacity: U64) -> Bool
                                 hash: U64 = old_hashes.stride(i).peek()
                                 me.setitem_direct(key: steal old_keys.stride(i),
                                     value: steal old_values.stride(i), hash)
-                        drop fresh
                         return true
-    drop fresh
     return false
 
 ### Makes room for one more entry: the first insertion rehashes into 8 slots, and the tables double once one more
@@ -413,7 +409,6 @@ routine @Dict[TKey, TValue].remove(key: TKey) -> Bool
 
     removed: Bool = me.remove(probe)
 
-    drop probe
     return removed
 
 ### Ends every key and value (drop: one with something to give back gives it back, a plain value or a borrowed

@@ -501,7 +501,6 @@ needs AnyType T
     t: Thread[None] <- get_thread[None]()
     t.put_callable(entry: work, args: arg)
     t.work_slot().wait()
-    drop t
     return
 
 # -- the tickets -------------------------------------------------------------------------------------------------
@@ -939,7 +938,6 @@ secret routine @CoroutineManager.place_ready(fiber: @FiberState) -> None
     word: @U32 = me.wake_word()
     word.fetch_add_unbroken(1)
     wake_all(word)
-    drop held
     return
 
 ### Moves the fibers in the inbox to the ready queue.
@@ -949,7 +947,6 @@ secret routine @CoroutineManager.take_inbox() -> None
 
     until me.inbox.is_empty()
         me.ready.add_last(me.inbox.remove_first())
-    drop held
     return
 
 ### Wakes the fibers whose deadline has come. A timer whose fiber went on before it (its number is no longer the
