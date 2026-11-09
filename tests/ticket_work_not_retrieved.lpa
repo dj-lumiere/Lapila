@@ -1,0 +1,13 @@
+# Work put on a ticket that is still running when start returns is a build error: the builder's drop of the ticket
+# can't end it.
+
+import Hosted
+
+routine seven() -> S64
+    return 7
+
+routine start() -> None
+    t: Thread[S64] <- get_thread[S64]()
+    work: Work[S64] = seven.to[Work]()
+    t.put_work(work)
+    return

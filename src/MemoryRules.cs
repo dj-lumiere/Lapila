@@ -186,6 +186,10 @@ public static class MemoryRules
     /// a frame slot holds.
     public sealed record WorkStarted(string Ticket, string Sees, bool OnFrame, Pos Pos) : Event(Pos);
 
+    /// Work was put on the ticket `Ticket` (`Wait` spells the call that takes its result): it may still run until it is
+    /// waited for, retrieved, stored in memory or handed on, and the builder's drop of the ticket at an exit can't end it.
+    public sealed record WorkPut(string Ticket, string Wait, Pos Pos) : Event(Pos);
+
     /// The ticket `Ticket` was stored in memory (a table of tickets a later loop waits for). Work that sees memory a
     /// frame slot holds is followed no further from here, as a ticket handed to another routine is: the place it is
     /// stored in holds the views its work was handed. Work that sees a frame slot itself still has to be waited for
@@ -319,6 +323,9 @@ public static class MemoryRules
         /// The tickets whose work was handed a view of the frame and isn't waited for yet: what it sees, and where.
         public Dictionary<string, (string Sees, bool OnFrame, Pos Pos)> Working = [];
 
+        /// The tickets work was put on that isn't waited for yet on this path: where, and the call that waits for it.
+        public Dictionary<string, (Pos Pos, string Wait)> Putting = [];
+
         /// The groups that are managers a held view names (HoldsViewOf.Manager).
         public HashSet<string> Managers = [];
 
@@ -339,7 +346,7 @@ public static class MemoryRules
             ContentHolders = ContentHolders.ToDictionary(h => h.Key, h => new HashSet<(string, string, string?)>(h.Value)),
             ViewGroups = new(ViewGroups), HeldViews = HeldViews.ToDictionary(h => h.Key, h => new HashSet<string>(h.Value)),
             CallerHeldEnded = new(CallerHeldEnded), HollowSlots = new(HollowSlots), Filled = new(Filled), Managers = new(Managers),
-            Working = new(Working), Changed = new(Changed), Lent = new(Lent), Moved = new(Moved),
+            Working = new(Working), Putting = new(Putting), Changed = new(Changed), Lent = new(Lent), Moved = new(Moved),
         };
 
         /// The same state with its groups named by the first handle that names each, so states that differ only in
@@ -371,7 +378,7 @@ public static class MemoryRules
                     h => h.Value.Where(rename.ContainsKey).Select(id => rename[id]).ToHashSet()),
                 CallerHeldEnded = new(CallerHeldEnded), HollowSlots = new(HollowSlots), Filled = new(Filled),
                 Managers = Managers.Where(rename.ContainsKey).Select(id => rename[id]).ToHashSet(),
-                Working = new(Working), Changed = new(Changed),
+                Working = new(Working), Putting = new(Putting), Changed = new(Changed),
                 Lent = Lent.Where(l => rename.ContainsKey(l.Key)).ToDictionary(l => rename[l.Key], l => l.Value),
                 Moved = new(Moved),
             };
@@ -395,6 +402,7 @@ public static class MemoryRules
             + "|" + string.Join(";", Filled.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Managers.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Working.Keys.Order(StringComparer.Ordinal))
+            + "|" + string.Join(";", Putting.Keys.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Changed.Order(StringComparer.Ordinal))
             + "|" + string.Join(";", Lent.OrderBy(l => l.Key, StringComparer.Ordinal).Select(l => $"{l.Key}>{l.Value.Ticket}"))
             + "|" + string.Join(";", Moved.Order(StringComparer.Ordinal));
@@ -675,7 +683,11 @@ public static class MemoryRules
                     case WorkStarted ws:
                         state.Working.TryAdd(ws.Ticket, (ws.Sees, ws.OnFrame, ws.Pos));
                         break;
+                    case WorkPut put:
+                        state.Putting[put.Ticket] = (put.Pos, put.Wait);
+                        break;
                     case WorkStored stored:
+                        state.Putting.Remove(stored.Ticket);
                         if (state.Working.TryGetValue(stored.Ticket, out var storedWork) && !storedWork.OnFrame)
                             state.Working.Remove(stored.Ticket);
                         break;
@@ -690,12 +702,14 @@ public static class MemoryRules
                         }
                         break;
                     case WorkKept wk:
+                        state.Putting.Remove(wk.Ticket);
                         state.Working.Remove(wk.Ticket);
                         foreach (var lent in state.Lent.Where(l => l.Value.Ticket == wk.Ticket).Select(l => l.Key).ToList())
                             state.Lent[lent] = state.Lent[lent] with { Ticket = wk.Holder, Wait = wk.Wait };
                         state.HeldViews.Remove(wk.Ticket);
                         break;
                     case WorkWaited ww:
+                        state.Putting.Remove(ww.Ticket);
                         state.Working.Remove(ww.Ticket);
                         foreach (var lent in state.Lent.Where(l => l.Value.Ticket == ww.Ticket).Select(l => l.Key).ToList())
                             state.Lent.Remove(lent);
@@ -795,6 +809,9 @@ public static class MemoryRules
                             Report(Li.UsedWhileLent, ex.Pos, $"the work put on '{ticket}' on line {at.Line} was handed {sees}, and '{routine}' returns "
                                 + $"here without waiting for it, so the work would read memory that is gone: wait for it first, "
                                 + $"{ticket}.retrieve()");
+                        foreach (var (ticket, (putAt, wait)) in state.Putting)
+                            Report(Li.MemoryNotGivenBack, ex.Pos, $"'{ticket}' has work put on it on line {putAt.Line} that may still run when "
+                                + $"'{routine}' returns here: take its result with {wait} first");
                         foreach (var (param, (endedAt, how)) in state.CallerHeldEnded)
                             Report(Li.MemoryNotGivenBack, ex.Pos, $"'{routine}' gives back what '{param}' points at ({how} on line {endedAt.Line}), and its "
                                 + $"caller holds that and gives it back itself. Take '{param}' by value and have the caller hand it "
@@ -857,6 +874,7 @@ public static class MemoryRules
                             if (Sees(holder)) next.HeldViews[holder] = [.. ids];
                         next.Managers.UnionWith(state.Managers);
                         foreach (var (ticket, started) in state.Working) next.Working[ticket] = started;
+                        foreach (var (ticket, put) in state.Putting) next.Putting[ticket] = put;
                         foreach (var (lentGroup, lentTo) in state.Lent) next.Lent[lentGroup] = lentTo;
                         next.Changed.UnionWith(state.Changed);
                         next.HollowSlots.UnionWith(state.HollowSlots);

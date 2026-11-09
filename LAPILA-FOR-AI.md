@@ -2057,8 +2057,14 @@ work on the same ticket or `drop t`, which gives the ticket back. `t.waitfor(5s)
 (`waitfor(timeout)` takes a `Duration` and holds for the next `retrieve`) and throws `TaskTimeoutError` when the time
 runs out first (`try` gives `None`, or `false` for a `Thread[None]`). Every ticket bound with `<-` is given back once on
 every path, by `drop t`, the builder's drop at the end of its scope, or handed to a routine that takes it (a `List` of
-tickets): a second drop and a use after it are build errors, as for every `<-` binding. A ticket whose work still runs
-where it is dropped crashes with `TicketBusyError`, so retrieve its work before the scope ends. `T` is the result type, `Thread[None]` for none
+tickets): a second drop and a use after it are build errors, as for every `<-` binding. Work put on a ticket that may still run
+where the builder's drop ends the ticket is a build error (LP-S1140): `'t' has work put on it on line N that may still run
+when 'start' returns here: take its result with t.retrieve() first` (`t.retrieve_all()` for a list of tickets). It is
+checked on every path to an exit: a `retrieve()` on one branch only leaves the other branch's exit an error, while an
+explicit `drop t`, a `steal`, a ticket handed to a routine or into a list, and a ticket stored in memory end the check
+(a list waits for its tickets' work with `retrieve_all()`). A ticket with no work put on it is dropped silently. An
+explicit `drop t` (or a `put_work` on a ticket still running) while the work runs is not checked and crashes with
+`TicketBusyError`, so retrieve its work first. `T` is the result type, `Thread[None]` for none
 (`t.retrieve()` then only waits). The work runs a copy of its block in memory from the memory manager the thread
 manager holds. An access the work's routine takes
 is borrowed in a name first, handed to the work by that name, and dropped after the ticket's `retrieve`: one borrowed
@@ -2895,7 +2901,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S1134`: A failure that takes memory from a general memory manager.
 - `LP-S1135`: A routine value that may fail given where a plain one is needed.
 - `LP-S1136`: A @throws list that is not a list of crashables.
-- `LP-S1140`: Memory that is overwritten or left behind without being given back.
+- `LP-S1140`: Memory that is overwritten or left behind without being given back, and a ticket whose work may still run where the builder's drop ends it.
 - `LP-S1150`: The arms of a when are in the wrong order or repeat (else twice, else first, else that never runs).
 - `LP-S1151`: A when over a value it cannot take (several flags on at once, a type with no branches).
 - `LP-S1152`: A when case that is not a constant integer, preset or choice member.

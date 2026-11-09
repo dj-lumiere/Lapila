@@ -876,6 +876,9 @@ public sealed partial class FunctionGen
             if (MemOn)
             {
                 // The view of an access handed to work belongs to the work until it is waited for.
+                if (!_routineParams.ContainsKey(ticket) && BoundInRoutine(ticket))
+                    Mem(new MemoryRules.WorkPut(ticket, plan.Receiver is ValueRef direct && IsWorkTicket(InferQuiet(direct))
+                        ? $"{ticket}.retrieve()" : $"{ticket}.retrieve_all()", plan.Pos));
                 foreach (var part in parts)
                     if (part is ValueRef view && _accessViews.Contains(view.Name)) Mem(new MemoryRules.WorkHolds(ticket, view.Name, part.Pos));
                     else if (AccessKey(part) is { } key && _accessGroups.TryGetValue(key, out var group))
