@@ -2,15 +2,15 @@
 
 import Hosted
 
+record Ops
+    op: Callable[(@S64, @S64), @S64]
+
 ### Gives the second.
 ### :param a: One.
 ### :param b: Two.
 ### :returns: The second.
 routine second(a: @S64, b: @S64) -> @S64
     return b
-
-record Ops
-    op: Callable[(@S64, @S64), @S64]
 
 ### Through a routine value read from a field.
 routine start() -> None

@@ -1,7 +1,10 @@
 # A routine value read out of a field names no routine, so a call through it is taken to keep the view it is handed in the list it is handed.
 
-import Hosted
 import Collections
+import Hosted
+
+record Ops
+    op: Callable[(@List[@S64], @S64), None]
 
 ### Gives the second.
 ### :param a: One.
@@ -16,9 +19,6 @@ routine second(a: @S64, b: @S64) -> @S64
 routine keep_in(out: @List[@S64], v: @S64) -> None
     out.add_last(v)
     return
-
-record Ops
-    op: Callable[(@List[@S64], @S64), None]
 
 ### A routine value read from a field keeps a view in a list another argument reaches.
 routine start() -> None
