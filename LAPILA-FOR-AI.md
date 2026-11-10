@@ -429,10 +429,14 @@ routine start() -> None
     `pool.remove(s)` ends the entity right there: its slot's generation goes up (every `fetch` of its stamps fails from then on, a
     second `remove` throws `StaleStampError`), its `destruct` runs, and the slot is free for the next entity of its type. A stamp knows
     its pool (its slot's page names the type's slot store, which is the pool's), so `remove` of a stamp of another pool is
-    `UnacceptedValueError`. **A view fetched before a remove isn't used after it**: a call that may end an entity of any pool
-    (`remove`, ending a pool, or a routine of the program that calls one, found from the bodies) ends every view bound from a `fetch()`
-    before it, so a use after it is a build error (`'v', a view fetched through a stamp, is used after kill(...) on line N, which may
-    end the entity it was fetched from: fetch it again after line N, or use it before`). The pool ends like any entity: `drop pool`
+    `UnacceptedValueError`. **A view fetched before a remove isn't used after it**: `remove` of a `Stamped[T]` ends the views of `T`
+    bound from a `fetch()` before it, and the views of every type `T`'s destruct may remove (followed through the destructs it
+    reaches), so a use after it is a build error (`'v', a view fetched through a stamp, is used after kill(...) on line N, which may
+    end the entity it was fetched from: fetch it again after line N, or use it before`). Views of other types stay usable. The
+    builder can't tell two stamps of one type apart, so every view of `T` ends. A routine of the program that may remove ends what
+    its removes end, and its callers learn that from its body. Ending a pool, and a call through a routine value (the message says
+    "a call through a routine value, which the build can't name the routine of"), may end entities of any type and end every view
+    fetched before. The pool ends like any entity: `drop pool`
     (or the builder's drop at the end of its scope) makes every stamp of it stale first, then runs each remaining entity's `destruct`
     (a `fetch` of another entity of the pool there is a stale stamp), the type that came last first. Each type a pool keeps has its
     own `SlotStore` (System/Memory, `SlotStore.lpa`): slots of one size in 64 KiB pages, each slot an 8-byte generation header and the
@@ -472,8 +476,19 @@ routine start() -> None
     an argument).
   - Only that name gives it back: `=` (`held: @S64 = COUNT.get_exclusive_access()`: "'get_exclusive_access' takes an access, and the
     name whose drop gives it back is bound with '<-'"), a second `<-` name (`again: @S64 <- held`: "a second name for it is a view,
-    again: @S64 = held"), a STACK place of one (`held: &@S64 <- ...`) and handing it over with `steal` are build errors. A
-    routine handed the view (`bump(held)`, a parameter `@U64`) works through it, and its `drop` of it ends that reference alone.
+    again: @S64 = held") and a STACK place of one (`held: &@S64 <- ...`) are build errors. A routine handed the view without
+    `steal` (`bump(held)`, a parameter `@U64`) works through it, and its `drop` of it ends that reference alone.
+  - `steal held` hands the access over with the duty to give it back, and the name is used no more (a use, or a `drop`, after it
+    is a build error). Where it lands gives it back: a parameter `@T` / `%T` of a routine of the program (`close(steal held)`:
+    the parameter's drop, written or at the routine's end, gives it back, and `steal` hands it on again; every call of that
+    routine hands that parameter an access with `steal`, else `LP-S1457`: "'close' takes over the access at 'held' (the call on
+    line N hands it one with steal), ... this one hands a view"), a piece of work's argument (`double.to[Work](value: steal
+    held)`: the work takes it on its own thread and gives it back there, and the work runs once), a new `<-` name
+    (`moved: @T <- steal held`), a returned value (`return steal held`, the caller takes it with `<-`), or a field of an entity
+    whose written destruct drops it (`Me(count: steal count)` with `drop me.count` in `@Session.destruct`, whose drop gives it
+    back; such a field is filled when the entity is made, takes only an access handed over with `steal`, and a field no destruct
+    drops takes none). Anywhere else (a container element, which can't tell an access from a view, a generic parameter) the
+    `steal` is `LP-S1457`. In the AccessManager the access handed over is held by no flow until the place it went to takes it.
   - `'held' gives back an exclusive access to 'counter' that was given back already`: an access is given back once.
   - `'held' is the view of an exclusive access to 'counter', given back (...), so another thread or fiber may be
     changing what it sees`: the access and every view made from it are used only while it is held.
@@ -522,8 +537,8 @@ routine start() -> None
   4).get_exclusive_access()`). Work whose ticket goes into a list (`ts.add_last(steal t)`) works through the access
   until the list waits for it (`ts.retrieve_all()`, `ts.give_back_all()`, `drop ts`): dropping the access before is
   `'...' is handed to the work put on 'ts' on line N, which works through it until it is waited for: give the access
-  back after ts.retrieve_all()`. Each access has its own name (an access isn't kept in a list: only the name that took
-  it gives it back). In the AccessManager's records the handing routine's flow holds it, and the work works through it.
+  back after ts.retrieve_all()`. Each access has its own name (an access isn't kept in a list: a container element can't
+  tell an access from a view). An access handed to the work with `steal` is the work's to give back instead. In the AccessManager's records the handing routine's flow holds it, and the work works through it.
   Work that takes an exclusive access itself (`counter: @U64 <- COUNTER.get_exclusive_access()`, the change
   through `counter`, `drop counter`, for many threads changing one value in turn) changes through that
   access too. Memory handed to the work without `steal`, and every global, counts as shared, even when the routine
@@ -2963,6 +2978,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S1454`: A source file that still has the old extension .te.
 - `LP-S1455`: A command called without what it needs.
 - `LP-S1456`: A write through a %T or %[T], a view that only reads (the me of a @readonly routine is one), or such a view handed where a @T goes.
+- `LP-S1457`: An access handed over with steal to where nothing would give it back, or a place that gives one back handed a view.
 
 ### Warnings (`LP-W`)
 
