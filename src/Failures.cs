@@ -276,6 +276,7 @@ public sealed partial class Compiler
                     .Where(kv => _emittedSymbols.Contains(kv.Key) && _instances.ContainsKey(kv.Key)
                                  && kv.Value.Any(seen => _instances.TryGetValue(seen.Key, out var callee) && ReshapesKey(KnownReshapes(callee)) != seen.Value))
                     .Select(kv => kv.Key))
+                .Concat(Access.StaleTaken().Where(symbol => _emittedSymbols.Contains(symbol) && _instances.ContainsKey(symbol)))
                 .Distinct().ToList();
             if (stale.Count == 0) return;
             if (round > 64) throw new CompileError(Li.FailureSettle, default, "the crashables and the moved memory of routines that call each other don't settle");

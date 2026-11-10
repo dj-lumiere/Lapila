@@ -1,0 +1,21 @@
+# A field holds an access only when its entity's written destruct drops it: elsewhere nothing would give it back.
+
+import Hosted
+
+global COUNTER: &U64
+
+### Keeps a view.
+entity Holder
+    count: @U64
+
+### Makes a holder.
+### :param count: The access.
+### :returns: The holder.
+common routine Holder.construct(count: @U64) -> Me
+    return Me(count: steal count)
+
+### Hands it over.
+routine start() -> None
+    held: @U64 <- COUNTER.get_exclusive_access()
+    h: &Holder <- Holder.construct(count: steal held)
+    return

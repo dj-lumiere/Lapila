@@ -1,0 +1,17 @@
+# An access handed over with steal is given back by the taker alone: dropping the name that handed it is a build error.
+
+import Hosted
+
+global COUNTER: &U64
+
+### Takes the access over.
+### :param held: The access, handed over.
+routine close(held: @U64) -> None
+    return
+
+### Gives it back twice.
+routine start() -> None
+    held: @U64 <- COUNTER.get_exclusive_access()
+    close(steal held)
+    drop held
+    return

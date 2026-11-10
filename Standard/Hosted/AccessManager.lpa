@@ -405,6 +405,144 @@ routine @[T].end_access() -> None
         give_back_range(at: me.data)
     return
 
+### Hands over the access whose view `me` is, which `steal` does: it stays held, by no flow, until the place it went to
+### takes it (`adopt_access`) or gives it back (`end_handed_access`). A program writes `steal m`, never this call.
+### :typeparam T: The value's type.
+### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
+@target(os: not "none")
+routine PointedCell[T].hand_access() -> None
+    hand_range(at: me)
+    return
+
+### Hands over the access whose view `me` is, as for one value. Nothing for a run of no bytes.
+### :typeparam T: The values' type.
+### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
+@target(os: not "none")
+routine @[T].hand_access() -> None
+    if me.count * sizeof[T]() > 0
+        hand_range(at: me.data)
+    return
+
+### Takes the access handed over at `me` for the running flow: what a routine whose parameter takes an access over does
+### when it starts, on whichever thread it runs.
+### :typeparam T: The value's type.
+### :throws: Crashes with `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+routine PointedCell[T].adopt_access() -> None
+    adopt_range(at: me)
+    return
+
+### Takes the access handed over at `me` for the running flow, as for one value. Nothing for a run of no bytes.
+### :typeparam T: The values' type.
+### :throws: Crashes with `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+routine @[T].adopt_access() -> None
+    if me.count * sizeof[T]() > 0
+        adopt_range(at: me.data)
+    return
+
+### Gives back the access handed over at `me` that no flow took: what an entity's destruct does when it drops a field
+### that holds an access. A program writes `drop me.f`, never this call.
+### :typeparam T: The value's type.
+### :throws: Crashes with `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+routine PointedCell[T].end_handed_access() -> None
+    end_handed_range(at: me)
+    return
+
+### Gives back the access handed over at `me`, as for one value. Nothing for a run of no bytes.
+### :typeparam T: The values' type.
+### :throws: Crashes with `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+routine @[T].end_handed_access() -> None
+    if me.count * sizeof[T]() > 0
+        end_handed_range(at: me.data)
+    return
+
+### An access in the table that starts at `start` and that no flow holds (handed over), or None.
+### :param subtree: The subtree's root, or None.
+### :param start: The access's first byte.
+### :returns: The node, or None.
+@target(os: not "none")
+secret routine find_handed(subtree: @AccessNode?, start: U64) -> @AccessNode?
+    if subtree.is_absent()
+        return None()
+    node: @AccessNode = subtree.unwrap()
+    here: U64 = node.start.peek()
+    if start < here
+        return find_handed(subtree: node.left.peek(), start)
+    if start > here
+        return find_handed(subtree: node.right.peek(), start)
+    if node.holder.peek().is_absent()
+        return node
+    found: @AccessNode? = find_handed(subtree: node.left.peek(), start)
+    if found.is_present()
+        return found
+    return find_handed(subtree: node.right.peek(), start)
+
+### Hands over the access the running flow holds at `at`: the node stays in the table with no holder, and the flow's list
+### lets it go.
+### :param at: The access's first byte.
+### :throws: Throws `AccessNotHeldError` when this flow holds no access that starts there.
+@target(os: not "none")
+secret routine hand_range(at: Addr) -> None
+    flow: @AccessFlow = current_flow()
+    lock_table()
+    held: @AccessNode? = find_held(subtree: TABLE_ROOT.load(), start: ptrtoint[Addr, U64](at), flow)
+    if held.is_absent()
+        unlock_table()
+        throw AccessNotHeldError(description: "This hands over an access that this thread or fiber doesn't hold.")
+    held.unwrap().holder.poke(None())
+    unlock_table()
+    note_released(flow, access: at)
+    return
+
+### Takes the access handed over at `at` for the running flow.
+### :param at: The access's first byte.
+### :throws: Throws `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+secret routine adopt_range(at: Addr) -> None
+    flow: @AccessFlow = current_flow()
+    lock_table()
+    handed: @AccessNode? = find_handed(subtree: TABLE_ROOT.load(), start: ptrtoint[Addr, U64](at))
+    if handed.is_absent()
+        unlock_table()
+        throw AccessNotHeldError(description: "No access was handed over here for this routine to take.")
+    node: @AccessNode = handed.unwrap()
+    node.holder.poke(flow)
+    mode: U8 = node.mode.peek()
+    place: SourceLocation = node.place.peek()
+    unlock_table()
+    count: U64 = flow.count.peek()
+    if count < HELD_SLOTS
+        flow.held.getslot(count).poke(HeldAccess(access: at, kind: ACCESS_EXCLUSIVE, mode, place))
+    flow.count.poke(count + 1)
+    return
+
+### Gives back the access handed over at `at` that no flow took, and wakes the flows that wait for it.
+### :param at: The access's first byte.
+### :throws: Throws `AccessNotHeldError` when no access was handed over there.
+@target(os: not "none")
+secret routine end_handed_range(at: Addr) -> None
+    lock_table()
+    handed: @AccessNode? = find_handed(subtree: TABLE_ROOT.load(), start: ptrtoint[Addr, U64](at))
+    if handed.is_absent()
+        unlock_table()
+        throw AccessNotHeldError(description: "This gives back an access that was handed over, and none was handed over here.")
+    node: @AccessNode = handed.unwrap()
+    TABLE_ROOT.store(remove_node(root_or_none: TABLE_ROOT.load(), node))
+    HELD_TOTAL.poke_unbroken(HELD_TOTAL.load() - 1)
+    waiters: U32 = node.waiters.peek()
+    node.word.fetch_add_unbroken(1)
+    node.waiters.poke(0)
+    node.writer_waits.poke(0)
+    node.left.poke(FREE_NODES.load())
+    FREE_NODES.store(node)
+    unlock_table()
+    if waiters != 0
+        wake_all(node.word)
+    return
+
 # -- taking ranges, for code that keeps its own addresses ----------------------------------------------------------
 
 ### Takes an access to the request's bytes in its mode, waiting until `deadline` at most: what the access routines
@@ -1461,6 +1599,9 @@ secret routine search_nodes(subtree: @AccessNode?, flow: @AccessFlow, target: @A
         return true
     if node.start.peek() >= end
         return false
+    # An access handed over and not taken yet (hand_range) has no holder to follow.
+    if node.holder.peek().is_absent()
+        return search_nodes(subtree: node.right.peek(), flow, target, path)
     holder: @AccessFlow = node.holder.peek().unwrap()
     if node.end.peek() > start and holder !== flow and keeps_out(node,
         mode: flow.waiting_mode.peek())

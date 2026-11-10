@@ -1,0 +1,1 @@
+'close' takes over the access at 'held' (the call on line 17 hands it one with steal), and gives it back, so every call hands it an access with steal: this one hands a view

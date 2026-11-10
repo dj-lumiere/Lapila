@@ -1,0 +1,24 @@
+# An access handed over to a piece of work with steal is the work's: it takes it on its own thread and gives it back
+# there, so the routine that took it gives nothing back.
+
+import Hosted
+
+### Doubles the value and gives the access back when it ends.
+### :param value: The access, handed over.
+routine double(value: @U64) -> None
+    value.poke(value.peek() * 2)
+    Console.show("work holds: {AccessManager.held_count()}")
+    return
+
+### Hands an access to work on another thread.
+routine start() -> None
+    n: &U64 <- 21
+    held: @U64 <- n.get_exclusive_access()
+    t: Thread[None] <- get_thread[None]()
+    work: Work[None] = double.to[Work](value: steal held)
+    t.put_work(steal work)
+    t.retrieve()
+    Console.show("{n.load()}, held: {AccessManager.held_count()}")
+    again: @U64 <- n.get_exclusive_access()
+    Console.show("taken again: {again.peek()}")
+    return

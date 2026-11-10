@@ -277,6 +277,7 @@ public static class Li
     public static readonly Code OldExtension = S(1454, "OldExtension", "A source file that still has an old extension, .te or .li.");
     public static readonly Code CommandUsage = S(1455, "CommandUsage", "A command called without what it needs.");
     public static readonly Code ReadOnlyViewWrite = S(1456, "ReadOnlyViewWrite", "A write through a %T or %[T], a view that only reads (the me of a @readonly routine is one), or such a view handed where a @T goes.");
+    public static readonly Code AccessHandedOver = S(1457, "AccessHandedOver", "An access handed over with steal to where nothing would give it back, or a place that gives one back handed a view.");
 
     // Warning, numbers shared with Revare and Mielia
     public static readonly Code UnusedLoopName = W(10, "UnusedLoopName", "A loop named but not used by any break or continue.", shared: true);

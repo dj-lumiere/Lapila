@@ -34,6 +34,9 @@ public sealed partial class FunctionGen
     {
         if (Infer(w.Routine) is not CallableType ct) return null;
         var routine = WorkRoutine(w);
+        var given = WorkArgs(w, routine);
+        for (int i = 0; i < given.Count && i < routine.Params.Count; i++)
+            if (StealsAccess(given[i])) return $"its argument '{routine.Params[i].Name}' is an access handed over with steal";
         for (int i = 0; i < ct.Params.Count && i < routine.Params.Count; i++)
         {
             var t = ct.Params[i];
@@ -348,6 +351,7 @@ public sealed partial class FunctionGen
                 throw Err(Li.WorkArguments, arg.Pos, $"the access for '{routine.Params[i].Name}' is taken right in the work's arguments, and "
                     + $"nothing would give it back: take it in a name first, held: {routine.Params[i].Type} <- ..., hand the work "
                     + "that name, and drop it after the ticket's retrieve");
+            if (routine.Params[i].Type is { Name: "PointedCell" or "PointedSlice", Path: null } && StealsAccess(arg)) _accessSteals.Add((StealExpr)arg);
             ctorArgs.Add(arg);
             ctorNames.Add(fields[i]);
         }
@@ -370,6 +374,15 @@ public sealed partial class FunctionGen
             { ArgNames = ["made", "runner", "discard"] };
         var made = Eval(call, PlainWorkType(w, ct));
         _values.Remove(entryName);
+        // An access handed to the work with steal is the work routine's to give back: its instance is built for that.
+        if (!_c.Prechecking && (recovering?.Symbol ?? _routineValueSymbols.GetValueOrDefault(w.Routine.Pos)) is { } entry)
+            for (int i = 0; i < n; i++)
+                if (routine.Params[i].Type is { Name: "PointedCell" or "PointedSlice", Path: null })
+                {
+                    bool stolen = args[i] is StealExpr st && _accessSteals.Contains(st);
+                    _c.Access.NoteViewArg(entry, i, stolen, args[i].Pos, routine.DisplayName, routine.Params[i].Name);
+                    if (stolen) _c.Access.NoteTaken(entry, i);
+                }
         // The piece of work made here fails what its routine does: nothing when it fails nothing.
         return made.Type is RecordType work ? made with { Type = work.WithFails(fails, $"'{routine.DisplayName}'") } : made;
     }

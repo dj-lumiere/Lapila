@@ -376,9 +376,25 @@ public sealed partial class FunctionGen
     /// out of a place for `steal place as old inject fresh`, which ends nothing: the place gets `fresh` right after.
     private Val EvalSteal(StealExpr s, DType expected)
     {
+        // An access handed over: the name's duty to give it back goes with it, to where the steal lands.
         if (s.Value is ValueRef stolenAccess && _accessBound.Contains(stolenAccess.Name))
-            throw Err(Li.BorrowForm, s.Pos, $"'{stolenAccess.Name}' is the view of an access it took with '<-', and only that name gives the access back: "
-                + $"hand the view on without steal ({stolenAccess.Name}) and drop it here, or let the end of its scope give it back");
+        {
+            if (!_accessSteals.Contains(s))
+                throw Err(Li.AccessHandedOver, s.Pos, $"'{stolenAccess.Name}' holds an access, and steal hands over the duty to give it back, which "
+                    + "only a name bound with '<-', a parameter of a routine of the program written @T or %T, a field an entity's written destruct "
+                    + "drops, a returned value or a piece of work's argument takes: a container element (or a generic parameter) can't tell an access "
+                    + "from a view. Hand the view on without steal, and keep the access in this name");
+            var handed = Eval(s.Value, expected);
+            // A `<-` binding takes the group over by name (NoteAccessBinding): only elsewhere does the steal end it here,
+            // and the access leaves this flow until the place it went to takes it (adopt_access) or gives it back.
+            if (!_accessMoves.Contains(s))
+            {
+                EvalAny(new MethodCallExpr(s.Value, "hand_access", [], [], s.Pos) { Builder = true });
+                Mem(new MemoryRules.End(stolenAccess.Name, $"steal {stolenAccess.Name}", s.Pos));
+            }
+            SetHold(stolenAccess.Name, false);
+            return handed;
+        }
         if (s.Value is ValueRef handedOn)
         {
             _hollowSeen = handedOn;
@@ -1576,6 +1592,14 @@ public sealed partial class FunctionGen
             if (!_routineParams.TryAdd(p.Name, given))
                 throw Err(Li.DuplicateParameter, p.Pos, $"parameter '{p.Name}' is declared twice");
             if (p.Type is { Name: "PointedCell" or "PointedSlice", Path: null } && !p.Implicit) _viewNamesWritten.Add(p.Name);
+            // A parameter a caller hands an access to with steal holds it: its drop gives it back.
+            // A routine that writes `steal p` of its own view parameter hands on an access it took over, so it is one too.
+            if (!_c.Prechecking && !_decl.IsLibrary && p.Type is { Name: "PointedCell" or "PointedSlice", Path: null } && !p.Implicit
+                && (_c.Access.Taken(_inst.Symbol).Contains(i) || StealsOwn(p.Name)))
+            {
+                _takenParams.Add(p.Name);
+                _c.Access.NoteTaken(_inst.Symbol, i);
+            }
             // A `%T` parameter, and the me of a `@readonly` routine, only read.
             if (p.Type.ReadOnly)
                 _readOnlyWhy[p.Name] = p.Name == "me" && p.Implicit
@@ -1621,6 +1645,17 @@ public sealed partial class FunctionGen
                     handed.Add(new MemoryRules.Acquire(_decl.Params[i].Name, "handed in", _decl.Params[i].Pos) { Entity = Entities.HeldIn(_inst.Params[i])?.Name });
                     if (_inst.Params[i] is not PtrType && GivenBackAtExit(_inst.Params[i])) handedIn.Add(_decl.Params[i].Name);
                 }
+                else if (_takenParams.Contains(_decl.Params[i].Name))
+                {
+                    string name = _decl.Params[i].Name;
+                    handed.Add(new MemoryRules.Acquire(name, "handed over", _decl.Params[i].Pos)
+                        { Access = _decl.Params[i].Type.ReadOnly ? "a shared read access" : "an exclusive access", Shown = name });
+                    _accessViews.Add(name);
+                    _takenViews.Add(name);
+                    _viewNames.Add(name);
+                    if (_decl.Params[i].Type.ReadOnly) _readOnlyViews.Add(name);
+                    else _exclusiveRoots.Add(name);
+                }
                 else NoteWorkName(_decl.Params[i].Name, _inst.Params[i], null, _decl.Params[i].Pos, handed);
             // A destruct gives back each field of me that holds memory or an entity: each is followed as a handle.
             if (_decl.Name == "destruct" && _decl.Params is [{ Name: "me" } self, ..] && _inst.Params[0] is PtrType { Pointee: RecordType owner })
@@ -1639,7 +1674,17 @@ public sealed partial class FunctionGen
         // A parameter handed in by value is the routine's to end: the builder drops it at every exit the program didn't
         // end it or hand it on before.
         foreach (var name in handedIn) HoldUntilExit(name, _decl.Params.First(p => p.Name == name).Pos, fromStart: true);
-        foreach (var b in blocks) EmitBlock(b);
+        var adopts = new List<Stmt>();
+        foreach (var name in _takenParams)
+        {
+            _accessBound.Add(name);
+            HoldUntilExit(name, _decl.Params.First(p => p.Name == name).Pos, fromStart: true);
+            // The access was handed over (by this thread or another): the routine's flow takes it first.
+            var at = _decl.Params.First(p => p.Name == name).Pos;
+            adopts.Add(new ExprStmt(new MethodCallExpr(new ValueRef(name, at), "adopt_access", [], [], at) { Builder = true }, at));
+        }
+        var emitted = adopts.Count == 0 ? blocks : [blocks[0] with { Stmts = [.. adopts, .. blocks[0].Stmts] }, .. blocks.Skip(1)];
+        foreach (var b in emitted) EmitBlock(b);
         _c.NoteExpensiveCalls(ExpensiveCallLint.Check(_decl, _expensiveCalls));
         // A place reached through a parameter, `me`, or a global outlives the routine: one is from outside when its root
         // is a parameter or a name the routine doesn't bind.
@@ -2431,7 +2476,8 @@ public sealed partial class FunctionGen
                     throw Err(Li.InvalidDropTarget, e.Pos, $"a value is given back with drop: drop {printer.Expr(direct.Receiver, 0)}");
                 }
                 // An access is given back by the drop of the name that took it.
-                if (e.Value is MethodCallExpr { Name: "end_access", Args.Count: 0, Builder: false } ended && !_decl.IsLibrary)
+                if (e.Value is MethodCallExpr { Name: "end_access" or "hand_access" or "adopt_access" or "end_handed_access", Args.Count: 0, Builder: false } ended
+                    && !_decl.IsLibrary)
                     throw Err(Li.InvalidDropTarget, e.Pos, $"an access is given back by the name that took it with '<-': drop {new Printer().Expr(ended.Receiver, 0)}");
                 // A call that hands back an entity (or a value holding one) has given it to this line: dropping it on
                 // the floor would leak what it holds.
@@ -2452,6 +2498,13 @@ public sealed partial class FunctionGen
                     try { EvalAny(new MethodCallExpr(d.Value, "end_access", [], [], d.Pos) { Builder = true }); }
                     finally { _givingBack = null; }
                     SetHold(accessName.Name, false);
+                    break;
+                }
+                // A field that holds an access, dropped by its entity's written destruct: the drop gives the access back.
+                if (d.Value is FieldExpr { Base: ValueRef { Name: "me" } } accessField && AccessField(accessField) is not null)
+                {
+                    var held = new MethodCallExpr(accessField, "peek", [], [], d.Pos) { Builder = true };
+                    EvalAny(new MethodCallExpr(held, "end_handed_access", [], [], d.Pos) { Builder = true });
                     break;
                 }
                 // Any other view's drop ends that reference alone: what it views goes on.
@@ -5246,6 +5299,7 @@ public sealed partial class FunctionGen
         }
         var missing = fields.Where(f => !given.ContainsKey(f.Name)).Select(f => f.Name).ToList();
         if (missing.Count > 0) throw Err(Li.FieldNotFound, lit.Pos, $"{s} literal is missing field(s): {string.Join(", ", missing)}");
+        NoteAccessFields(s, given);
 
         if (s.TransparentField is not null)
         {
@@ -6847,6 +6901,7 @@ public sealed partial class FunctionGen
         }
         var args = new List<Val>();
         CheckReadOnlyWrite(plan, sig);
+        NoteAccessSteals(plan, sig);
         if (plan.Receiver is not null)
             args.Add(plan.Receiver == access ? Address(plan.Receiver, sig.Params[0], 0) : EvalReceiver(plan.Receiver, sig.Params[0]));
         for (int i = 0; i < fixedCount; i++) args.Add(Address(plan.Args[i], sig.Params[i + offset], ReferenceEquals(plan.Args[i], _claimContents) ? 0 : i + 1));
@@ -7486,6 +7541,9 @@ public sealed partial class FunctionGen
         if (_decl.AnnotationNamed("noreturn") is not null)
             throw Err(Li.ReturnForm, r.Pos, $"'{_decl.DisplayName}' is @noreturn, so no line in it can return: end it with a call that never returns, or a throw, or drop the annotation");
         if (r.Value is { } handedBack) CheckViewedCopy(handedBack, InferQuiet(handedBack), handedBack.Pos);
+        // `return steal m` of an access hands it to the caller as `return m` does.
+        if (r.Value is StealExpr { Value: ValueRef } returnedAccess && StealsAccess(returnedAccess))
+            r = r with { Value = returnedAccess.Value };
         if (r.Value is { } readOnlyBack && !r.IsThrow) CheckReadOnlyNarrowing(readOnlyBack, _decl.ReturnType, $"'{_decl.DisplayName}' returns it as a {_decl.ReturnType}");
         if (_inst.IsFailable)
         {

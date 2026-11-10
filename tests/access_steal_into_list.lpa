@@ -1,0 +1,13 @@
+# A container element can't tell an access from a view, so an access isn't handed over into one.
+
+import Collections
+import Hosted
+
+global COUNTER: &U64
+
+### Hands an access to a list.
+routine start() -> None
+    xs: &List[@U64] <- .construct(HEAP)
+    held: @U64 <- COUNTER.get_exclusive_access()
+    xs.add_last(steal held)
+    return

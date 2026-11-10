@@ -1,1 +1,1 @@
-'held' is the view of an access it took with '<-', and only that name gives the access back: hand the view on without steal (held) and drop it here, or let the end of its scope give it back
+'held' is the view of an exclusive access to 'COUNTER', given back (steal held on line 15), so another thread or fiber may be changing what it sees: use 'held' before line 15, or take the access again

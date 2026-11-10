@@ -34,6 +34,82 @@ public sealed partial class FunctionGen
     /// routine of the program that returns one): their drop gives the access back.
     private readonly HashSet<string> _accessBound = [];
 
+    /// The `steal`s of an access this routine allows where they stand: an argument at a view parameter of a routine of the
+    /// program, a `<-` binding, a return, a piece of work's argument, a field an entity's written destruct drops.
+    private readonly HashSet<StealExpr> _accessSteals = [];
+
+    /// The allowed steals that move an access to a new `<-` name of this routine, which takes the group over.
+    private readonly HashSet<StealExpr> _accessMoves = [];
+
+    /// The parameters a caller hands an access to with `steal` (Compiler.Access.Taken): each holds the access.
+    private readonly HashSet<string> _takenParams = [];
+
+    /// Whether the body writes `steal name` anywhere.
+    private bool StealsOwn(string name) =>
+        _decl.Blocks is { } blocks && blocks.SelectMany(b => Bodies.All(b.Stmts)).SelectMany(Bodies.Exprs).SelectMany(ExprTree.All)
+            .Any(e => e is StealExpr { Value: ValueRef r } && r.Name == name);
+
+    /// Whether `e` is `steal m` of a name that holds an access.
+    private bool StealsAccess(Expr e) => e is StealExpr { Value: ValueRef r } && _accessBound.Contains(r.Name);
+
+    /// The arguments of a call that hand an access over: to a view parameter of a routine of the program, which holds it
+    /// from then on (its instance is built for that), or as the value a poke puts in a field an entity's destruct gives
+    /// back. Anywhere else the steal is a build error (EvalSteal). Every argument at a view parameter is noted, so a
+    /// parameter that takes an access over gets one on every call.
+    private void NoteAccessSteals(CallPlan plan, Instance sig)
+    {
+        if (_c.Prechecking) return;
+        // `holder.f.poke(...)` into a field that holds an access: such a field is filled when the entity is made.
+        if (plan.Decl.Name is "poke" or "poke_into" && (plan.Decl.Name == "poke" ? plan.Receiver : plan.Args.FirstOrDefault()) is FieldExpr into
+            && AccessField(into) is { } fieldOwner)
+            throw Err(Li.AccessHandedOver, plan.Pos, $"'{into.Name}' holds an access ('{fieldOwner}.destruct' gives it back with drop me.{into.Name}), "
+                + $"so it is filled when the entity is made, with steal: Me({into.Name}: steal held)");
+        if (plan.Decl.IsLibrary) return;
+        int offset = plan.Receiver is null ? 0 : 1;
+        for (int i = 0; i < plan.Args.Count && i + offset < plan.Decl.Params.Count; i++)
+        {
+            var param = plan.Decl.Params[i + offset];
+            if (param.Type is not { Name: "PointedCell" or "PointedSlice", Path: null }) continue;
+            bool stolen = StealsAccess(plan.Args[i]);
+            _c.Access.NoteViewArg(sig.Symbol, i + offset, stolen, plan.Args[i].Pos, plan.Decl.DisplayName, param.Name);
+            if (!stolen) continue;
+            _c.Access.NoteTaken(sig.Symbol, i + offset);
+            _accessSteals.Add((StealExpr)plan.Args[i]);
+        }
+    }
+
+    /// The fields of an entity being made that hold an access: the ones its written destruct drops (`drop me.f`) take one
+    /// handed over with `steal`, and only those take one.
+    private void NoteAccessFields(RecordType made, Dictionary<string, Expr> given)
+    {
+        if (_c.Prechecking) return;
+        foreach (var (name, value) in given)
+        {
+            bool access = made.Decl.IsEntity && made.Decl.Fields.FirstOrDefault(f => f.Name == name)?.Type is { Name: "PointedCell" or "PointedSlice", Path: null }
+                && _c.DropsField(made.Decl, name);
+            if (StealsAccess(value))
+            {
+                if (!access)
+                    throw Err(Li.AccessHandedOver, value.Pos, $"'{name}' would hold the access handed over here, and nothing would give it back: a field "
+                        + $"holds an access when its entity's written destruct drops it, routine @{made.Decl.Name}.destruct() with drop me.{name}");
+                _accessSteals.Add((StealExpr)value);
+            }
+            else if (access)
+                throw Err(Li.AccessHandedOver, value.Pos, $"'{made.Decl.Name}.destruct' gives back the access in '{name}' (drop me.{name}), so '{name}' takes "
+                    + $"an access handed over with steal, and this is a view: {name}: steal held");
+        }
+    }
+
+    /// The entity whose written destruct gives back the access a field holds (`drop me.f` in it), or null for a field
+    /// no destruct drops so.
+    private string? AccessField(FieldExpr f)
+    {
+        var holder = InferQuiet(f.Base) is PtrType { Pointee: RecordType r } ? r : InferQuiet(f.Base) as RecordType;
+        if (holder is not { Decl.IsEntity: true } || holder.Decl.Fields.FirstOrDefault(x => x.Name == f.Name) is not { Type: { Name: "PointedCell" or "PointedSlice", Path: null } })
+            return null;
+        return _c.DropsField(holder.Decl, f.Name) ? holder.Decl.Name : null;
+    }
+
     /// The names written as a view (`v: @T = ...`, a parameter `p: %[T]`): a `drop` of one ends that reference alone.
     private readonly HashSet<string> _viewNamesWritten = [];
 
@@ -307,6 +383,17 @@ public sealed partial class FunctionGen
     private void NoteAccessBinding(string name, Expr value, DType t, Pos pos, bool taken = false, bool readOnly = false)
     {
         if (_c.Prechecking || !MemOn) return;
+        // `held: @T <- steal m`: the new name takes the access over.
+        if (taken && value is StealExpr { Value: ValueRef from })
+        {
+            _accessViews.Add(name);
+            _takenViews.Add(name);
+            _viewNames.Add(name);
+            Mem(new MemoryRules.Alias(name, from.Name, pos));
+            if (_readOnlyViews.Contains(from.Name) || readOnly) _readOnlyViews.Add(name);
+            if (_exclusiveRoots.Contains(from.Name)) _exclusiveRoots.Add(name);
+            return;
+        }
         // `m: @T <- f()` with f a routine of the program: f returns an access (checked once every routine is built).
         if (taken && !(_lastAccess is { } took && took.Pos == value.Pos) && CalleeSymbol(value) is { } returning)
         {

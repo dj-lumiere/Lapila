@@ -67,6 +67,64 @@ public sealed class AccessFacts
         lock (_facts) Of(routine).Passes.Add((param, callee, index));
     }
 
+    /// The parameters of each routine instance that take an access over: a caller hands it with `steal`, and the
+    /// parameter's drop (or the end of the routine) gives it back.
+    private readonly Dictionary<string, SortedSet<int>> _taken = [];
+
+    /// What each instance's build read of its taken parameters: an instance built before a caller handed it an access
+    /// is built again (FinishThrows).
+    private readonly Dictionary<string, string> _observedTaken = [];
+
+    /// Every argument a routine of the program got at a view parameter: whether it was an access handed over with
+    /// `steal`, where, and the names a message uses.
+    private readonly List<(string Routine, int Index, bool Stolen, Pos Pos, string Shown, string Param)> _viewArgs = [];
+
+    /// A call hands an access over to the parameter `index` of `routine` with `steal`.
+    public void NoteTaken(string routine, int index)
+    {
+        lock (_facts)
+            if (!_taken.TryGetValue(routine, out var set)) _taken[routine] = [index];
+            else set.Add(index);
+    }
+
+    /// The parameters of `routine` that take an access over, as its build reads them.
+    public IReadOnlySet<int> Taken(string routine)
+    {
+        lock (_facts)
+        {
+            var set = _taken.TryGetValue(routine, out var found) ? new SortedSet<int>(found) : [];
+            _observedTaken[routine] = string.Join(",", set);
+            return set;
+        }
+    }
+
+    /// The instances whose build read fewer taken parameters than calls hand them now.
+    public IEnumerable<string> StaleTaken()
+    {
+        lock (_facts)
+            return _taken.Where(kv => _observedTaken.GetValueOrDefault(kv.Key, "") != string.Join(",", kv.Value)).Select(kv => kv.Key).ToList();
+    }
+
+    /// An argument at a view parameter of a routine of the program.
+    public void NoteViewArg(string routine, int index, bool stolen, Pos pos, string shown, string param)
+    {
+        lock (_facts) _viewArgs.Add((routine, index, stolen, pos, shown, param));
+    }
+
+    /// A parameter that takes an access over gets one on every call: a view without `steal` there would be given back
+    /// by a routine that never took it.
+    public IEnumerable<CompileError> CheckTaken()
+    {
+        List<(string Routine, int Index, bool Stolen, Pos Pos, string Shown, string Param)> args;
+        lock (_facts) args = [.. _viewArgs];
+        foreach (var bad in args.Where(a => !a.Stolen && _taken.TryGetValue(a.Routine, out var set) && set.Contains(a.Index)).Distinct())
+        {
+            var by = args.First(a => a.Stolen && a.Routine == bad.Routine && a.Index == bad.Index);
+            yield return new CompileError(Li.AccessHandedOver, bad.Pos, $"'{bad.Shown}' takes over the access at '{bad.Param}' (the call on line "
+                + $"{by.Pos.Line} hands it one with steal), and gives it back, so every call hands it an access with steal: this one hands a view");
+        }
+    }
+
     /// The `<-` lines that took an access from a routine of the program: `name` on line `pos` from `routine`.
     private readonly List<(string Routine, string Name, Pos Pos)> _boundFrom = [];
 
@@ -82,6 +140,7 @@ public sealed class AccessFacts
     {
         List<(string Routine, string Name, Pos Pos)> lines;
         lock (_facts) lines = [.. _boundFrom];
+        foreach (var e in CheckTaken()) yield return e;
         foreach (var (routine, name, pos) in lines.Distinct())
             if (!ReturnsAccess(routine))
                 yield return new CompileError(Li.BorrowForm, pos, $"'{name}' is bound with '<-' as an access, and the routine on the right returns a "

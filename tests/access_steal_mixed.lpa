@@ -1,0 +1,18 @@
+# A parameter that takes an access over gets one with steal on every call: a view handed there would be given back by a
+# routine that never took it.
+
+import Hosted
+
+global COUNTER: &U64
+
+### Takes the access over.
+### :param held: The access, handed over.
+routine close(held: @U64) -> None
+    return
+
+### Hands it a view once.
+routine start() -> None
+    held: @U64 <- COUNTER.get_exclusive_access()
+    close(held)
+    close(steal held)
+    return

@@ -1,0 +1,34 @@
+# An access handed over with steal into a field of an entity is the entity's: the field holds it when the entity's
+# written destruct drops it, and that drop gives it back.
+
+import Hosted
+
+global COUNTER: &U64
+
+### Holds an exclusive access to the counter while it lives.
+entity Session
+    count: @U64
+
+### Makes a session that takes the access over.
+### :param count: The access, handed over.
+### :returns: The session.
+common routine Session.construct(count: @U64) -> Me
+    return Me(count: steal count)
+
+### Gives the access back.
+routine @Session.destruct() -> None
+    Console.show("session ends")
+    drop me.count
+    return
+
+### Keeps an access in an entity.
+routine start() -> None
+    held: @U64 <- COUNTER.get_exclusive_access()
+    session: &Session <- Session.construct(count: steal held)
+    session.count.peek().poke(5)
+    Console.show("held: {AccessManager.held_count()}")
+    drop session
+    Console.show("held: {AccessManager.held_count()}")
+    again: @U64 <- COUNTER.get_exclusive_access()
+    Console.show("taken again: {again.peek()}")
+    return

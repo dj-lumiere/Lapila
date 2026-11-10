@@ -131,6 +131,13 @@ public sealed partial class FunctionGen
             var slot = new TypeRef("PointedCell", [new TypeArgType(elem)], written.Pos);
             return (new BindStmt(b.Name, slot, new ClaimExpr(b.Pos) { Contents = value }, b.Pos) { Source = b.Source }, true);
         }
+        // `held: @T <- steal m`: the access moves to a new name, which gives it back from then on.
+        if (written is { Name: "PointedCell" or "PointedSlice", Path: null } && fromManager is null && value is StealExpr st && StealsAccess(st))
+        {
+            _accessSteals.Add(st);
+            _accessMoves.Add(st);
+            return (new BindStmt(b.Name, written, value, b.Pos) { Source = b.Source, TakesAccess = true }, false);
+        }
         // `m: @T <- p.get_exclusive_access()`: an access, whose view the name is.
         if (written is { Name: "PointedCell" or "PointedSlice", Path: null } && fromManager is null
             && value is CallExpr or NsCallExpr or MethodCallExpr && AccessTaker(value) is { } taker)

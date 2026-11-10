@@ -1,15 +1,15 @@
-# Only the name that took an access gives it back: handing it over with steal is a build error.
+# An access handed over with steal is the taker's: the name it was taken in is used no more.
 
 import Hosted
 
 global COUNTER: &U64
 
-### Gives the access back.
-### :param held: An exclusive access.
+### Takes the access over.
+### :param held: The access, handed over.
 routine close(held: @U64) -> None
-    drop held
     return
 
+### Uses the name after handing the access over.
 routine start() -> None
     held: @U64 <- COUNTER.get_exclusive_access()
     close(steal held)

@@ -1,0 +1,29 @@
+# steal hands an access over with the duty to give it back: the routine that takes it gives it back where it ends (or
+# hands it on again with steal), and the caller gives nothing back.
+
+import Hosted
+
+global COUNTER: &U64
+
+### Adds one and keeps the access to the end, which gives it back.
+### :param held: The access, handed over.
+routine bump(held: @U64) -> None
+    held.poke(held.peek() + 1)
+    return
+
+### Hands the access on again.
+### :param held: The access, handed over.
+routine pass_on(held: @U64) -> None
+    bump(steal held)
+    Console.show("passed on, held here: {AccessManager.held_count()}")
+    return
+
+### Hands an access over twice.
+routine start() -> None
+    held: @U64 <- COUNTER.get_exclusive_access()
+    bump(steal held)
+    Console.show("{COUNTER.load()}, held: {AccessManager.held_count()}")
+    again: @U64 <- COUNTER.get_exclusive_access()
+    pass_on(steal again)
+    Console.show("{COUNTER.load()}, held: {AccessManager.held_count()}")
+    return

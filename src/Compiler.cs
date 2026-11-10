@@ -98,6 +98,19 @@ public sealed partial class Compiler
         _allRoutines.FirstOrDefault(r => r.Name == "destruct" && r.Owner?.Name == entity.Name && r.Module == entity.Module
             && r.Blocks is { Count: > 0 } && r.AnnotationNamed("derived") is null);
 
+    /// Whether the destruct `entity` writes drops its field `field` (`drop me.field`): a view field it drops holds an
+    /// access, which that drop gives back.
+    public bool DropsField(RecordDecl entity, string field) =>
+        WrittenDestruct(entity) is { Blocks: { } blocks } && blocks.Any(b => DropsIn(b.Stmts, field));
+
+    private static bool DropsIn(IEnumerable<Stmt> body, string field) => body.Any(s => s switch
+    {
+        DropStmt { Value: FieldExpr { Base: ValueRef { Name: "me" }, Name: var name } } => name == field,
+        IfStmt i => DropsIn(i.Then, field) || (i.Else is { } otherwise && DropsIn(otherwise, field)),
+        WhenStmt w => w.Arms.Any(a => DropsIn(a.Body, field)),
+        _ => false,
+    });
+
     /// The deferred memory checks, run after Escapes.Verify.
     private List<CompileError> CheckKeptViews() =>
         _keptViewChecks.SelectMany(check => check(new MemoryRules.Effects(Escapes.KeepsInto, Access.ReturnsAccess, Access.GivesBack)))

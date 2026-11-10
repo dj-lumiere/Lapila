@@ -1,0 +1,1 @@
+'held' gives back an exclusive access to 'COUNTER' that was given back already (steal held on line 15)

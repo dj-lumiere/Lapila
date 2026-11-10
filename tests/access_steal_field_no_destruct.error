@@ -1,0 +1,1 @@
+'count' would hold the access handed over here, and nothing would give it back: a field holds an access when its entity's written destruct drops it, routine @Holder.destruct() with drop me.count
