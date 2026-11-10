@@ -193,7 +193,7 @@ routine start() -> None
   (build error: "a &List[S64] is a place borrowed from a manager, and '=' only binds a value or a view: xs:
   &List[S64] <- value"), and `x: S64 <- 3` is a build error ("'<-' borrows: n: &S64 <- value borrows a place and puts
   the value in it, and n: S64 = value binds a value"), as is `x: @S64 <- 3` ("@S64 only views memory, and '<-' borrows
-  a place: n: &S64 <- value"). A call that returns the BorrowedCell / BorrowedSlice itself is bound with `<-` too: `m: &[U8] <-
+  a place: n: &S64 <- value"). The one `<-` of a view takes an access: `held: @S64 <- COUNT.get_exclusive_access()` (Accesses, below). A call that returns the BorrowedCell / BorrowedSlice itself is bound with `<-` too: `m: &[U8] <-
   BorrowedSlice[U8].construct(count: 4, manager: HEAP)` (the name holds what the manager lent). `local` is not a statement (a
   line starting with it is a build error that shows both forms), and is an ordinary name otherwise.
 - **The builder drops what a scope still holds (SBRM).** Every value has a manager (a heap's, `PAGES`, or the running
@@ -403,7 +403,7 @@ routine start() -> None
     error when the view's source can end (a place of the routine or its caller): `me.next.poke(t) keeps 't' (a view the caller handed in) in a field of the
     entity Node, which any routine that reaches the entity may use later, and the build can't compare those later uses
     with where that view's place is given back: keep a Stamped of the entity there ...`. Keep a `Stamped[E]` of an
-    entity in the PoolManager (below) for a link that may outlive what it points at (a tree node's parent), make the field an `&E?` when
+    entity in a StampManager (below) for a link that may outlive what it points at (a tree node's parent), make the field an `&E?` when
     one holder keeps the value, or hand the view as an argument to the routines that use it. An `Addr` (turned back
     with `.to[@T?]()` and a `when`) is for links the program keeps right itself with no check (the runtime's
     scheduler queues). An entity made with a view (`Me(source: text, ...)`, a matcher over text) is a value
@@ -416,79 +416,97 @@ routine start() -> None
     `SourceLocation` (the builder's read-only text) don't count as views here.
   - **`typeid[T]()`** (a builder query like `sizeof`, also in presets): a `U32` that is a hash of the type's name (FNV-1a, never 0), the
     same in every module of one program including the library base, and a build error when two types of one build share it.
-  - **`PoolManager` and `Stamped[T]`** (System/Memory, `PoolManager.lpa`): the way to link entities that must see when one ends. The
-    entities a link needs go in the pool: `pool: &PoolManager <- PoolManager.set_up(memory: PAGES)` in `start` reserves a range of address space
-    (a manager that doesn't handle pages is refused with a message that says to pass `PAGES`), `s = PoolManager.add(e)` hands an entity of
-    any type over and gives its `Stamped[E]`, 8 bytes (a slot and its generation) copied for free, kept in a field, a global, a list.
-    `s.fetch()` gives the entity's `@E`, or throws `StaleStampError` once it was removed or the pool ended: a bare `fetch()` crashes,
-    `try s.fetch()` gives None. There is no empty `Stamped[E]` (its `slot` and `generation` are `secret`): a link that may be missing is a
-    `Stamped[E]?`, which is `@none_is_zero` (the stamp alone, the all-zero stamp None, no flag), taken with one `try link.fetch()` (None for no
-    link and for a removed entity), and `check link.fetch()` tells `AbsentValueError` (no link) from `StaleStampError`. Two stamps compare with
-    `===` / `!==` (the same slot and generation, declared as `same` / `notsame`). A stamp has no `==` and is no `Set` or `Dict` key. It doesn't
-    keep the entity alive, and the view `fetch()` gives has a source the builder doesn't follow.
-    `PoolManager.remove(s)` takes effect at once (every `fetch` of the stamp fails, a second `remove` of it throws `StaleStampError`) and does
-    not run the `destruct` or reuse the slot, so an `@E` fetched earlier stays valid. `PoolManager.sweep()` runs the `destruct` of the removed
-    entities and frees their slots, a freed slot coming back with a higher generation (time proportional to how many were removed), so call it
-    where no earlier view is in use. The pool is an entity that ends like any other: `drop pool` (or the builder's drop at the end of its scope) makes
-    every stamp stale first, then runs each remaining entity's `destruct` (which cleans up only its own entity: a `fetch` of another pooled
-    entity there is a stale stamp) and releases the range. One pool at a time: a
-    second `set_up` while one lives is `UnacceptedValueError`. Generations only go up across pools, so a stamp of an ended pool never
-    matches a later pool's slot, and when they reach `U32.MAX - 1` the next `set_up` is refused. A slot whose generation reaches `U32.MAX`
-    is retired. Entities sit in 4,096-slot chunks per type taken from one reserved range and never move (slot address = range start +
-    slot * 16), and `typeid[T]()` names the type in the pool's table. A type aligned past 8 bytes is refused. The pool is not locked.
-    **The pool belongs to one thread** (the rule is a global's, `LP-S448`): a routine that work runs on another thread, or one it calls,
-    that sets the pool up, `add`s, `fetch`es, `remove`s, `sweep`s or ends it is a build error that names the call chain
-    (`t.put_work(work) runs 'work' on another thread, and it uses the pool (work calls read, line 19: s.fetch()): a PoolManager belongs to one
-    thread ...`). A graph that threads share goes behind a manager such as `Guarded` or under an exclusive access. A call through a routine value is followed to the routines the value is made of (`f = tidy.to[Callable]()` in the same
+  - **`StampManager` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
+    A pool is an entity the program holds, as a local or in a field: `pool: &StampManager <- .construct(manager: HEAP)` (the manager gives
+    the pool's records). `s = pool.add(e)` hands an entity of any type over (a record too) and gives its `Stamped[E]`, 16 bytes (the
+    entity's address and its slot's generation, a U64; on a 32-bit target the address is padded to 8 bytes), copied for free, kept in a
+    field, a global, a list. `s.fetch()` gives the entity's `@E`, or throws `StaleStampError` once it was removed or its pool ended: a
+    bare `fetch()` crashes, `try s.fetch()` gives None. There is no empty `Stamped[E]` (its fields are `secret`): a link that may be
+    missing is a `Stamped[E]?`, which is `@none_is_zero` (the stamp alone, the all-zero stamp None, no flag), taken with one
+    `try link.fetch()` (None for no link and for an ended entity), and `check link.fetch()` tells `AbsentValueError` (no link) from
+    `StaleStampError`. Two stamps compare with `===` / `!==` and with `==` (the same entity: address and generation), and a stamp
+    hashes by the entity it names, so it is a `Set` or `Dict` key (`seen: &Set[Stamped[Node]]`). A stamp doesn't keep the entity alive.
+    `pool.remove(s)` ends the entity right there: its slot's generation goes up (every `fetch` of its stamps fails from then on, a
+    second `remove` throws `StaleStampError`), its `destruct` runs, and the slot is free for the next entity of its type. A stamp knows
+    its pool (its slot's page names the type's slot store, which is the pool's), so `remove` of a stamp of another pool is
+    `UnacceptedValueError`. **A view fetched before a remove isn't used after it**: a call that may end an entity of any pool
+    (`remove`, ending a pool, or a routine of the program that calls one, found from the bodies) ends every view bound from a `fetch()`
+    before it, so a use after it is a build error (`'v', a view fetched through a stamp, is used after kill(...) on line N, which may
+    end the entity it was fetched from: fetch it again after line N, or use it before`). The pool ends like any entity: `drop pool`
+    (or the builder's drop at the end of its scope) makes every stamp of it stale first, then runs each remaining entity's `destruct`
+    (a `fetch` of another entity of the pool there is a stale stamp), the type that came last first. Each type a pool keeps has its
+    own `SlotStore` (System/Memory, `SlotStore.lpa`): slots of one size in 64 KiB pages, each slot an 8-byte generation header and the
+    entity, reused at once. A page whose slots are all free gives its memory back to the operating system past its first 4 KiB, and a
+    page is never freed (an ended pool's pages wait on a list of spare pages for a later store with slots of the same size), so a
+    fetch of a stale stamp always reads a generation that isn't the stamp's. A type aligned past 16 bytes is refused. Several pools
+    live at once. The pool needs an operating system (its pages come from the C library). Revare's entity stores are the same
+    `SlotStore` (Ingrid exports its routines under C names).
+    **A pool belongs to one thread** (the rule is a global's, `LP-S448`): a routine that work runs on another thread, or one it calls,
+    that makes a pool, `add`s, `fetch`es, `remove`s or ends one is a build error that names the call chain
+    (`t.put_work(work) runs 'work' on another thread, and it uses the pool (work calls read, line 19: s.fetch()): a StampManager belongs
+    to one thread ...`). A graph that threads share goes behind a manager such as `Guarded` or under an exclusive access. A call through a routine value is followed to the routines the value is made of (`f = tidy.to[Callable]()` in the same
     routine); a value the build can't name (a global, a field, a parameter) counts as any routine the program turns into a routine value, so
-    a work that calls one while some such routine uses the pool is the same error.
-  - **`@entity_link`** on a record marks it as a way to change an entity: its `fetch()` gives the entity's view, so the view of a
-    shared read access reads it where it is and no further, and the record (or anything holding it) is not copied out of such a view. `Stamped`
+    a work that calls one while some such routine uses a pool is the same error.
+  - **`@entity_link`** on a record marks it as a way to change an entity: its `fetch()` gives the entity's view, so a view that only
+    reads (`%T`, a shared read access) reads it where it is and no further, and the record (or anything holding it) is not copied out of such a view. `Stamped`
     has it, and a user record with it is treated the same; a record merely named `Stamped` is not.
-  - **`@none_is_zero`** on a record whose first field is an integer that is never 0 for a value makes `R?` the record alone, with the all-zero
+  - **`@none_is_zero`** on a record whose first field is an integer or an address that is never 0 for a value makes `R?` the record alone, with the all-zero
     record as None (no flag): `when`, `try`, `is_absent()` and `unwrap()` work as on any Optional.
   - `'m' came from the manager 'arena', which ended at drop arena on line N`: memory (or a collection) taken through a
     manager's table (`[0] * n from table`, `.construct(table)`) goes back to that manager, so the manager and its table
     outlive it. Give `m` back first.
-  - `'kill' gives back what 'm' points at (drop m on line N), and its caller holds that`: a routine drops (or steals) what a
-    `@BorrowedCell[T]` / `@BorrowedSlice[T]` / `@E` parameter points at and returns without putting a value back. The caller still
-    holds it. Take it by value (the caller hands it over with `steal`), or poke a value back before returning.
-    `destruct` and `destruct_all` are the routines that end `me`.
+  - `drop v` of a name written as a view (`v: @T = ...`, a parameter `p: @E`, `%T`, `@[T]`) ends that reference alone: what it views
+    goes on, and the drop writes no code. Only the view of an access the name took with `<-` gives something back (below), and
+    `drop me` in a routine of a type ends `me`. A routine ends what a parameter points at only through a routine that ends it
+    (`steal p.getslot(0) as old`, a `take()`), and `'kill' gives back what 'm' points at (...), and its caller holds that` is what
+    one that does that without putting a value back gets. `destruct` and `destruct_all` are the routines that end `me`.
   The check follows one routine's flow, and a routine it calls through what that routine says about its parameters
   (by value: taken over, `@T`: the caller keeps it) and what its body does with them (what it keeps where).
-- **Accesses (rule 2 too).** An access (`Authorized[T]` or `ReadAuthorized[T]` for one value, `AuthorizedSlice[T]` or
-  `ReadAuthorizedSlice[T]` for a run, Accesses and waits, below) is taken
-  from the `AccessManager`, so the group check follows it like memory from a manager, across routines too:
-  - An access bound to a name (`held: Authorized[U64] <- counter.get_exclusive_access()`) is given back by the
-    builder's drop at the end of its scope, by `drop held` before that, or returned (the caller then holds it).
-    `'counter' holds an exclusive access (taken on line N) that isn't given back before 'r' returns here` is what an
-    access the builder can't drop by itself gets (one handed to a routine that may keep it, and doesn't).
+- **Accesses (rule 2 too).** An access is the view a name takes from the `AccessManager` with `<-` (Accesses and waits,
+  below): `held: @T <- p.get_exclusive_access()`, `reading: %T <- p.get_shared_read_access()`, and `@[T]` / `%[T]` for a run. The
+  group check follows it like memory from a manager, across routines too:
+  - The name's drop gives the access back: the builder's drop at the end of its scope, `drop held` before that, or a return
+    (the routine returns a `@T` and the caller takes it with `<-`: `held: @U64 <- open_counter()`; a `<-` from a routine that
+    returns a view and no access is a build error that says to bind it with `=`). `'counter' holds an exclusive access (taken on
+    line N) that isn't given back before 'r' returns here` is what an access no name took gets (one taken with `=`, or right in
+    an argument).
+  - Only that name gives it back: `=` (`held: @S64 = COUNT.get_exclusive_access()`: "'get_exclusive_access' takes an access, and the
+    name whose drop gives it back is bound with '<-'"), a second `<-` name (`again: @S64 <- held`: "a second name for it is a view,
+    again: @S64 = held"), a STACK place of one (`held: &@S64 <- ...`) and handing it over with `steal` are build errors. A
+    routine handed the view (`bump(held)`, a parameter `@U64`) works through it, and its `drop` of it ends that reference alone.
   - `'held' gives back an exclusive access to 'counter' that was given back already`: an access is given back once.
   - `'held' is the view of an exclusive access to 'counter', given back (...), so another thread or fiber may be
-    changing what it sees`: the access and every view made from it (`held.getview()`) are used only while it is held.
+    changing what it sees`: the access and every view made from it are used only while it is held.
   - `this takes a shared read access to 'counter', and an exclusive access to it is held already`: taking a second
     access to a place the path holds one to would wait for itself.
-  - `view is the view of a shared read access, which reads only`: a `poke` (or any write) through the view of a
-    `ReadAuthorized[T]`, or handing it to a routine that may move memory, is a build error. Nothing reachable from that view can
-    be changed, a stamp's entity included: `fetch()` on a stamp read through the view (`view.target.peek().fetch()`)
-    gives a view that reads only, so `view.target.peek().fetch().value.poke(5)` is the same error. A value that holds a
-    way to change an entity (a `Stamped[E]`, or a record, tuple, optional or array with one) is read where it is and not
-    copied out of the view, in a binding, an argument or a `return`: `'copy' holds a way to change an entity (target:
-    Stamped[Node]) and is read through the view of a shared read access, which reads only`. Peek the stamp in the view
-    and fetch it there, or take exclusive access (`get_exclusive_access`) to keep it.
-  - A routine that returns an access hands it to its caller, and a routine that gives back an access it is handed
-    (`close(held)`) ends the caller's at the call. The build works both out from the bodies.
+  - A shared read access is a `%T`, which reads only (`%T and @readonly`, below): a write through it, or through anything reached
+    from it, is a build error, a stamp's entity included (`view.target.peek().fetch().value.poke(5)` is `... is reached through a
+    %Link, a view that only reads, and 'poke' writes through it`). A value that holds a way to change an entity (a `Stamped[E]`, or
+    a record, tuple, optional or array with one) is read where it is and not copied out of it into a binding, an argument or a
+    `return`: `'copy' holds a way to change an entity (target: Stamped[Node]) and is read through ...`. Peek the stamp in the view
+    and fetch it there (it gives a `%E`), or take exclusive access to keep it.
+- **`%T` and `@readonly`.** `%T` (`%[T]` for a run) is a view that only reads: the `@T` / `@[T]` through which nothing is
+  written. A `@T` goes where a `%T` is taken, never the other way: `%T` to a parameter, a binding or a result written `@T` is a
+  build error, even when the routine only reads (`LP-S1456`: "c is a %Counter, a view that only reads, and 'count_of' takes it as
+  'c', a @Counter, which could write through it: a %Counter becomes no @Counter"), and so is a `poke` (or any write, or a
+  `@reshaping` routine) through it or a part of it. A standard library routine counts as writing only where it writes. A routine
+  marked `@readonly` on a type takes `me` as `%Me`: `@readonly routine Counter.total() -> S64`, and changing `me` inside is the same
+  build error ("me.count is reached through the me of the @readonly routine 'Counter.bump', which only reads"). (On an
+  `@external("asm")` routine `@readonly` says the instruction doesn't write memory.) A field may be written `%T`, and so may a
+  routine's result. What a `when` takes out of a `%T` is read only too, so a stamp peeked through one fetches a view that only
+  reads. `%T` is written where a parameter, a binding, a result or a field is a view, not inside another type (`%S64?` and
+  `List[%T]` are build errors that say to write the `@` form). In a value, `%count` stays the old spelling and is refused.
 - **What thread work changes.** Work on a thread or a passable fiber (`t.put_work(work)` on a `Thread` or a
   `PassableFiber` ticket) runs on another thread, next to the routine that started it and other work. The memory it
   changes (in its own body or in the program's routines it calls) is one of three, else it is a build error: memory it
-  was handed with `steal` (its own from then on), an `@Authorized[T]` lent to it, or an `Unbroken[T]` (changed with
-  its routines), so the work routine's parameters show what it changes (`routine collect_dues(book:
-  Authorized[Ledger], rate: U64)`). The routine borrows the access in a name first, hands it to the work, retrieves,
-  and then gives it back (an access borrowed right in the work's arguments is a build error, since no name gives it
+  was handed with `steal` (its own from then on), the view of an exclusive access it is handed, or an `Unbroken[T]`
+  (changed with its routines), so the work routine's parameters show what it changes (`routine collect_dues(book:
+  @Ledger, rate: U64)`). The routine takes the access in a name first, hands its view to the work, retrieves,
+  and then gives it back (an access taken right in the work's arguments is a build error, since no name gives it
   back):
 
   ```lapila
-  held: Authorized[Ledger] <- ledger.get_exclusive_access()
+  held: @Ledger <- ledger.get_exclusive_access()
   t: Thread[None] <- get_thread[None]()
   dues: Work[None] = collect_dues.to[Work](book: held, rate: 3)
   t.put_work(steal dues)
@@ -499,19 +517,15 @@ routine start() -> None
 
   Between `put_work` and the retrieve the handing routine neither uses nor gives back the access (`'held' is handed to
   the work put on 't' on line N, which changes it until it is waited for`), and it hands one access to one piece of
-  work at a time. The work's parameter is the access's address (`routine double(value: @Authorized[U64])`), so the
-  work is handed the access's address and reaches it through its place: moving it out of that place before the work is
-  waited for is a build error (`'held' is in use by the work put on 't' on line N, which reaches it through its place, and it
-  leaves that place here (...)`). A run of values goes to the work as its run's access (`routine double_all(part:
-  @AuthorizedSlice[S64])`, `held: AuthorizedSlice[S64] <- view.getslice(start: 0, count: 4).get_exclusive_access()`).
-  Work whose ticket goes into a list (`ts.add_last(steal t)`) works through the access until the list waits for it
-  (`ts.retrieve_all()`, `ts.give_back_all()`, `drop ts`). Accesses taken in a loop body go into a list of their own
-  first (`halves.add_last(steal held)`, a `List[AuthorizedSlice[S64]]`), and each piece of work is lent its element
-  in a second loop (`part: halves.getslot(i)`), so the list doesn't grow while work reaches it. The list gives each
-  access back when it is dropped, after the tickets' list: `'halves' is handed to the work put on 'ts' on line N,
-  which works through it until it is waited for: give the access back after ts.retrieve_all()`. In the AccessManager's records the handing routine's flow holds it, and the work works through it.
-  Work that takes an exclusive access itself (`counter: Authorized[U64] <- COUNTER.get_exclusive_access()`, the change
-  through `counter.getview()`, `drop counter`, for many threads changing one value in turn) changes through that
+  work at a time. The work's parameter is the access's view (`routine double(value: @U64)`). A run of values goes to the
+  work as its run's access (`routine double_all(part: @[S64])`, `low: @[S64] <- view.getslice(start: 0, count:
+  4).get_exclusive_access()`). Work whose ticket goes into a list (`ts.add_last(steal t)`) works through the access
+  until the list waits for it (`ts.retrieve_all()`, `ts.give_back_all()`, `drop ts`): dropping the access before is
+  `'...' is handed to the work put on 'ts' on line N, which works through it until it is waited for: give the access
+  back after ts.retrieve_all()`. Each access has its own name (an access isn't kept in a list: only the name that took
+  it gives it back). In the AccessManager's records the handing routine's flow holds it, and the work works through it.
+  Work that takes an exclusive access itself (`counter: @U64 <- COUNTER.get_exclusive_access()`, the change
+  through `counter`, `drop counter`, for many threads changing one value in turn) changes through that
   access too. Memory handed to the work without `steal`, and every global, counts as shared, even when the routine
   that hands it waits for the work and doesn't touch it meanwhile: `steal` is for handing memory over for good. A
   `@threadlocal` global is each thread's own, and an address made from an `Addr` isn't followed. A standard library
@@ -520,11 +534,10 @@ routine start() -> None
   (line N: ...) without an exclusive access, while other threads reach it too: ...` and `t.put_work(work) hands 'xs'
   to 'f', which changes it on another thread without an exclusive access, and it isn't handed over with steal, so
   other threads may reach it too: hand it over with steal, or ...`, both ending with the fix "hand the work an
-  exclusive access to it (its parameter an @Authorized[T]), borrowed in a name first, held: Authorized[T] <-
-  p.get_exclusive_access(), and dropped after the ticket's retrieve; or make it an Unbroken[T] and change it with its
-  routines". A `@[T]` the work changes names the run's access instead: "hand the work the run's exclusive access (its
-  parameter an AuthorizedSlice[S64]), borrowed in a name first, held: AuthorizedSlice[S64] <- s.get_exclusive_access(),
-  and dropped after the ticket's retrieve". A `@T` or `@[T]` the work only reads, and one it changes under an access it
+  exclusive access to it (its parameter a @T), taken in a name first, held: @T <- p.get_exclusive_access(), and
+  dropped after the ticket's retrieve; or make it an Unbroken[T] and change it with its routines". A `@[T]` the work
+  changes names the run's access instead: "hand the work the run's exclusive access (its parameter a @[S64]), taken in a
+  name first, held: @[S64] <- s.get_exclusive_access(), and dropped after the ticket's retrieve". A `@T` or `@[T]` the work only reads, and one it changes under an access it
   takes itself, is no build error, as for every view.
   The build doesn't know whether two threads get the same memory and follows no `Addr` or address made from a number: the debug race check (`[debug] race-check`, on in a debug build where it is supported) catches what it
   misses while the program runs.
@@ -738,8 +751,7 @@ routine start() -> None
 - `@export("lapila_stamp_next")` above a `global` defines it under that C name, visible outside the module, so a
   library linked with the program (a language runtime's) reaches the same variable through an `@external("c")`
   declaration of the name. Only a global: a preset, an `@external("c")` or a `@threadlocal` global with `@export` is a
-  build error. Ingrid's runtime exports Revare's stamp table this way (`lapila_stamp_directory`, `lapila_stamp_next`),
-  which Revare's inlined `Stamped` fetch reads.
+  build error.
 - `@threadlocal` above `global NAME: &T [<- value]` gives each thread its own copy, starting from the value; the name is the
   running thread's copy. Its address stays on its thread: handing it to work on another thread (`t.put_work(work)` "hands
   the work the address of this thread's 'X'"), work returning it ("runs 'f' on another thread, and it returns the
@@ -939,7 +951,7 @@ routine start() -> None
   (`+^ -^` still clamp).
 - **Operators are routine calls.** `a + b` is `a.add(b)`, `a - b` `sub`, `*` `mul`, `/` `truediv`, `//` `floordiv`, `%` `mod`, `**`
   `pow` (the exponent the base's own type, a negative one `NegativeExponentError`, `try a ** n` gives `None`), `+% -% *%` the `_wrap` forms, `+^ -^ *^` the `_clamp` forms, `+! -! *! /!` the floats' `_unchecked` forms, `== != < <= > >=` `eq`
-  .. `ge`, `<=>` `compare`, `=== !==` `same` / `notsame` (no protocol: a type has them by declaring `routine T.same(other: Me) -> Bool` and `notsame`, as `@T`, `Addr`, spans and `Stamped` do, and `===` on a type without them is a build error: values compare with `==`), `& | ^ << >> >>>` `bitand` / `bitor` / `bitxor` / `shift_left` / `arith_shift_right` / `logical_shift_right` (`>>>` fills with 0 bits on every integer type, `Byte` and integer `Vector` lanes, signed ones too), unary `-x` `neg` and `~x`
+  .. `ge`, `<=>` `compare`, `=== !==` `same` / `notsame` (no protocol: a type has them by declaring `routine T.same(other: Me) -> Bool` and `notsame`, as `@T`, `Addr` and spans do (`Stamped` has `==` too), and `===` on a type without them is a build error: values compare with `==`), `& | ^ << >> >>>` `bitand` / `bitor` / `bitxor` / `shift_left` / `arith_shift_right` / `logical_shift_right` (`>>>` fills with 0 bits on every integer type, `Byte` and integer `Vector` lanes, signed ones too), unary `-x` `neg` and `~x`
   `bitnot`, `xs[i]` `getitem(i)` and `xs[i] = v` `setitem(index: i, value: v)`. **A type takes an operator only by
   obeying its protocol** (Standard/System/Operators.lpa, the names Revare uses): `Addable` `+`, `Subtractable`
   `-`, `Multiplicable` `*`, `Divisible` `/`, `FloorDivisible` `//` `%`, `Exponentiable` `**`, `Negatable` unary `-`,
@@ -1646,8 +1658,7 @@ routine start() -> None
 - In the standard library, these are entities: `BorrowedSlice[T]`, `BorrowedCell[T]`, every collection (`List`, `Set`, `Dict`, the
   sorted ones, `RotatableList`, `PriorityQueue`), `Channel[T]` / `SharedChannel[T]`, `ThreadPoolManager`, `CoroutineManager`,
   `CStr` / `CWStr`, `ProcessOutput`, `File` / `Directory` (each holds the memory of a path it made), `FileStorage[T]`,
-  the tickets (`Thread[T]`, `Fiber[T]`, `PassableFiber[T]`), and the accesses (`Authorized[T]`, `ReadAuthorized[T]`,
-  `AuthorizedSlice[T]`, `ReadAuthorizedSlice[T]`). A
+  the tickets (`Thread[T]`, `Fiber[T]`, `PassableFiber[T]`), and `StampManager`. A
   `MemoryManager`, a `@[T]`, a `@T`, and an emitter stay records.
 - An entity value a `routine @E.f` is called on, or that goes where an `@E` is taken, needs no place of its
   own: `Counter.at(n).get()`, `OsFileManager.is_file(at: File.at(p))`. The builder puts it in an unnamed place that ends when
@@ -2019,8 +2030,7 @@ a value"). It runs on a ticket, and what the build allows depends on its argumen
     be copied (`w2 = primes`), go into a `List[Work[T]]`, or go on no ticket at all (nothing is left behind).
     `t.put_work(steal primes)` is allowed too and ends the name: a use after it is a build error ("'primes' is used
     after steal primes on line N ended it: to put the work on more tickets, put it without steal, t.put_work(primes)").
-  - Work that runs once: an argument is an entity, memory from a manager (`&T`, `&[T]`), an access (`Authorized[T]`,
-    `AuthorizedSlice[T]`, ...), or a value with a destruct. It goes to one ticket with `t.put_work(steal primes)`, on
+  - Work that runs once: an argument is an entity, memory from a manager (`&T`, `&[T]`), or a value with a destruct. It goes to one ticket with `t.put_work(steal primes)`, on
     every path. Each error names the argument: `t.put_work(primes)` ("its argument 'log' is an entity (Log), so the
     work in 'primes' runs once, and t.put_work takes it over with steal: t.put_work(steal primes)"), a second put
     ("'primes' was handed to a ticket already (steal primes on line N): its argument 'log' is an entity (Log), so this
@@ -2187,21 +2197,15 @@ use a `U8`.
 
 **Accesses and waits.** A thread waiting sleeps, a fiber waiting parks (its thread goes on with the other fibers): every
 stdlib wait does what fits the code running it. The `AccessManager` (Standard/Hosted/AccessManager.lpa) hands out access to
-memory: `held: Authorized[T] <- p.get_exclusive_access()` (this flow alone reads and writes the value) and `reading:
-ReadAuthorized[T] <- p.get_shared_read_access()` (several flows read it, none writes), on a `@T` and on a `BorrowedCell[T]`
-(`b.get_exclusive_access()` is the value's). The value is read and written through the access's `getview()`, a `@T`
-(`held.getview().poke(v)`, `reading.getview().peek()`), and the view of a `ReadAuthorized[T]` reads only. `drop held`
-gives the access back, and the program writes it. An access is an entity: a routine that works through one and
-leaves it held takes its address (`held: @Authorized[T]`, as `SignalCaster.wait(access: held)` does), and one that
-gives it back takes it over (`close(steal held)`). An access is bound with `<-` from the call that borrows it: `=` is a
-build error ("a Authorized[S64] is borrowed and given back with drop, so it is bound with '<-' from the call that
-borrows it: held: Authorized[S64] <- ..."), so is a second name (`again: Authorized[T] <- held`: "a second name for
-one borrowed Authorized[S64] would give it back twice"), and so is a STACK place of one (`held: &Authorized[S64] <-
-...`). An access covers the value's bytes, `[p, p + sizeof[T]())`, and `list.data.get_exclusive_access()` is the first
-element alone. A run of values is taken at once on a `@[T]` and on a `BorrowedSlice[T]`: `whole: AuthorizedSlice[T] <-
-s.get_exclusive_access()` and `reading: ReadAuthorizedSlice[T] <- s.get_shared_read_access()` cover `[data, data + count *
-sizeof[T]())` (a run of no bytes covers nothing and takes nothing), their `getview()` is the `@[T]`
-(`whole.getview().getslot(i).poke(v)`), and the view of a `ReadAuthorizedSlice[T]` reads only. They are bound, given back,
+memory: `held: @T <- p.get_exclusive_access()` (this flow alone reads and writes the value) and `reading: %T <-
+p.get_shared_read_access()` (several flows read it, none writes, and the `%T` reads only), on a `@T` and on a `BorrowedCell[T]`
+(`b.get_exclusive_access()` is the value's). The name is the value's view (`held.poke(v)`, `reading.peek()`), and its drop
+gives the access back: `drop held`, or the builder's drop at the end of its scope. A routine that works through an access the
+caller holds takes the view (`value: @T`, as `SignalCaster.wait(access: held)` does). An access is taken with `<-` by the
+name whose drop gives it back (the Accesses rule above lists the build errors). An access covers the value's bytes, `[p, p + sizeof[T]())`, and `list.data.get_exclusive_access()` is the first
+element alone. A run of values is taken at once on a `@[T]` and on a `BorrowedSlice[T]`: `whole: @[T] <- s.get_exclusive_access()` and
+`reading: %[T] <- s.get_shared_read_access()` cover `[data, data + count * sizeof[T]())` (a run of no bytes covers nothing and
+takes nothing), the name is the run (`whole.getslot(i).poke(v)`), and the `%[T]` reads only. They are bound, given back,
 and checked like the accesses of one value. One element is taken alone with `s.getslot(i).get_exclusive_access()`.
 An element's access and the access of the run around it overlap: one waits for the other, and the same flow taking both
 is `ReenterDuringAccessError` (the build reports it where it sees an access taken inside a place whose access is held:
@@ -2229,7 +2233,7 @@ list what the running flow holds. `AccessManager.take(request: AccessRequest(at,
 `false` when the deadline passed first), `try_take(request, place)`, and `give_back(at)` take and give back a range by
 its `Addr`: the build doesn't follow them (code that keeps its own addresses, another language's runtime).
 `SignalCaster` (a condition variable for an exclusive access: `wait(held)`, `wait_for(held, timeout)` /
-`wait_until(held, deadline)` with the `Authorized[T]` the caller holds, returning whether it returned in time, each
+`wait_until(held, deadline)` with the view of the exclusive access the caller holds, returning whether it returned in time, each
 giving the access back while it sleeps and taking it again before it returns, `cast_one()` / `cast_all()`, and a wait may return without a wake, so the
 waiter checks its condition again in a loop). No guards: give back explicitly on every path (the build checks it). `wait_on` / `wait_on_for` / `wake_one` / `wake_all` on a `@U32` make a THREAD sleep. `wait_while(at,
 expected)` / `wait_while_for(at, expected, timeout)` are that wait for whoever runs (a fiber parks `50us` at a time
@@ -2958,6 +2962,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S1453`: A tool the build needs (clang, the standard library) that was not found or failed.
 - `LP-S1454`: A source file that still has the old extension .te.
 - `LP-S1455`: A command called without what it needs.
+- `LP-S1456`: A write through a %T or %[T], a view that only reads (the me of a @readonly routine is one), or such a view handed where a @T goes.
 
 ### Warnings (`LP-W`)
 
