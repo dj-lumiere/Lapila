@@ -86,7 +86,7 @@ routine left_value(root: @Node) -> S64
 
 ### Runs the three moves.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
+    pool: &StampManager <- .construct(manager: HEAP)
     root: &Node <- Node.construct(value: 1) from HEAP
     keeper: &Node <- Node.construct(value: 9) from HEAP
     grow(root, value: 3)
@@ -102,7 +102,7 @@ routine start() -> None
     drop root.left
     drop keeper.right
     drop root
-    pooled: Stamped[Node] = PoolManager.add(Node.construct(value: 1))
+    pooled: Stamped[Node] = pool.add(Node.construct(value: 1))
     grow(pooled.fetch(), value: 5)
     move_stamped(s: pooled, keeper)
     Console.show("left: {left_value(pooled.fetch())}")

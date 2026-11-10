@@ -1,0 +1,52 @@
+# StampManager.remove ends the entity right there: the stamp's fetch fails (received with try), the destruct runs once,
+# and a second remove of the stamp fails.
+
+import Hosted
+
+global ENDED: &U64
+
+### A node that counts its end.
+entity Node
+    value: S64
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+### Shows its end and counts it.
+routine @Node.destruct() -> None
+    Console.show("end {me.value.peek()}")
+    (ENDED.load() + 1).poke_into(ENDED)
+    return
+
+### What a stamp fetches now: the value, or -1 when it fails.
+### :param s: The stamp.
+### :returns: The value or -1.
+routine value_of(s: Stamped[Node]) -> S64
+    when try s.fetch()
+        is @Node as n => return n.value.peek()
+        is None => return -1
+
+### Whether removing the stamp worked.
+### :param pool: The pool.
+### :param s: The stamp.
+### :returns: True when it removed the entity.
+routine removed(pool: @StampManager, s: Stamped[Node]) -> Bool
+    when check pool.remove(s)
+        is None => return true
+        is StaleStampError => return false
+
+### Shows a remove.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
+    b: Stamped[Node] = pool.add(Node.construct(value: 2))
+    Console.show("before: a {value_of(a)}, ended {ENDED.load()}")
+    pool.remove(a)
+    Console.show("after remove: a {value_of(a)}, b {value_of(b)}, ended {ENDED.load()}")
+    Console.show("again: {removed(pool, a)}, ended {ENDED.load()}")
+    drop pool
+    Console.show("after dropping the pool: ended {ENDED.load()}")
+    return

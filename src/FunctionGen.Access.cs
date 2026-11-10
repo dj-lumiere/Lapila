@@ -70,6 +70,39 @@ public sealed partial class FunctionGen
         return false;
     }
 
+    /// The views fetched through a stamp (`v: @Node = s.fetch()`), and the views made from them: a call that may remove
+    /// an entity from a StampManager, or end a pool, ends them all.
+    private readonly HashSet<string> _stampViews = [];
+
+    /// Whether `e` reaches memory through a stamp's `fetch()`, or through a view fetched so.
+    private bool FromStamp(Expr e)
+    {
+        for (var at = AsValueCall(e); at is not null;)
+        {
+            if (at is ValueRef r && _stampViews.Contains(r.Name)) return true;
+            if (at is MethodCallExpr { Name: "fetch", Args.Count: 0 } fetched && IsStampFetch(fetched)) return true;
+            at = at switch
+            {
+                FieldExpr f => f.Base,
+                IndexExpr ix => ix.Base,
+                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" } m => m.Receiver,
+                _ => null,
+            };
+        }
+        return false;
+    }
+
+    /// A binding of a view fetched through a stamp: the memory check follows it as a view of every pool's entities.
+    private void NoteStampView(string name, Expr value, DType t, Pos pos)
+    {
+        if (_c.Prechecking || !MemOn) return;
+        if (t is not PtrType { Pointee: not null } && !Compiler.IsCoreSpan(t, out _)) return;
+        if (!FromStamp(value)) return;
+        _stampViews.Add(name);
+        _viewNames.Add(name);
+        Mem(new MemoryRules.ViewOf(name, StampedEntities, pos) { Contents = StampedEntities });
+    }
+
     /// Whether `m` is `fetch()` on a record marked `@entity_link`: a link whose `fetch()` gives the entity's view.
     private bool IsStampFetch(MethodCallExpr m) => InferQuiet(m.Receiver) is RecordType r && r.Decl.AnnotationNamed("entity_link") is not null;
 

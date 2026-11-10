@@ -1,0 +1,30 @@
+# Stamps compare and hash by the entity they name: a Set of stamps keeps the entities seen once each, and a stamp of
+# an entity that ended is not the stamp of the next entity in its slot.
+
+import Collections
+import Hosted
+
+### A node that keeps a value.
+entity Node
+    value: S64
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+### Shows stamps in a Set.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
+    b: Stamped[Node] = pool.add(Node.construct(value: 2))
+    seen: &Set[Stamped[Node]] <- .construct(HEAP)
+    seen.add(a)
+    seen.add(b)
+    seen.add(a)
+    Console.show("count {seen.count()}, a {seen.has(a)}, equal {a == a} {a == b}")
+    pool.remove(a)
+    c: Stamped[Node] = pool.add(Node.construct(value: 3))
+    Console.show("new one seen: {seen.has(c)}, same as a: {c === a}, pool keeps {pool.count()}")
+    return

@@ -1,0 +1,6 @@
+before: a 1, ended 0
+end 1
+after remove: a -1, b 2, ended 1
+again: false, ended 1
+end 2
+after dropping the pool: ended 2

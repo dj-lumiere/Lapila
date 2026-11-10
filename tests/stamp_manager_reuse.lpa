@@ -1,5 +1,5 @@
-# A swept slot is reused by the next entity of its type with a higher generation: the old stamp fails, the new one
-# reads the new entity, and removing a stale stamp again fails.
+# A removed entity's slot is reused at once by the next entity of its type with a higher generation: the old stamp fails,
+# the new one reads the new entity, and removing a stale stamp again fails.
 
 import Hosted
 
@@ -24,22 +24,21 @@ routine value_of(s: Stamped[Node]) -> S64
 ### Whether removing a stamp worked.
 ### :param s: The stamp.
 ### :returns: False when the stamp was stale.
-routine removed(s: Stamped[Node]) -> Bool
-    when check PoolManager.remove(s)
+routine removed(pool: @StampManager, s: Stamped[Node]) -> Bool
+    when check pool.remove(s)
         is None => return true
         is StaleStampError => return false
 
 ### Shows the reuse.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
-    a: Stamped[Node] = PoolManager.add(Node.construct(value: 1))
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
     where_a: Addr = a.fetch().to[Addr]()
-    Console.show("removed: {removed(a)}, again: {removed(a)}")
-    PoolManager.sweep()
-    b: Stamped[Node] = PoolManager.add(Node.construct(value: 2))
+    Console.show("removed: {removed(pool, a)}, again: {removed(pool, a)}")
+    b: Stamped[Node] = pool.add(Node.construct(value: 2))
     Console.show("old: {value_of(a)}, new: {value_of(b)}, same entity: {a === b}")
     Console.show("slot reused: {where_a === b.fetch().to[Addr]()}")
-    Console.show("removing the old stamp: {removed(a)}")
+    Console.show("removing the old stamp: {removed(pool, a)}")
     Console.show("new one still: {value_of(b)}")
     drop pool
     return

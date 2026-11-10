@@ -14,9 +14,9 @@ common routine Node.construct(value: S64) -> Me
 
 ### Fetches after the remove.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
-    a: Stamped[Node] = PoolManager.add(Node.construct(value: 1))
-    PoolManager.remove(a)
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
+    pool.remove(a)
     Console.show("fetching")
     Console.show("{a.fetch().value.peek()}")
     return

@@ -61,7 +61,7 @@ public sealed class EscapeCheck
     }
 
     /// Whether a routine is one of the pool's (the standard library marks them `@uses_pool`): setting it up, adding,
-    /// fetching, removing, sweeping, or ending it.
+    /// fetching, removing, or ending it.
     public static bool UsesPool(RoutineDecl d) =>
         d.IsLibrary && d.AnnotationNamed("uses_pool") is not null;
 
@@ -475,8 +475,8 @@ public sealed class EscapeCheck
                 ? $"a field of the entity {entity}, which any routine that reaches the entity may use later"
                 : $"the global '{global!.Name}', which every routine reaches";
             return new CompileError(Li.ViewOutlives, s.Pos, $"{s.Text} keeps {source} in {where}, and the build can't compare those later uses "
-                + "with where that view's place is given back: keep a Stamped of the entity there (its stamp(), read back with "
-                + "fetch(), which fails once the entity has ended), make the field an &E? when one holder keeps the value, or "
+                + "with where that view's place is given back: keep a Stamped of the entity there (a StampManager's add gives "
+                + "it, read back with fetch(), which fails once the entity has ended), make the field an &E? when one holder keeps the value, or "
                 + "hand the view as an argument to the routines that use it. An Addr (the view's .to[Addr](), turned back with "
                 + ".to[@T?]() and a when) is for links the program keeps right itself, such as a runtime's queues" + Note);
         }
@@ -578,8 +578,8 @@ public sealed class EscapeCheck
                     for (var w = pool; w is not null; w = w.Inner) chain.Add(w.Routine);
                     var at = pool.Store;
                     errors.Add(new CompileError(Li.GlobalChangedAcrossThreads, call.Pos, $"{call.Text} runs '{name}' on another thread, and it uses the "
-                        + $"pool ({string.Join(" calls ", chain)}, line {at.Pos.Line}: {at.Text}): a PoolManager belongs to one thread, like a global "
-                        + "the program changes, so a routine another thread runs can't set it up, add to it, fetch from it, remove from it, sweep it "
+                        + $"pool ({string.Join(" calls ", chain)}, line {at.Pos.Line}: {at.Text}): a StampManager belongs to one thread, like a global "
+                        + "the program changes, so a routine another thread runs can't make one, add to it, fetch from it, remove from it "
                         + "or end it. Keep the entities on one thread, or put a graph that threads share behind a manager such as Guarded, or "
                         + "under an exclusive access" + Note));
                     break;
@@ -593,7 +593,7 @@ public sealed class EscapeCheck
                     errors.Add(new CompileError(Li.GlobalChangedAcrossThreads, call.Pos, $"{call.Text} runs '{name}' on another thread, and it calls a "
                         + $"routine value ({string.Join(" calls ", chain.Distinct())}, line {at.Pos.Line}: {at.Text}) the build can't name the routine of, and "
                         + $"'{all[valued].Inst.Decl.DisplayName}', which the program turns into a routine value, uses the pool (line {used.Store.Pos.Line}: "
-                        + $"{used.Store.Text}): a PoolManager belongs to one thread, like a global the program changes. Call the routine itself, "
+                        + $"{used.Store.Text}): a StampManager belongs to one thread, like a global the program changes. Call the routine itself, "
                         + "or keep the entities on one thread, or put a graph that threads share behind a manager such as Guarded, or under an "
                         + "exclusive access" + Note));
                     break;

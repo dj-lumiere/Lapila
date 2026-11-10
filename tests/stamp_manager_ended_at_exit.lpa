@@ -3,6 +3,6 @@
 import Hosted
 
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES) from HEAP
+    pool: &StampManager <- .construct(manager: HEAP)
     Console.show("set up")
     return

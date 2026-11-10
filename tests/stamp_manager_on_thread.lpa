@@ -25,8 +25,8 @@ routine work(s: Stamped[Node]) -> None
     return
 
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
-    s: Stamped[Node] = PoolManager.add(Node.construct(value: 1))
+    pool: &StampManager <- .construct(manager: HEAP)
+    s: Stamped[Node] = pool.add(Node.construct(value: 1))
     t: Thread[None] <- get_thread[None]()
     w: Work[None] = work.to[Work](s: s)
     t.put_work(w)

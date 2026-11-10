@@ -19,8 +19,8 @@ routine show_number(n: S64) -> None
     return
 
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
-    s: Stamped[Node] = PoolManager.add(Node.construct(value: 7))
+    pool: &StampManager <- .construct(manager: HEAP)
+    s: Stamped[Node] = pool.add(Node.construct(value: 7))
     t: Thread[None] <- get_thread[None]()
     w: Work[None] = show_number.to[Work](n: 5)
     t.put_work(w)

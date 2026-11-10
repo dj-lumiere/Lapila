@@ -1,4 +1,4 @@
-# A Stamped[T]? is the stamp itself, 8 bytes: the all-zero stamp is None. when, try, is_absent, unwrap and a
+# A Stamped[T]? is the stamp itself, 16 bytes: the all-zero stamp is None. when, try, is_absent, unwrap and a
 # field of that type work as on any Optional.
 
 import Hosted
@@ -28,10 +28,10 @@ routine describe(link: Stamped[Node]?) -> S64
 
 ### Shows the layout and the four ways to read it.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
+    pool: &StampManager <- .construct(manager: HEAP)
     Console.show("sizes: {sizeof[Stamped[Node]]()} {sizeof[Stamped[Node]?]()}")
-    last: Stamped[Node] = PoolManager.add(Node.construct(value: 3, next: None()))
-    first: Stamped[Node] = PoolManager.add(Node.construct(value: 1, next: last))
+    last: Stamped[Node] = pool.add(Node.construct(value: 3, next: None()))
+    first: Stamped[Node] = pool.add(Node.construct(value: 1, next: last))
     none: Stamped[Node]? = None()
     some: Stamped[Node]? = first
     Console.show("describe: {describe(none)} {describe(some)} {describe(first.fetch().next.peek())}")
@@ -41,7 +41,7 @@ routine start() -> None
         is @Node as n => n.value.peek()
         is None => -9
     Console.show("try: {via_try}")
-    PoolManager.remove(last)
+    pool.remove(last)
     Console.show("after remove: {describe(first.fetch().next.peek())}")
     drop pool
     return

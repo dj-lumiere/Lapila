@@ -1,0 +1,2 @@
+count 2, a true, equal true false
+new one seen: false, same as a: false, pool keeps 2

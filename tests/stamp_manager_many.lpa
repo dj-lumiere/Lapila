@@ -1,5 +1,5 @@
-# Many entities of two types fill several chunks and cross the committed pages: every other one is removed and swept,
-# the freed slots are reused, and the stamps still read what was stored.
+# Many entities of two types fill many pages of slots: every other one is removed, the freed slots are reused, and the
+# stamps still read what was stored.
 
 import Collections
 import Hosted
@@ -23,19 +23,18 @@ common routine Node.construct(value: S64) -> Me
 
 ### Adds, removes, sweeps and adds again.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
+    pool: &StampManager <- .construct(manager: HEAP)
     nodes: &List[Stamped[Node]] <- .construct(HEAP)
     wides: &List[Stamped[Wide]] <- .construct(HEAP)
     for i in 0 til 20000
-        nodes.add_last(PoolManager.add(Node.construct(value: i.to[S64]())))
+        nodes.add_last(pool.add(Node.construct(value: i.to[S64]())))
         if i % 4 == 0
-            wides.add_last(PoolManager.add(Wide(a: i.to[S64](), b: 1, c: 2, d: 3)))
+            wides.add_last(pool.add(Wide(a: i.to[S64](), b: 1, c: 2, d: 3)))
     for i in 0 til 20000
         if i % 2 == 0
-            PoolManager.remove(nodes[i.to[U64]()])
-    PoolManager.sweep()
+            pool.remove(nodes[i.to[U64]()])
     for i in 0 til 10000
-        nodes.add_last(PoolManager.add(Node.construct(value: 100000 + i.to[S64]())))
+        nodes.add_last(pool.add(Node.construct(value: 100000 + i.to[S64]())))
     for i in 0 til nodes.count() with live: U64 = 0, sum: S64 = 0
         when try nodes[i].fetch()
             is @Node as n => continue with live: live + 1, sum: sum + n.value.peek()

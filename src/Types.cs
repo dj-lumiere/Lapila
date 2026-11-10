@@ -380,7 +380,7 @@ public sealed class VariantType(VariantDecl decl, List<DType> args, Func<Variant
     /// `ptr`, null for None. A value of it is the T's own pointer, so it costs nothing over the T and passes to C as one.
     public bool IsNullable => IsFlagged && !IsAddressed && Leaves[0].Repr is PtrType { Pointee: not null } or CallableType { IsOpen: false };
 
-    /// Whether this is an Optional of a record marked `@none_is_zero` (its first field, an integer, is 0 for None and never 0
+    /// Whether this is an Optional of a record marked `@none_is_zero` (its first field, an integer or an address, is 0 for None and never 0
     /// for a value), such as `Stamped[T]?`: the record alone, with no flag, the all-zero record being None.
     public bool IsZeroNone => IsFlagged && !IsAddressed && !IsNullable && Leaves[0] is RecordType { Decl: var d } && d.AnnotationNamed("none_is_zero") is not null;
 

@@ -17,9 +17,9 @@ common routine Blossom.construct(slot: S64) -> Me
 
 ### Walks a chain of twelve links under one `try`: each link used to be inferred again by every link above it, so a chain this long took minutes to build.
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
-    a: Stamped[Blossom] = PoolManager.add(Blossom.construct(slot: 1))
-    b: Stamped[Blossom] = PoolManager.add(Blossom.construct(slot: 2))
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Blossom] = pool.add(Blossom.construct(slot: 1))
+    b: Stamped[Blossom] = pool.add(Blossom.construct(slot: 2))
     a.fetch().up.poke(b)
     b.fetch().up.poke(a)
     c: Stamped[Blossom]? = try a.fetch()

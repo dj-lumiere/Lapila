@@ -978,10 +978,16 @@ public sealed partial class FunctionGen
     /// builder adds what a body shows (Compiler.ReshapesOf), so this is for what it can't see: a move made in raw memory.
     internal static List<(string Param, string? Field)> DeclaredReshapes(RoutineDecl r)
     {
-        if (r.AnnotationNamed("reshaping") is not { } a) return [];
-        if (a.Args.Count == 0) return r.Params is [{ Name: "me" }, ..] ? [("me", null)] : [];
-        return a.Args.Select(arg => (arg.Value ?? arg.Key ?? "", (string?)null)).ToList();
+        var ends = r.IsLibrary && r.AnnotationNamed("ends_stamped") is not null ? [(StampedEntities, (string?)null)] : new List<(string, string?)>();
+        if (r.AnnotationNamed("reshaping") is not { } a) return ends;
+        if (a.Args.Count == 0) return r.Params is [{ Name: "me" }, ..] ? [("me", null), .. ends] : ends;
+        return [.. a.Args.Select(arg => (arg.Value ?? arg.Key ?? "", (string?)null)), .. ends];
     }
+
+    /// The name the memory check gives the entities of every StampManager: a routine that may remove one, or end a pool
+    /// (the standard library marks them `@ends_stamped`, and a routine that calls one does it too), ends every view
+    /// fetched through a stamp before the call.
+    internal const string StampedEntities = "$stamped";
 
     /// Checks a `#reshaping` annotation: it names parameters of the routine, or stands alone on one that takes `me`.
     private void CheckReshapingAnnotation()
@@ -1004,6 +1010,12 @@ public sealed partial class FunctionGen
         int offset = plan.Receiver is null ? 0 : 1;
         foreach (var (name, declared) in movedParams)
         {
+            if (name == StampedEntities)
+            {
+                if (_stampViews.Count > 0) Mem(new MemoryRules.Reshape(StampedEntities, SpelledCall(plan), plan.Pos) { Ends = true });
+                if (!_c.Prechecking) _c.NoteReshape(_inst, StampedEntities, null);
+                continue;
+            }
             int index = sig.Decl.Params.FindIndex(p => p.Name == name);
             Expr? arg = index == 0 && plan.Receiver is not null ? plan.Receiver
                 : index - offset >= 0 && index - offset < plan.Args.Count ? plan.Args[index - offset] : null;
@@ -2314,6 +2326,7 @@ public sealed partial class FunctionGen
                 else BindAtoms(b.Name, b.Value, t);
                 NoteBoundViews(b, t);
                 if (b.Value is not ClaimExpr) NoteAccessBinding(b.Name, b.Value, t, b.Pos);
+                if (b.Value is not ClaimExpr) NoteStampView(b.Name, b.Value, t, b.Pos);
                 // An access bound with `<-` is the place that holds it: the access check follows it by that name.
                 bool accessPlace = b.Value is ClaimExpr { Contents: { } accessCall } && t is PtrType { Pointee: { } accessType }
                     && IsAccessType(accessType) && b.Ticket is false && accessCall is not ImplicitCallExpr;
@@ -3954,14 +3967,14 @@ public sealed partial class FunctionGen
     }
 
     /// The tag of a variant value: for an address Optional whether the address is not null, for a `@none_is_zero` Optional
-    /// whether the record's first field is not 0, else the tag stored in the value.
+    /// whether the record's first field is not 0 (or not null, for an address), else the tag stored in the value.
     private string PresentTag(VariantType vt, string value)
     {
         if (vt.IsAddressed || vt.IsNullable) return EmitTmp($"icmp ne ptr {value}, null");
         if (!vt.IsZeroNone) return EmitTmp($"extractvalue {vt.Llvm} {value}, 0");
         var first = _c.Fields((RecordType)vt.Leaves[0])[0].Type;
         string field = EmitTmp($"extractvalue {vt.Llvm} {value}, 0");
-        return EmitTmp($"icmp ne {first.Llvm} {field}, 0");
+        return EmitTmp($"icmp ne {first.Llvm} {field}, {(first is PtrType ? "null" : "0")}");
     }
 
     /// The branch type's value read out of the variant's stack copy.

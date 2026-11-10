@@ -1,0 +1,488 @@
+# Lapila stdlib: SlotStore, the slots that entities of one type live in
+#
+# A SlotStore keeps values of one size in slots. A slot is an 8-byte header holding the slot's generation, then the
+# value's bytes. A stamp of a value (the StampManager's `Stamped[T]`, a Revare reference or link) is the value's address
+# and the generation its slot had when it was made. Ending the value raises the generation, so every stamp made before
+# reads as ended from then on. The slot is free again once the value's destruct is done, and the store reuses it for
+# the next value at once.
+#
+# A slot's generation is odd while it holds a value and even while it holds none: taking a slot and ending its value
+# each raise it by one. So a stamp always has an odd generation, and the slot of an ended value never has it again.
+#
+# A store keeps its slots in pages of 64 KiB, aligned to their size, so a slot finds its page from its own address,
+# and the page names its store. A page whose slots are all free gives its memory back to the operating system, all but
+# its first 4 KiB, which hold the page's record (Linux `MADV_DONTNEED`, macOS `MADV_FREE`, Windows
+# `DiscardVirtualMemory`). The page itself is never freed, so a stale stamp can always read a header: it reads the
+# generation the slot was left with, or zero, and neither is the stamp's. A page used again starts its slots past every
+# generation it had. A store that ends (`end_all`) puts its pages on a list of spare pages, which a later store whose
+# slots have the same size takes its pages from first.
+#
+# A store is locked while a slot is taken or given back, since values of one type may be made and ended on several
+# threads. Revare's builder makes one zeroed store for each entity type, and Ingrid's runtime calls these routines for
+# it (Ingrid/lapila/slots.lpa).
+
+module System/Memory
+
+### The pages of the stores that ended, each kept for a later store whose slots have the same size: a list through
+### each page's `next`, 0 for none.
+@target(os: not "none")
+secret global SLOT_SPARE: &Addr
+
+### 0 while no thread is taking a spare page or putting one on the list, 1 while one is.
+@target(os: not "none")
+secret global SLOT_SPARE_LOCK: &U64
+
+### The bytes of a page, which is aligned to them. A slot too big for one gets a page of its own, a multiple of this.
+secret preset SLOT_PAGE_BYTES: U64 = 65536
+
+### The bytes at the start of a page that keep their memory when the page is emptied: the page's record and its first
+### slots.
+secret preset SLOT_PAGE_KEPT: U64 = 4096
+
+### Where a page's first value starts: the page's record (88 bytes), then the first slot's header, so each value is
+### 16-byte aligned.
+secret preset SLOT_FIRST_ENTITY: U64 = 96
+
+### A store of slots for values of one size. All zero is an empty store, so a zeroed global or a zeroed field is one.
+### It is 32 bytes: Revare's builder makes one for each entity type with that size.
+record SlotStore
+    ### 0 while no thread is taking or giving back a slot, 1 while one is.
+    secret lock: U64
+    ### The first page with a free slot or room for a new one, 0 for none.
+    secret room: Addr
+    ### The bytes from one slot to the next, 0 before the first slot.
+    secret stride: U64
+    ### The store's last page, 0 for none: every page of the store is on a list through its `chain`.
+    secret pages: Addr
+
+### The record at the start of each page.
+secret record SlotPage
+    ### The store the page belongs to.
+    store: Addr
+    ### The first free slot's value address, 0 for none. A free slot keeps the next one in its value's first 8 bytes.
+    free: Addr
+    ### How many slots of the page were ever handed out since the page was last emptied. The ones past this have held
+    ### no value since.
+    used: U64
+    ### How many slots the page has.
+    slots: U64
+    ### How many of its slots hold a value right now.
+    live: U64
+    ### The generation a fresh slot of the page starts at: odd, and past every generation the page had before it was
+    ### emptied.
+    floor: U64
+    ### The next page with room (or the next spare page), 0 for the last.
+    next: Addr
+    ### The page before in the list of pages with room, 0 for the first.
+    previous: Addr
+    ### The page's bytes.
+    bytes: U64
+    ### The store's page before this one, 0 for the first.
+    chain: Addr
+    ### The bytes from one slot to the next.
+    stride: U64
+
+### C's aligned_alloc: `size` bytes aligned to `alignment`.
+### :param alignment: The alignment, a power of two.
+### :param size: The bytes, a multiple of the alignment.
+### :returns: The memory, or null when the allocation fails.
+@external("c")
+@symbol("aligned_alloc")
+@target(os: ("linux", "macos"))
+secret routine slot_aligned_alloc(alignment: CSize, size: CSize) -> Addr
+
+### The Windows C runtime's _aligned_malloc: `size` bytes aligned to `alignment`.
+### :param size: The bytes.
+### :param alignment: The alignment, a power of two.
+### :returns: The memory, or null when the allocation fails.
+@external("c")
+@symbol("_aligned_malloc")
+@target(os: "windows")
+secret routine slot_aligned_malloc(size: CSize, alignment: CSize) -> Addr
+
+### The C `madvise` function: tells the operating system how pages will be used.
+### :param addr: The first page, page aligned.
+### :param length: The bytes.
+### :param advice: The `MADV_*` advice.
+### :returns: 0 on success, -1 otherwise.
+@external("c")
+@symbol("madvise")
+@target(os: ("linux", "macos"))
+secret routine slot_madvise(addr: Addr, length: CSize, advice: CInt) -> CInt
+
+### The Win32 `DiscardVirtualMemory` function: the pages leave the working set and their contents may go, but they stay
+### committed, so reading them is still allowed.
+### :param addr: The first page.
+### :param size: The bytes.
+### :returns: 0 on success, a Win32 error code otherwise.
+@external("c")
+@symbol("DiscardVirtualMemory")
+@callconv("stdcall")
+@target(os: "windows")
+secret routine slot_discard_virtual_memory(addr: Addr, size: CSize) -> U32
+
+### Memory for a page, aligned to the page size.
+### :param bytes: The page's bytes, a multiple of the page size.
+### :returns: The page's memory, or null when there is none.
+@target(os: ("linux", "macos"))
+secret routine slot_page_memory(bytes: U64) -> Addr
+    return slot_aligned_alloc(SLOT_PAGE_BYTES.to[CSize](), bytes.to[CSize]())
+
+### Memory for a page, aligned to the page size.
+### :param bytes: The page's bytes, a multiple of the page size.
+### :returns: The page's memory, or null when there is none.
+@target(os: "windows")
+secret routine slot_page_memory(bytes: U64) -> Addr
+    return slot_aligned_malloc(bytes.to[CSize](), SLOT_PAGE_BYTES.to[CSize]())
+
+### Gives the memory of an emptied page's bytes back to Linux: the range stays mapped and reads as zero from now on.
+### :param at: The first byte, page aligned.
+### :param bytes: How many bytes.
+@target(os: "linux")
+secret routine slot_release(at: Addr, bytes: U64) -> None
+    # MADV_DONTNEED
+    slot_madvise(at, bytes.to[CSize](), 4)
+    return
+
+### Gives the memory of an emptied page's bytes back to macOS: the range stays mapped and its contents may go.
+### :param at: The first byte, page aligned.
+### :param bytes: How many bytes.
+@target(os: "macos")
+secret routine slot_release(at: Addr, bytes: U64) -> None
+    # MADV_FREE
+    slot_madvise(at, bytes.to[CSize](), 5)
+    return
+
+### Gives the memory of an emptied page's bytes back to Windows: the pages leave the working set and their contents may
+### go. They stay committed (decommitting would make a stale stamp's header read fault), so the commit charge stays.
+### :param at: The first byte, page aligned.
+### :param bytes: How many bytes.
+@target(os: "windows")
+secret routine slot_release(at: Addr, bytes: U64) -> None
+    slot_discard_virtual_memory(at, bytes.to[CSize]())
+    return
+
+### Takes a lock word, waiting while another thread holds it.
+### :param word: The lock word, 0 while free.
+@target(os: not "none")
+secret routine slot_lock(word: @U64) -> None
+    loop
+        taken: Optional[U64] = word.compare_exchange_unbroken(expected: 0, new: 1)
+        when taken
+            is None => return
+            is U64 => continue
+
+### Leaves a lock word.
+### :param word: The lock word.
+@inline
+@target(os: not "none")
+secret routine slot_unlock(word: @U64) -> None
+    word.poke_unbroken(0)
+    return
+
+### The page a slot is in: its address rounded down to the page size.
+### :param box: The value's address.
+### :returns: The page.
+@inline
+@target(os: not "none")
+secret routine slot_page(box: Addr) -> @SlotPage
+    at: U64 = ptrtoint[Addr, U64](box) & ~(SLOT_PAGE_BYTES - 1)
+    return inttoptr[U64, Addr](at).to[@SlotPage]()
+
+### The value address of a page's slot.
+### :param page: The page.
+### :param stride: The bytes from one slot to the next.
+### :param index: The slot's number in the page.
+### :returns: The address the slot's value starts at.
+@inline
+@target(os: not "none")
+secret routine slot_at(page: @SlotPage, stride: U64, index: U64) -> Addr
+    return bitcast[@SlotPage, Addr](page) +% ByteSize.construct(bytes: SLOT_FIRST_ENTITY + index * stride)
+
+### Whether a page is in its store's list of pages with room.
+### :param store: The store.
+### :param page: The page.
+### :returns: True when it is.
+@inline
+@target(os: not "none")
+secret routine slot_listed(store: @SlotStore, page: @SlotPage) -> Bool
+    return not page.previous.peek().is_hollow() or store.room.peek() === bitcast[@SlotPage, Addr](page)
+
+### Puts a page first in its store's list of pages with room.
+### :param store: The store.
+### :param page: The page.
+@target(os: not "none")
+secret routine slot_list_first(store: @SlotStore, page: @SlotPage) -> None
+    head: Addr = store.room.peek()
+    page.next.poke(head)
+    page.previous.poke(Addr.zero())
+    if not head.is_hollow()
+        head.to[@SlotPage]().previous.poke(bitcast[@SlotPage, Addr](page))
+    store.room.poke(bitcast[@SlotPage, Addr](page))
+    return
+
+### Takes a page out of its store's list of pages with room.
+### :param store: The store.
+### :param page: The page.
+@target(os: not "none")
+secret routine slot_unlist(store: @SlotStore, page: @SlotPage) -> None
+    next: Addr = page.next.peek()
+    previous: Addr = page.previous.peek()
+    if previous.is_hollow()
+        store.room.poke(next)
+    else
+        previous.to[@SlotPage]().next.poke(next)
+    if not next.is_hollow()
+        next.to[@SlotPage]().previous.poke(previous)
+    page.next.poke(Addr.zero())
+    page.previous.poke(Addr.zero())
+    return
+
+### The last page of a list of pages with room.
+### :param first: The first page.
+### :returns: The last page.
+@target(os: not "none")
+secret routine slot_last_page(first: Addr) -> Addr
+    loop with at: Addr = first
+        next: Addr = at.to[@SlotPage]().next.peek()
+        if next.is_hollow()
+            return at
+        continue with at: next
+
+### Puts a page last in its store's list of pages with room, so the pages that hold values are taken from first.
+### :param store: The store.
+### :param page: The page.
+@target(os: not "none")
+secret routine slot_list_last(store: @SlotStore, page: @SlotPage) -> None
+    if slot_listed(store, page)
+        slot_unlist(store, page)
+    if store.room.peek().is_hollow()
+        slot_list_first(store, page)
+        return
+    last: Addr = slot_last_page(store.room.peek())
+    last.to[@SlotPage]().next.poke(bitcast[@SlotPage, Addr](page))
+    page.previous.poke(last)
+    page.next.poke(Addr.zero())
+    return
+
+### A spare page whose slots have this size, taken off the list of spare pages, or null when there is none.
+### :param bytes: The page's bytes.
+### :param stride: The bytes from one slot to the next.
+### :returns: The page, or null.
+@target(os: not "none")
+secret routine slot_spare_page(bytes: U64, stride: U64) -> Addr
+    slot_lock(SLOT_SPARE_LOCK)
+    loop with at: Addr = SLOT_SPARE.load(), before: Addr = Addr.zero()
+        if at.is_hollow()
+            slot_unlock(SLOT_SPARE_LOCK)
+            return at
+        page: @SlotPage = at.to[@SlotPage]()
+        if page.bytes.peek() == bytes and page.stride.peek() == stride
+            if before.is_hollow()
+                SLOT_SPARE.store(page.next.peek())
+            else
+                before.to[@SlotPage]().next.poke(page.next.peek())
+            slot_unlock(SLOT_SPARE_LOCK)
+            return at
+        continue with at: page.next.peek(), before: at
+
+### A new page for a store, first in its list of pages with room: a spare page of the same size when there is one.
+### :param store: The store.
+### :param stride: The bytes from one slot to the next.
+### :returns: The page, or null when there is no memory for one.
+@target(os: not "none")
+secret routine slot_new_page(store: @SlotStore, stride: U64) -> Addr
+    bytes: U64 = when
+        SLOT_FIRST_ENTITY + stride <= SLOT_PAGE_BYTES => SLOT_PAGE_BYTES
+        else => (SLOT_FIRST_ENTITY + stride + SLOT_PAGE_BYTES - 1) // SLOT_PAGE_BYTES * SLOT_PAGE_BYTES
+    spare: Addr = slot_spare_page(bytes, stride)
+    memory: Addr = when
+        spare.is_hollow() => slot_page_memory(bytes)
+        else => spare
+    if memory.is_hollow()
+        return memory
+    if spare.is_hollow()
+        memory.to[@Byte]().zeroinit(SLOT_FIRST_ENTITY)
+        memory.to[@SlotPage]().floor.poke(1)
+    page: @SlotPage = memory.to[@SlotPage]()
+    page.store.poke(bitcast[@SlotStore, Addr](store))
+    page.free.poke(Addr.zero())
+    page.used.poke(0)
+    page.live.poke(0)
+    slots: U64 = when
+        bytes == SLOT_PAGE_BYTES => (SLOT_PAGE_BYTES - SLOT_FIRST_ENTITY + 8) // stride
+        else => 1
+    page.slots.poke(slots)
+    page.bytes.poke(bytes)
+    page.stride.poke(stride)
+    page.chain.poke(store.pages.peek())
+    store.pages.poke(memory)
+    slot_list_first(store, page)
+    return memory
+
+### The header of the slot a value is in: its generation, odd while the slot holds the value. A stamp made of the
+### value's address and this generation names the value until it ends.
+### :param box: The value's address, one `take` gave.
+### :returns: The slot's generation.
+@inline
+@target(os: not "none")
+common routine SlotStore.generation_of(box: Addr) -> @U64
+    return (box -% ByteSize.construct(bytes: 8)).to[@U64]()
+
+### The store a slot belongs to, found from the slot's page.
+### :param box: The value's address, one `take` gave.
+### :returns: The store.
+@inline
+@target(os: not "none")
+common routine SlotStore.store_of(box: Addr) -> @Me
+    return slot_page(box).store.peek().to[@Me]()
+
+### A slot for a new value of `size` bytes: a free one, else a new one. The value's bytes are zero, and the slot's
+### generation is odd. Every value of the store has the size the first one had.
+### :param size: The value's bytes.
+### :returns: The address the value's bytes go to, 16-byte aligned, or zero when there is no memory for a new page.
+@target(os: not "none")
+routine @SlotStore.take(size: U64) -> Addr
+    slot_lock(me.lock)
+    if me.stride.peek() == 0
+        least: U64 = when
+            size < 8 => 8
+            else => size
+        me.stride.poke((least + 8 + 15) // 16 * 16)
+    stride: U64 = me.stride.peek()
+    if me.room.peek().is_hollow()
+        if slot_new_page(me, stride).is_hollow()
+            slot_unlock(me.lock)
+            return Addr.zero()
+    page: @SlotPage = me.room.peek().to[@SlotPage]()
+    box: Addr = when
+        page.free.peek().is_hollow() => slot_at(page, stride, page.used.peek())
+        else => page.free.peek()
+    generation: @U64 = Me.generation_of(box)
+    # A slot used for the first time since its page was emptied has whatever the page's memory held, so it starts at the
+    # page's floor. A free slot goes from the even generation its last value left to the next odd one.
+    if page.free.peek().is_hollow()
+        page.used.poke(page.used.peek() + 1)
+        generation.poke(page.floor.peek())
+    else
+        page.free.poke(box.to[@Addr]().peek())
+        generation.poke(generation.peek() + 1)
+    page.live.poke(page.live.peek() + 1)
+    if page.free.peek().is_hollow() and page.used.peek() == page.slots.peek()
+        slot_unlist(me, page)
+    slot_unlock(me.lock)
+    box.to[@Byte]().zeroinit(size)
+    return box
+
+### The start of a value's end, before its destruct runs: the slot's generation goes up to an even one, so every stamp
+### made before reads as ended from now on.
+### :param box: The value's address.
+@inline
+@target(os: not "none")
+common routine SlotStore.end(box: Addr) -> None
+    generation: @U64 = Me.generation_of(box)
+    generation.poke(generation.peek() + 1)
+    return
+
+### Empties a page whose slots are all free: it starts its slots past every generation it had, forgets its free slots,
+### and gives back the memory past its first 4 KiB when the store has another page with room. Called with the lock held.
+### :param store: The store.
+### :param page: The page.
+### :param keep: True to keep the memory even when this is the store's only page with room.
+@target(os: not "none")
+secret routine slot_empty_page(store: @SlotStore, page: @SlotPage, keep: Bool) -> None
+    stride: U64 = page.stride.peek()
+    floor: &U64 <- page.floor.peek()
+    for i in 0 til page.used.peek()
+        seen: U64 = SlotStore.generation_of(slot_at(page, stride, i)).peek()
+        if seen >= floor.load()
+            floor.store((seen + 1) | 1)
+    page.floor.poke(floor.load())
+    page.free.poke(Addr.zero())
+    page.used.poke(0)
+    if keep or (store.room.peek() === bitcast[@SlotPage, Addr](page) and page.next.peek().is_hollow())
+        return
+    slot_list_last(store, page)
+    kept: Addr = bitcast[@SlotPage, Addr](page) +% ByteSize.construct(bytes: SLOT_PAGE_KEPT)
+    slot_release(kept, page.bytes.peek() - SLOT_PAGE_KEPT)
+    return
+
+### Gives an ended value's slot back to its store, after its destruct: the slot can hold a new value at once.
+### :param box: The value's address.
+@target(os: not "none")
+common routine SlotStore.give_back(box: Addr) -> None
+    page: @SlotPage = slot_page(box)
+    store: @Me = page.store.peek().to[@Me]()
+    slot_lock(store.lock)
+    box.to[@Addr]().poke(page.free.peek())
+    page.free.poke(box)
+    page.live.poke(page.live.peek() - 1)
+    if not slot_listed(store, page)
+        slot_list_first(store, page)
+    if page.live.peek() == 0
+        slot_empty_page(store, page, false)
+    slot_unlock(store.lock)
+    return
+
+### How many values the store holds.
+### :returns: The count.
+@target(os: not "none")
+routine @SlotStore.count() -> U64
+    slot_lock(me.lock)
+    loop with at: Addr = me.pages.peek(), total: U64 = 0
+        if at.is_hollow()
+            slot_unlock(me.lock)
+            return total
+        page: @SlotPage = at.to[@SlotPage]()
+        continue with at: page.chain.peek(), total: total + page.live.peek()
+
+### The values the store holds, written to `out` (room for `count()` addresses), and their slots made ended first: each
+### generation goes up, so a stamp of any of them reads as ended before the first destruct runs.
+### :param out: Where the addresses go.
+### :returns: How many there are.
+@target(os: not "none")
+routine @SlotStore.end_each(out: @Addr) -> U64
+    slot_lock(me.lock)
+    stride: U64 = me.stride.peek()
+    found: &U64 <- 0
+    loop with at: Addr = me.pages.peek()
+        if at.is_hollow()
+            break
+        page: @SlotPage = at.to[@SlotPage]()
+        for i in 0 til page.used.peek()
+            box: Addr = slot_at(page, stride, i)
+            generation: @U64 = Me.generation_of(box)
+            if generation.peek() & 1 == 1
+                generation.poke(generation.peek() + 1)
+                out.stride(found.load()).poke(box)
+                found.store(found.load() + 1)
+        continue with at: page.chain.peek()
+    slot_unlock(me.lock)
+    return found.load()
+
+### Ends the store once it holds no value: its pages go on the list of spare pages, each emptied and its memory past
+### the first 4 KiB given back, for a later store whose slots have the same size. The store is empty again.
+@target(os: not "none")
+routine @SlotStore.end_all() -> None
+    slot_lock(me.lock)
+    loop with at: Addr = me.pages.peek()
+        if at.is_hollow()
+            break
+        page: @SlotPage = at.to[@SlotPage]()
+        next: Addr = page.chain.peek()
+        slot_empty_page(me, page, true)
+        slot_release(at +% ByteSize.construct(bytes: SLOT_PAGE_KEPT),
+            page.bytes.peek() - SLOT_PAGE_KEPT)
+        page.store.poke(Addr.zero())
+        page.previous.poke(Addr.zero())
+        page.chain.poke(Addr.zero())
+        slot_lock(SLOT_SPARE_LOCK)
+        page.next.poke(SLOT_SPARE.load())
+        SLOT_SPARE.store(at)
+        slot_unlock(SLOT_SPARE_LOCK)
+        continue with at: next
+    me.room.poke(Addr.zero())
+    me.pages.poke(Addr.zero())
+    me.stride.poke(0)
+    slot_unlock(me.lock)
+    return

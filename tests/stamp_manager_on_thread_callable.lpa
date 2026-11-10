@@ -1,13 +1,14 @@
-# A work that calls a routine value builds when no routine the program turns into a routine value uses the pool.
+# A work that calls a routine value counts as using whatever a routine the program turns into a routine value uses: the
+# build can't name which one, so a pool user among them is the pool used on another thread.
 
 import Hosted
 
 global HOOK: &Callable[(S64,), None] <- idle.to[Callable[(S64,), None]]()
 
-### Shows a number.
-### :param n: The number.
-routine show_it(n: S64) -> None
-    Console.show("called {n}")
+### Makes a pool and ends it.
+### :param n: Unused.
+routine tidy(n: S64) -> None
+    pool: &StampManager <- .construct(manager: HEAP)
     return
 
 ### Does nothing.
@@ -22,9 +23,9 @@ routine run() -> None
     return
 
 routine start() -> None
-    pool: &PoolManager <- PoolManager.set_up(memory: PAGES)
+    pool: &StampManager <- .construct(manager: HEAP)
     t: Thread[None] <- get_thread[None]()
-    HOOK.store(show_it.to[Callable[(S64,), None]]())
+    HOOK.store(tidy.to[Callable[(S64,), None]]())
     w: Work[None] = run.to[Work]()
     t.put_work(w)
     t.retrieve()

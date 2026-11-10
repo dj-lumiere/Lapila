@@ -163,6 +163,10 @@ public static class MemoryRules
         /// The view named here is a part of `Root` (a slot of a list, a field), and the call moves only the memory that
         /// part holds (a dict's storage, not the list holding the dict): only views taken from inside it go stale.
         public string? Inner { get; init; }
+
+        /// The call may end entities of a StampManager (`Root` is every pool's entities): the views fetched through a
+        /// stamp before it may see an entity that has ended.
+        public bool Ends { get; init; }
     }
 
     /// `Name` holds a view of the memory `Root` names in it (a field, a part, or a pointer a call gave back from it):
@@ -658,7 +662,8 @@ public static class MemoryRules
                     case Reshape rs:
                         // A view of what the reshaped name holds ends, and a view of the name itself stays: the place
                         // is still there, its contents may not be.
-                        string why = rs.Reaches ? $"which can reach '{rs.Root}'" : "which may move it";
+                        string why = rs.Ends ? "which may end the entity it was fetched from"
+                            : rs.Reaches ? $"which can reach '{rs.Root}'" : "which may move it";
                         foreach (var (view, root) in state.Views)
                             if (root == rs.Root && contents.TryGetValue(view, out var seenIn) && Moves(seenIn, rs.Inner)
                                 && !Apart(fields.GetValueOrDefault(view), rs.Field))
@@ -784,7 +789,10 @@ public static class MemoryRules
                                 + $"table. Use '{uv.Name}' before line {managerEnd.Line}, or end '{manager}' after the table's last use");
                         if (state.Stale.TryGetValue(uv.Name, out var moved))
                         {
-                            if (contents.TryGetValue(uv.Name, out var viewedIn) && state.Views.ContainsKey(uv.Name))
+                            if (contents.TryGetValue(uv.Name, out var viewedIn) && viewedIn == FunctionGen.StampedEntities)
+                                Report(Li.ViewUsedAfterEnd, uv.Pos, $"'{uv.Name}', a view fetched through a stamp, is used after {moved.How} on line "
+                                    + $"{moved.Pos.Line}, {moved.Why}: fetch it again after line {moved.Pos.Line}, or use it before");
+                            else if (contents.TryGetValue(uv.Name, out viewedIn) && state.Views.ContainsKey(uv.Name))
                                 Report(Li.ViewUsedAfterEnd, uv.Pos, $"'{uv.Name}', a view of what '{viewedIn}' holds, is used after {moved.How} on line "
                                     + $"{moved.Pos.Line}, {moved.Why}: take the view again after line {moved.Pos.Line}, or use it before");
                             else if (state.ContentHolders.TryGetValue(uv.Name, out var heldIn) && heldIn.Count > 0 && viewHolders.Contains(uv.Name))
