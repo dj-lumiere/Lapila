@@ -1,4 +1,4 @@
-sizes: 16 16
+sizes: true true
 describe: -1 1 3
 absent: true false false true
 same: true

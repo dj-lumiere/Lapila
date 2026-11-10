@@ -8,14 +8,14 @@ entity Node
 entity Label
     text: S64
 
+entity World
+    nodes: StampManager[Node]
+
 common routine Node.construct(value: S64) -> Me
     return Me(value)
 
 common routine Label.construct(text: S64) -> Me
     return Me(text)
-
-entity World
-    nodes: StampManager[Node]
 
 common routine World.construct() -> Me
     return Me(nodes: StampManager[Node].construct(manager: HEAP))

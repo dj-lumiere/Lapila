@@ -1,5 +1,5 @@
-# A Stamped[T]? is the stamp itself, 16 bytes: the all-zero stamp is None. when, try, is_absent, unwrap and a
-# field of that type work as on any Optional.
+# A Stamped[T]? is the stamp itself, an address and a U64 generation: the all-zero stamp is None. when, try,
+# is_absent, unwrap and a field of that type work as on any Optional.
 
 import Hosted
 
@@ -29,7 +29,8 @@ routine describe(link: Stamped[Node]?) -> S64
 ### Shows the layout and the four ways to read it.
 routine start() -> None
     pool: &StampManager[Node] <- .construct(manager: HEAP)
-    Console.show("sizes: {sizeof[Stamped[Node]]()} {sizeof[Stamped[Node]?]()}")
+    stamp_size: U64 = sizeof[Stamped[Node]]()
+    Console.show("sizes: {stamp_size == sizeof[Addr]() + sizeof[U64]()} {sizeof[Stamped[Node]?]() == stamp_size}")
     last: Stamped[Node] = pool.add(Node.construct(value: 3, next: None()))
     first: Stamped[Node] = pool.add(Node.construct(value: 1, next: last))
     none: Stamped[Node]? = None()
