@@ -161,6 +161,43 @@ public sealed partial class FunctionGen
     /// an entity from a StampManager, or end a pool, ends them all.
     private readonly HashSet<string> _stampViews = [];
 
+    /// The type each view fetched through a stamp is of (the entity's type key), for the views a remove ends.
+    private readonly Dictionary<string, string> _stampViewType = [];
+
+    /// The view of type `key` fetched through a stamp: the root the memory check follows it by.
+    private static string StampRoot(string key) => $"{StampedEntities}:{key}";
+
+    /// The views fetched through a stamp a call ends (`name` is `$stamped` for every type, or `$stamped:key` for one),
+    /// and what this routine may end from then on, which its callers read.
+    private void EndStampViews(string name, string how, Pos pos, bool routineValue)
+    {
+        if (!_c.Prechecking) _c.NoteReshape(_inst, name, null);
+        var keys = name == StampedEntities ? _stampViewType.Values.Distinct().ToList() : [name[(StampedEntities.Length + 1)..]];
+        foreach (var key in keys.Where(k => _stampViewType.ContainsValue(k)))
+            Mem(new MemoryRules.Reshape(StampRoot(key), how, pos) { Ends = true, ThroughValue = routineValue });
+    }
+
+    /// What a call of the standard library's `@ends_stamped` routines may end: `remove` of a `Stamped[T]` ends the
+    /// entities of T and what T's destruct may end, and ending a pool may end entities of any type.
+    private List<(string Param, string? Field)> StampedEnds(CallPlan plan)
+    {
+        if (plan.Decl.Name != "remove" || plan.Env.Get("T") is not { } t) return [(StampedEntities, null)];
+        var ends = new List<(string, string?)> { (StampRoot(t.Key), null) };
+        if (t is not RecordType owner) return ends;
+        foreach (var destruct in _c.MethodCandidates(t, "destruct", _env.File, plan.Pos, anyModule: true)
+                     .Where(d => d.Owner?.Name == owner.Decl.Name && d.Module == owner.Decl.Module && d.Blocks is { Count: > 0 }))
+        {
+            try
+            {
+                var env = BindOwner(destruct, t, plan.Pos);
+                foreach (var (moved, _) in _c.ReshapesOf(_c.Signature(destruct, env), _inst, plan.Pos))
+                    if (moved.StartsWith(StampedEntities, StringComparison.Ordinal) && !ends.Contains((moved, null))) ends.Add((moved, null));
+            }
+            catch (CompileError) { ends.Add((StampedEntities, null)); }
+        }
+        return ends;
+    }
+
     /// Whether `e` reaches memory through a stamp's `fetch()`, or through a view fetched so.
     private bool FromStamp(Expr e)
     {
@@ -179,15 +216,37 @@ public sealed partial class FunctionGen
         return false;
     }
 
-    /// A binding of a view fetched through a stamp: the memory check follows it as a view of every pool's entities.
+    /// The type key of the entity `e` reaches through a stamp: the `T` of the `Stamped[T]` fetched, or the type of the
+    /// view it was made from.
+    private string? StampedType(Expr e)
+    {
+        for (var at = AsValueCall(e); at is not null;)
+        {
+            if (at is ValueRef r && _stampViewType.TryGetValue(r.Name, out var key)) return key;
+            if (at is MethodCallExpr { Name: "fetch", Args.Count: 0 } fetched && IsStampFetch(fetched)
+                && InferQuiet(fetched.Receiver) is RecordType { Args: [var entity] }) return entity.Key;
+            at = at switch
+            {
+                FieldExpr f => f.Base,
+                IndexExpr ix => ix.Base,
+                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" } m => m.Receiver,
+                _ => null,
+            };
+        }
+        return null;
+    }
+
+    /// A binding of a view fetched through a stamp: the memory check follows it as a view of its entity type's entities.
     private void NoteStampView(string name, Expr value, DType t, Pos pos)
     {
         if (_c.Prechecking || !MemOn) return;
         if (t is not PtrType { Pointee: not null } && !Compiler.IsCoreSpan(t, out _)) return;
         if (!FromStamp(value)) return;
+        if (StampedType(value) is not { } key) return;
         _stampViews.Add(name);
+        _stampViewType[name] = key;
         _viewNames.Add(name);
-        Mem(new MemoryRules.ViewOf(name, StampedEntities, pos) { Contents = StampedEntities });
+        Mem(new MemoryRules.ViewOf(name, StampRoot(key), pos) { Contents = StampRoot(key) });
     }
 
     /// What makes the value of a call or a field read only: a routine of the program whose result is written `%T` or

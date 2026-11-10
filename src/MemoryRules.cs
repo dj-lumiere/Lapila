@@ -167,6 +167,9 @@ public static class MemoryRules
         /// The call may end entities of a StampManager (`Root` is every pool's entities): the views fetched through a
         /// stamp before it may see an entity that has ended.
         public bool Ends { get; init; }
+
+        /// The call is through a routine value, which may end entities of any type: the message says so.
+        public bool ThroughValue { get; init; }
     }
 
     /// `Name` holds a view of the memory `Root` names in it (a field, a part, or a pointer a call gave back from it):
@@ -662,7 +665,8 @@ public static class MemoryRules
                     case Reshape rs:
                         // A view of what the reshaped name holds ends, and a view of the name itself stays: the place
                         // is still there, its contents may not be.
-                        string why = rs.Ends ? "which may end the entity it was fetched from"
+                        string why = rs.Ends && rs.ThroughValue ? "a call through a routine value, which the build can't name the routine of, so it may end the entity it was fetched from"
+                            : rs.Ends ? "which may end the entity it was fetched from"
                             : rs.Reaches ? $"which can reach '{rs.Root}'" : "which may move it";
                         foreach (var (view, root) in state.Views)
                             if (root == rs.Root && contents.TryGetValue(view, out var seenIn) && Moves(seenIn, rs.Inner)
@@ -789,7 +793,7 @@ public static class MemoryRules
                                 + $"table. Use '{uv.Name}' before line {managerEnd.Line}, or end '{manager}' after the table's last use");
                         if (state.Stale.TryGetValue(uv.Name, out var moved))
                         {
-                            if (contents.TryGetValue(uv.Name, out var viewedIn) && viewedIn == FunctionGen.StampedEntities)
+                            if (contents.TryGetValue(uv.Name, out var viewedIn) && viewedIn.StartsWith(FunctionGen.StampedEntities, StringComparison.Ordinal))
                                 Report(Li.ViewUsedAfterEnd, uv.Pos, $"'{uv.Name}', a view fetched through a stamp, is used after {moved.How} on line "
                                     + $"{moved.Pos.Line}, {moved.Why}: fetch it again after line {moved.Pos.Line}, or use it before");
                             else if (contents.TryGetValue(uv.Name, out viewedIn) && state.Views.ContainsKey(uv.Name))

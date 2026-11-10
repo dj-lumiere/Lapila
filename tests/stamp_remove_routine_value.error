@@ -1,0 +1,1 @@
+'v', a view fetched through a stamp, is used after f.call() on line 25, a call through a routine value, which the build can't name the routine of, so it may end the entity it was fetched from

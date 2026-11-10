@@ -997,15 +997,16 @@ public sealed partial class FunctionGen
     /// builder adds what a body shows (Compiler.ReshapesOf), so this is for what it can't see: a move made in raw memory.
     internal static List<(string Param, string? Field)> DeclaredReshapes(RoutineDecl r)
     {
-        var ends = r.IsLibrary && r.AnnotationNamed("ends_stamped") is not null ? [(StampedEntities, (string?)null)] : new List<(string, string?)>();
-        if (r.AnnotationNamed("reshaping") is not { } a) return ends;
-        if (a.Args.Count == 0) return r.Params is [{ Name: "me" }, ..] ? [("me", null), .. ends] : ends;
-        return [.. a.Args.Select(arg => (arg.Value ?? arg.Key ?? "", (string?)null)), .. ends];
+        if (r.AnnotationNamed("reshaping") is not { } a) return [];
+        if (a.Args.Count == 0) return r.Params is [{ Name: "me" }, ..] ? [("me", null)] : [];
+        return a.Args.Select(arg => (arg.Value ?? arg.Key ?? "", (string?)null)).ToList();
     }
 
-    /// The name the memory check gives the entities of every StampManager: a routine that may remove one, or end a pool
-    /// (the standard library marks them `@ends_stamped`, and a routine that calls one does it too), ends every view
-    /// fetched through a stamp before the call.
+    /// The name the memory check gives the entities of every StampManager, and with `:` and a type's key those of one
+    /// type (`$stamped:Node`). A routine that may end entities of a type (`remove` of a `Stamped[T]`, which also ends
+    /// what T's destruct may end) ends the views of that type fetched through a stamp before the call, and a routine
+    /// that may end entities of any type (ending a pool, a call through a routine value) ends them all. A routine that
+    /// calls one does the same: what it may end is one of its moves, which its callers read.
     internal const string StampedEntities = "$stamped";
 
     /// Checks a `#reshaping` annotation: it names parameters of the routine, or stands alone on one that takes `me`.
@@ -1025,14 +1026,14 @@ public sealed partial class FunctionGen
     private void CheckReshapingCall(CallPlan plan, Instance sig)
     {
         var movedParams = _c.ReshapesOf(sig, _inst, plan.Pos);
+        if (plan.Decl.IsLibrary && plan.Decl.AnnotationNamed("ends_stamped") is not null) movedParams = [.. movedParams, .. StampedEnds(plan)];
         if (movedParams.Count == 0) return;
         int offset = plan.Receiver is null ? 0 : 1;
         foreach (var (name, declared) in movedParams)
         {
-            if (name == StampedEntities)
+            if (name.StartsWith(StampedEntities, StringComparison.Ordinal))
             {
-                if (_stampViews.Count > 0) Mem(new MemoryRules.Reshape(StampedEntities, SpelledCall(plan), plan.Pos) { Ends = true });
-                if (!_c.Prechecking) _c.NoteReshape(_inst, StampedEntities, null);
+                EndStampViews(name, SpelledCall(plan), plan.Pos, routineValue: false);
                 continue;
             }
             int index = sig.Decl.Params.FindIndex(p => p.Name == name);

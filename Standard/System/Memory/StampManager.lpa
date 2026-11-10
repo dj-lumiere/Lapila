@@ -5,8 +5,9 @@
 # `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended. `pool.remove(stamp)`
 # ends the entity right there: the slot's generation goes up, so every later `fetch` of any stamp of it fails, then
 # the entity's destruct runs and the slot is free for the next `add` of its type. A view fetched before the `remove`
-# must not be used after it, which the build checks: any call that may remove from a StampManager ends the views
-# fetched before it.
+# must not be used after it, which the build checks: a `remove` of a `Stamped[T]` ends the views of T fetched before
+# it, and those of every type T's destruct may remove. Views of other types stay usable. Ending a pool, and a call
+# through a routine value, may end entities of any type, so they end every view fetched before.
 #
 # A pool is an entity the program holds, as a local or anywhere else: `pool: &StampManager <- .construct(manager:
 # HEAP)`. Ending it (`drop pool`, or the builder's drop at the end of its scope) makes every stamp of it stale, then
@@ -191,7 +192,8 @@ routine Stamped[T].hash() -> U64
     return hash_combine(first: ptrtoint[Addr, U64](me.at), second: me.generation)
 
 ### Ends the entity of a stamp, right there: every `fetch` of its stamps fails from now on, its destruct runs, and its
-### slot is free for the next entity of its type. A view fetched before must not be used after this.
+### slot is free for the next entity of its type. A view of T fetched before (or of a type T's destruct may remove)
+### must not be used after this, which the build checks.
 ### :typeparam T: The entity's type.
 ### :param stamp: The entity's stamp.
 ### :throws: `StaleStampError` when the entity was removed already. Throws `UnacceptedValueError` when the stamp is of another pool.

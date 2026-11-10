@@ -1,0 +1,27 @@
+# A call through a routine value may end entities of any type: the views fetched through a stamp before it end.
+
+import Hosted
+
+### A node.
+entity Node
+    value: S64
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+### Does nothing.
+routine idle() -> None
+    return
+
+### Uses a view after a call through a routine value.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
+    f: Callable[(), None] = idle.to[Callable[(), None]]()
+    v: @Node = a.fetch()
+    f.call()
+    Console.show("{v.value.peek()}")
+    return

@@ -1,0 +1,40 @@
+# A remove ends the views of its entity's type fetched before it, and views of an unrelated type stay usable.
+
+import Hosted
+
+### A node.
+entity Node
+    value: S64
+
+### A label.
+entity Label
+    text: S64
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+### Makes a label.
+### :param text: Its text.
+### :returns: The label.
+common routine Label.construct(text: S64) -> Me
+    return Me(text)
+
+### Removes a node.
+### :param pool: The pool.
+### :param s: The node's stamp.
+routine kill(pool: @StampManager, s: Stamped[Node]) -> None
+    pool.remove(s)
+    return
+
+### Keeps a label's view across a node's remove.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: Stamped[Node] = pool.add(Node.construct(value: 1))
+    l: Stamped[Label] = pool.add(Label.construct(text: 7))
+    seen: @Label = l.fetch()
+    kill(pool, a)
+    Console.show("label still: {seen.text.peek()}")
+    return

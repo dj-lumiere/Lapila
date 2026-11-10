@@ -1,0 +1,41 @@
+# A remove also ends the views of every type the removed entity's destruct may remove: a parent whose destruct removes
+# its child ends the child views fetched before.
+
+import Hosted
+
+### A child.
+entity Child
+    value: S64
+
+### A parent that removes its child when it ends.
+entity Parent
+    pool: @StampManager
+    child: Stamped[Child]
+
+### Makes a child.
+### :param value: Its value.
+### :returns: The child.
+common routine Child.construct(value: S64) -> Me
+    return Me(value)
+
+### Makes a parent.
+### :param pool: The pool both are in.
+### :param child: The child's stamp.
+### :returns: The parent.
+common routine Parent.construct(pool: @StampManager, child: Stamped[Child]) -> Me
+    return Me(pool, child)
+
+### Removes the child.
+routine @Parent.destruct() -> None
+    me.pool.peek().remove(me.child.peek())
+    return
+
+### Uses a child's view after its parent's remove.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    c: Stamped[Child] = pool.add(Child.construct(value: 1))
+    p: Stamped[Parent] = pool.add(Parent.construct(pool, child: c))
+    kid: @Child = c.fetch()
+    pool.remove(p)
+    Console.show("{kid.value.peek()}")
+    return

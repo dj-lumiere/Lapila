@@ -385,6 +385,8 @@ public sealed partial class FunctionGen
     /// Records a call through a Callable value: the value's atoms say which routine it may be.
     private void RecordIndirectCall(Expr callee, CallableType ct, List<Expr> argExprs, Pos pos)
     {
+        // The build can't name the routine a value calls: it may end entities of any type.
+        if (!_decl.IsLibrary) EndStampViews(StampedEntities, Spelled(new MethodCallExpr(callee, "call", [], argExprs, pos)), pos, routineValue: true);
         if (_escape is null) return;
         var args = argExprs.Select((a, i) => Atoms(a, i < ct.Params.Count ? ct.Params[i] : null)).ToList();
         _escapeCalls[(pos, "call")] = _escape.Calls.Count;
