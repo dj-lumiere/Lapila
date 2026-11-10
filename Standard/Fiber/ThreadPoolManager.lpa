@@ -166,7 +166,7 @@ routine @PassableFiber[T].destruct() -> None
         return
     passable.slot.give_back()
     pool: @ThreadPoolManager = passable.pool.peek()
-    held: Authorized[U8] <- pool.guard.get_exclusive_access()
+    held: @U8 <- pool.guard.get_exclusive_access()
     passable.next.poke(pool.idle.peek())
     pool.idle.poke(passable.to[Addr]())
     drop held
@@ -181,7 +181,7 @@ routine @PassableFiber[T].destruct() -> None
 @track_caller
 routine @ThreadPoolManager.get_passable_fiber[T]() -> PassableFiber[T]
 needs AnyType T
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     me.start_threads()
     idle_or_none: @PassableFiberSlot? = me.idle.peek().to[@PassableFiberSlot?]()
     if idle_or_none.is_absent()
@@ -223,7 +223,7 @@ secret routine @ThreadPoolManager.start_threads() -> None
 ### :param passable: The passable fiber, with its work put on.
 @target(os: not "none")
 secret routine @ThreadPoolManager.queue(passable: @PassableFiberSlot) -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     when me.last.peek().to[@PassableFiberSlot?]()
         is @PassableFiberSlot as last => last.next.poke(passable.to[Addr]())
         is None => me.first.poke(passable.to[Addr]())
@@ -238,7 +238,7 @@ secret routine @ThreadPoolManager.queue(passable: @PassableFiberSlot) -> None
 ### :returns: The passable fiber, or null.
 @target(os: not "none")
 secret routine @ThreadPoolManager.take() -> @PassableFiberSlot?
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     first: @PassableFiberSlot? = me.first.peek().to[@PassableFiberSlot?]()
     if first.is_absent()
         return None()
@@ -254,7 +254,7 @@ secret routine @ThreadPoolManager.take() -> @PassableFiberSlot?
 ### :param fiber: The fiber.
 @target(os: not "none")
 secret routine @ThreadPoolManager.queue_woken(fiber: @FiberState) -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     me.woken.add_last(fiber)
     # The epoch changes before the exclusive access goes back, after which a thread may run the fiber to its end and
     # the pool may end.
@@ -266,7 +266,7 @@ secret routine @ThreadPoolManager.queue_woken(fiber: @FiberState) -> None
 ### :returns: The fiber, or null.
 @target(os: not "none")
 secret routine @ThreadPoolManager.take_woken() -> @FiberState?
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if me.woken.is_empty()
         return None()
     fiber: @FiberState = me.woken.remove_first()
@@ -276,7 +276,7 @@ secret routine @ThreadPoolManager.take_woken() -> @FiberState?
 ### :param fiber: The fiber.
 @target(os: not "none")
 secret routine @ThreadPoolManager.keep_fiber(fiber: @FiberState) -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     fiber.next_idle.poke(me.spare.peek())
     me.spare.poke(fiber.to[Addr]())
     return
@@ -287,7 +287,7 @@ secret routine @ThreadPoolManager.keep_fiber(fiber: @FiberState) -> None
 @target(os: not "none")
 @track_caller
 secret routine @ThreadPoolManager.take_fiber() -> @FiberState
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     spare_or_none: @FiberState? = me.spare.peek().to[@FiberState?]()
     if spare_or_none.is_present()
         spare: @FiberState = spare_or_none.unwrap()
@@ -312,7 +312,7 @@ secret routine @ThreadPoolManager.take_fiber() -> @FiberState
         work: fiber.slot.to[Addr](), then: requeue.to[Callable](), wake_state: FIBER_RUNNING,
         timer: 0, trace_depth: 0, access: None(), race: race_stack_new(), next_idle: Addr.zero(),
         next_all: Addr.zero(), pool: me, mold: Addr.zero()))
-    held2: Authorized[U8] <- me.guard.get_exclusive_access()
+    held2: @U8 <- me.guard.get_exclusive_access()
     fiber.next_all.poke(me.fibers.peek())
     me.fibers.poke(fiber.to[Addr]())
     return fiber

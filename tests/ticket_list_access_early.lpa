@@ -7,8 +7,8 @@ import Hosted
 ### The sum of the values the access covers.
 ### :param part: The shared read access to the values.
 ### :returns: Their sum.
-routine total(part: @ReadAuthorizedSlice[S64]) -> S64
-    view: @[S64] = part.getview()
+routine total(part: %[S64]) -> S64
+    view: %[S64] = part
 
     for i in 0 til view.count() with sum: S64 = 0
         continue with sum: sum + view[i]
@@ -19,21 +19,20 @@ routine total(part: @ReadAuthorizedSlice[S64]) -> S64
 routine start() -> None
     numbers: &[S64] <- [1, 2, 3, 4] * 1 from HEAP
     ts: &List[Thread[S64]] <- .construct(HEAP)
-    reads: &List[ReadAuthorizedSlice[S64]] <- .construct(HEAP)
     view: @[S64] = numbers.getslice()
+    low: %[S64] <- view.getslice(start: 0, count: 2).get_shared_read_access()
+    high: %[S64] <- view.getslice(start: 2, count: 2).get_shared_read_access()
 
-    for half: U64 in 0 til 2
-        held: ReadAuthorizedSlice[S64] <- view.getslice(start: half * 2,
-            count: 2).get_shared_read_access()
-        reads.add_last(steal held)
-
-    # The accesses are in their places before any work is handed one: the list doesn't grow while work reads them.
-    for half: U64 in 0 til 2
-        t: Thread[S64] <- get_thread[S64]()
-        work: Work[S64] = total.to[Work](part: reads.getslot(half))
-        t.put_work(steal work)
-        ts.add_last(steal t)
-    drop reads
+    first: Thread[S64] <- get_thread[S64]()
+    on_low: Work[S64] = total.to[Work](part: low)
+    first.put_work(steal on_low)
+    ts.add_last(steal first)
+    second: Thread[S64] <- get_thread[S64]()
+    on_high: Work[S64] = total.to[Work](part: high)
+    second.put_work(steal on_high)
+    ts.add_last(steal second)
+    drop low
+    drop high
     sums: &List[S64] <- ts.retrieve_all()
     ts.give_back_all()
     Console.show("{sums[0]} {sums[1]}")

@@ -1,13 +1,13 @@
 # Lapila stdlib: AccessManager
 #
 # The AccessManager hands out exclusive access and shared read access to memory. A flow (a thread, a fiber, or another
-# language's work) asks for access to the value at a pointer, `p.get_exclusive_access()` (an `Authorized[T]`: it
-# alone reads and writes it) or `p.get_shared_read_access()` (a `ReadAuthorized[T]`: several flows read it, none
-# writes), and reads and writes through the access's `getview()`. The access covers the bytes of that one value,
-# `[p, p + size of T)`. A run of values, a `@[T]` or a `&[T]`, is taken at once the same way: `s.get_exclusive_access()`
-# gives an `AuthorizedSlice[T]` and `s.get_shared_read_access()` a `ReadAuthorizedSlice[T]`, which cover
-# `[data, data + count * size of T)`, and their `getview()` is the `@[T]`. When another flow holds an access that
-# overlaps and doesn't share, the flow waits. It gives the access back with `drop`.
+# language's work) asks for access to the value at a pointer, `m: @T <- p.get_exclusive_access()` (it alone reads and
+# writes it) or `v: %T <- p.get_shared_read_access()` (several flows read it, none writes). The access is the view the
+# name is bound to: a `@T`, or a `%T` that only reads. It covers the bytes of that one value, `[p, p + size of T)`. A
+# run of values, a `@[T]` or a `&[T]`, is taken at once the same way, `m: @[T] <- s.get_exclusive_access()` and
+# `v: %[T] <- s.get_shared_read_access()`, which cover `[data, data + count * size of T)`. When another flow holds an
+# access that overlaps and doesn't share, the flow waits. The name's `drop`, written or at the end of its scope, gives
+# the access back.
 #
 # - Every access held is a node of one table: an interval tree, a balanced tree in the order of the start addresses,
 #   where each node also keeps the largest end of its subtree, so the accesses that overlap a range are found without
@@ -269,245 +269,140 @@ common routine AccessManager.construct() -> Me
 
 # -- the access a program takes ------------------------------------------------------------------------------------
 
-### Exclusive access to the value at `at`, which the AccessManager handed out: this flow alone reads and writes it
-### until the access is given back with `drop`. Read and write it through `getview()`.
-### :typeparam T: The value's type.
-entity Authorized[T]
-    ### The value the access covers, None once it is given back.
-    at: @T?
-
-### Shared read access to the value at `at`, which the AccessManager handed out: other flows may read it at the same
-### time, none writes it, until the access is given back with `drop`. Read it through `getview()`.
-### :typeparam T: The value's type.
-entity ReadAuthorized[T]
-    ### The value the access covers, None once it is given back.
-    at: @T?
-
-### Exclusive access to the run of values `at` views, which the AccessManager handed out: this flow alone reads and
-### writes them until the access is given back with `drop`. Read and write them through `getview()`.
-### :typeparam T: The values' type.
-entity AuthorizedSlice[T]
-    ### The values the access covers, None once it is given back.
-    at: @[T]?
-
-### Shared read access to the run of values `at` views, which the AccessManager handed out: other flows may read them
-### at the same time, none writes them, until the access is given back with `drop`. Read them through `getview()`.
-### :typeparam T: The values' type.
-entity ReadAuthorizedSlice[T]
-    ### The values the access covers, None once it is given back.
-    at: @[T]?
-
-### Makes a `Authorized` from its fields.
-### :param at: Its `at`.
-### :returns: The new value.
-common routine Authorized[T].construct(at: @T) -> Me
-    return Me(at)
-
-### Makes a `ReadAuthorized` from its fields.
-### :param at: Its `at`.
-### :returns: The new value.
-common routine ReadAuthorized[T].construct(at: @T) -> Me
-    return Me(at)
-
-### Makes a `AuthorizedSlice` from its fields.
-### :param at: Its `at`.
-### :returns: The new value.
-common routine AuthorizedSlice[T].construct(at: @[T]) -> Me
-    return Me(at)
-
-### Makes a `ReadAuthorizedSlice` from its fields.
-### :param at: Its `at`.
-### :returns: The new value.
-common routine ReadAuthorizedSlice[T].construct(at: @[T]) -> Me
-    return Me(at)
-
 ### Takes exclusive access to the value `me` points at: this flow alone reads and writes it until the access is given
 ### back. Waits while another flow holds an access that overlaps it. The access covers the value's bytes,
-### `[me, me + size of T)`.
+### `[me, me + size of T)`. The view it gives is bound with `<-`, `m: @T <- p.get_exclusive_access()`, and that name's
+### drop (or the end of its scope) gives the access back.
 ### :typeparam T: The value's type.
-### :returns: The access, given back with `drop`.
+### :returns: The value's view, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine PointedCell[T].get_exclusive_access() -> Authorized[T]
+routine PointedCell[T].get_exclusive_access() -> Me
     take_range(ask: AccessAsk(request: AccessRequest(at: me, size: sizeof[T](), mode: ACCESS_WRITE),
         place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return Authorized[T](at: me)
+    return me
 
 ### Takes shared read access to the value `me` points at: other flows may read it at the same time, none writes it.
-### Waits while another flow holds exclusive access that overlaps it, or waits for one.
+### Waits while another flow holds exclusive access that overlaps it, or waits for one. The view it gives only reads,
+### `v: %T <- p.get_shared_read_access()`, and that name's drop gives the access back.
 ### :typeparam T: The value's type.
-### :returns: The access, given back with `drop`.
+### :returns: The value's view that only reads, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine PointedCell[T].get_shared_read_access() -> ReadAuthorized[T]
+routine PointedCell[T].get_shared_read_access() -> %T
     take_range(ask: AccessAsk(request: AccessRequest(at: me, size: sizeof[T](), mode: ACCESS_READ),
         place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return ReadAuthorized[T](at: me)
+    return me
 
 ### Takes exclusive access to the value in the box: `getview().get_exclusive_access()`.
 ### :typeparam T: The value's type.
-### :returns: The access, given back with `drop`.
+### :returns: The value's view, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @BorrowedCell[T].get_exclusive_access() -> Authorized[T]
+routine @BorrowedCell[T].get_exclusive_access() -> @T
     at: @T = me.getview()
     take_range(ask: AccessAsk(request: AccessRequest(at, size: sizeof[T](), mode: ACCESS_WRITE),
         place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return Authorized[T](at)
+    return at
 
 ### Takes shared read access to the value in the box: `getview().get_shared_read_access()`.
 ### :typeparam T: The value's type.
-### :returns: The access, given back with `drop`.
+### :returns: The value's view that only reads, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @BorrowedCell[T].get_shared_read_access() -> ReadAuthorized[T]
+routine @BorrowedCell[T].get_shared_read_access() -> %T
     at: @T = me.getview()
     take_range(ask: AccessAsk(request: AccessRequest(at, size: sizeof[T](), mode: ACCESS_READ),
         place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return ReadAuthorized[T](at)
+    return at
 
 ### Takes exclusive access to every value of the run `me` views: this flow alone reads and writes them until the
 ### access is given back. Waits while another flow holds an access that overlaps them. The access covers the values'
 ### bytes, `[data, data + count * size of T)`. A run of no bytes covers nothing, and nothing is taken.
 ### :typeparam T: The values' type.
-### :returns: The access, given back with `drop`.
+### :returns: The run's view, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @[T].get_exclusive_access() -> AuthorizedSlice[T]
+routine @[T].get_exclusive_access() -> @[T]
     size: U64 = me.count * sizeof[T]()
     if size > 0
         take_range(ask: AccessAsk(request: AccessRequest(at: me.data, size, mode: ACCESS_WRITE),
             place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return AuthorizedSlice[T](at: me)
+    return me
 
 ### Takes shared read access to every value of the run `me` views: other flows may read them at the same time, none
 ### writes them. Waits while another flow holds exclusive access that overlaps them, or waits for one. The access
 ### covers `[data, data + count * size of T)`. A run of no bytes covers nothing, and nothing is taken.
 ### :typeparam T: The values' type.
-### :returns: The access, given back with `drop`.
+### :returns: The run's view that only reads, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @[T].get_shared_read_access() -> ReadAuthorizedSlice[T]
+routine @[T].get_shared_read_access() -> %[T]
     size: U64 = me.count * sizeof[T]()
     if size > 0
         take_range(ask: AccessAsk(request: AccessRequest(at: me.data, size, mode: ACCESS_READ),
             place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return ReadAuthorizedSlice[T](at: me)
+    return me
 
 ### Takes exclusive access to every value of the run: `getslice().get_exclusive_access()`.
 ### :typeparam T: The values' type.
-### :returns: The access, given back with `drop`.
+### :returns: The run's view, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @BorrowedSlice[T].get_exclusive_access() -> AuthorizedSlice[T]
+routine @BorrowedSlice[T].get_exclusive_access() -> @[T]
     at: @[T] = me.getslice()
     size: U64 = at.count * sizeof[T]()
     if size > 0
         take_range(ask: AccessAsk(request: AccessRequest(at: at.data, size, mode: ACCESS_WRITE),
             place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return AuthorizedSlice[T](at)
+    return at
 
 ### Takes shared read access to every value of the run: `getslice().get_shared_read_access()`.
 ### :typeparam T: The values' type.
-### :returns: The access, given back with `drop`.
+### :returns: The run's view that only reads, while the access is held.
 ### :throws: Throws `ReenterDuringAccessError` when this flow already holds an access that overlaps it, and
 ###     `DeadlockError` (with the deadlock check on) when the flows waiting for each other close a cycle.
 @track_caller
 @target(os: not "none")
-routine @BorrowedSlice[T].get_shared_read_access() -> ReadAuthorizedSlice[T]
+routine @BorrowedSlice[T].get_shared_read_access() -> %[T]
     at: @[T] = me.getslice()
     size: U64 = at.count * sizeof[T]()
     if size > 0
         take_range(ask: AccessAsk(request: AccessRequest(at: at.data, size, mode: ACCESS_READ),
             place: caller_location(), deadline: Duration.MAX, hooked: false))
-    return ReadAuthorizedSlice[T](at)
+    return at
 
-### The value the access covers: the view to read and write it through while the access is held.
-### :typeparam T: The value's type.
-### :returns: The value's address.
-routine @Authorized[T].getview() -> @T
-    return me.at.peek().unwrap()
-
-### The value the access covers: the view to read it through while the access is held. It is read only.
-### :typeparam T: The value's type.
-### :returns: The value's address.
-routine @ReadAuthorized[T].getview() -> @T
-    return me.at.peek().unwrap()
-
-### Gives the access back and wakes the flows that wait for it. Nothing on an access given back already.
+### Gives back the access whose view `me` is and wakes the flows that wait for it: what the drop of a name bound with
+### `<-` from an access does. A program writes `drop m`, never this call.
 ### :typeparam T: The value's type.
 ### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
 @target(os: not "none")
-routine @Authorized[T].destruct() -> None
-    when me.at.peek()
-        is @T as at => give_back_range(at)
-        is None => return
-    me.at.poke(None())
+routine PointedCell[T].end_access() -> None
+    give_back_range(at: me)
     return
 
-### Gives the access back and wakes the flows that wait for it. Nothing on an access given back already.
-### :typeparam T: The value's type.
-### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
-@target(os: not "none")
-routine @ReadAuthorized[T].destruct() -> None
-    when me.at.peek()
-        is @T as at => give_back_range(at)
-        is None => return
-    me.at.poke(None())
-    return
-
-### The values the access covers: the view to read and write them through while the access is held.
-### :typeparam T: The values' type.
-### :returns: The run of values.
-routine @AuthorizedSlice[T].getview() -> @[T]
-    return me.at.peek().unwrap()
-
-### The values the access covers: the view to read them through while the access is held. It is read only.
-### :typeparam T: The values' type.
-### :returns: The run of values.
-routine @ReadAuthorizedSlice[T].getview() -> @[T]
-    return me.at.peek().unwrap()
-
-### Gives the access back and wakes the flows that wait for it. Nothing on an access given back already, or on one of
-### an empty run.
+### Gives back the access whose view `me` is and wakes the flows that wait for it: what the drop of a name bound with
+### `<-` from an access does. Nothing for a run of no bytes. A program writes `drop m`, never this call.
 ### :typeparam T: The values' type.
 ### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
 @target(os: not "none")
-routine @AuthorizedSlice[T].destruct() -> None
-    when me.at.peek()
-        is @[T] as at =>
-            if at.count * sizeof[T]() > 0
-                give_back_range(at: at.data)
-        is None => return
-    me.at.poke(None())
-    return
-
-### Gives the access back and wakes the flows that wait for it. Nothing on an access given back already, or on one of
-### an empty run.
-### :typeparam T: The values' type.
-### :throws: Crashes with `AccessNotHeldError` when this flow doesn't hold it.
-@target(os: not "none")
-routine @ReadAuthorizedSlice[T].destruct() -> None
-    when me.at.peek()
-        is @[T] as at =>
-            if at.count * sizeof[T]() > 0
-                give_back_range(at: at.data)
-        is None => return
-    me.at.poke(None())
+routine @[T].end_access() -> None
+    if me.count * sizeof[T]() > 0
+        give_back_range(at: me.data)
     return
 
 # -- taking ranges, for code that keeps its own addresses ----------------------------------------------------------

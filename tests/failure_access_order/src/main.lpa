@@ -12,9 +12,9 @@ record Pair
 ### :param pair: The pair.
 ### :returns: The sum of both.
 routine forward(pair: @Pair) -> U64
-    a: Authorized[U64] <- pair.first.get_exclusive_access()
-    b: Authorized[U64] <- pair.second.get_exclusive_access()
-    sum: U64 = a.getview().peek() + b.getview().peek()
+    a: @U64 <- pair.first.get_exclusive_access()
+    b: @U64 <- pair.second.get_exclusive_access()
+    sum: U64 = a.peek() + b.peek()
     drop b
     drop a
     return sum
@@ -23,9 +23,9 @@ routine forward(pair: @Pair) -> U64
 ### :param pair: The pair.
 ### :returns: The sum of both.
 routine backward(pair: @Pair) -> U64
-    b: Authorized[U64] <- pair.second.get_exclusive_access()
-    a: Authorized[U64] <- pair.first.get_exclusive_access()
-    sum: U64 = a.getview().peek() + b.getview().peek()
+    b: @U64 <- pair.second.get_exclusive_access()
+    a: @U64 <- pair.first.get_exclusive_access()
+    sum: U64 = a.peek() + b.peek()
     drop a
     drop b
     return sum

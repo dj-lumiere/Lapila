@@ -13,9 +13,9 @@ global RECEIVED: &U64
 ### :param first: The index taken first.
 ### :param second: The index taken second.
 routine cross(m: @BorrowedSlice[U64], first: U64, second: U64) -> None
-    a: Authorized[U64] <- m.getslot(first).get_exclusive_access()
+    a: @U64 <- m.getslot(first).get_exclusive_access()
     waitfor(50ms)
-    b: Authorized[U64] <- m.getslot(second).get_exclusive_access()
+    b: @U64 <- m.getslot(second).get_exclusive_access()
     drop b
     drop a
     return

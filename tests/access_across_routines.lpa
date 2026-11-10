@@ -1,5 +1,5 @@
-# An access is followed across routines like memory: a routine may take one and return it (the caller gives it back),
-# or be handed one and give it back (the caller's ends at the call).
+# An access is followed across routines: a routine may take one and return it (the caller takes it with '<-' and gives
+# it back), and a routine handed the view only works through it (its drop of the view ends that reference alone).
 
 import Hosted
 
@@ -7,22 +7,23 @@ global COUNTER: &U64
 
 ### Takes exclusive access to the counter and hands it to the caller.
 ### :returns: The access.
-routine open_counter() -> Authorized[U64]
+routine open_counter() -> @U64
     return COUNTER.get_exclusive_access()
 
-### Adds one through the access, then gives it back.
-### :param held: An exclusive access.
-routine bump_and_close(held: Authorized[U64]) -> None
-    view: @U64 = held.getview()
+### Adds one through the view of the access, and drops the view (the caller still holds the access).
+### :param held: The view of an exclusive access the caller holds.
+routine bump(held: @U64) -> None
+    view: @U64 = held
     view.poke(view.peek() + 1)
     drop held
     return
 
 routine start() -> None
-    held: Authorized[U64] <- open_counter()
-    bump_and_close(steal held)
-    again: Authorized[U64] <- open_counter()
-    view: @U64 = again.getview()
+    held: @U64 <- open_counter()
+    bump(held)
+    drop held
+    again: @U64 <- open_counter()
+    view: @U64 = again
     view.poke(view.peek() + 1)
     drop again
     Console.show("{COUNTER.load()}, held: {AccessManager.held_count()}")

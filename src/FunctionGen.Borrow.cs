@@ -59,7 +59,7 @@ public sealed partial class FunctionGen
     /// work (`Work[T]`) is a plain value bound with `=`.
     private static bool IsBorrowedType(DType? t) =>
         t is RecordType { Decl.IsLibrary: true } r
-        && r.Decl.Name is "Authorized" or "ReadAuthorized" or "AuthorizedSlice" or "ReadAuthorizedSlice" or "Thread" or "Fiber" or "PassableFiber" or "FileStorage";
+        && r.Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "FileStorage";
 
     /// Whether `t` (or a slot of it) is a borrowed thing the memory rules follow as one group that ends once: a thread,
     /// fiber, or passable fiber ticket, or a mapped file's storage. The accesses have their own check (Access).
@@ -122,12 +122,27 @@ public sealed partial class FunctionGen
                 _stackSpans.Add(b.Name);
                 return (new BindStmt(b.Name, span, new ClaimExpr(b.Pos) { Contents = value }, b.Pos) { Source = b.Source }, false);
             }
+            if (value is CallExpr or NsCallExpr or MethodCallExpr && AccessTaker(value) is { Decl: var takes } && TakesAccess(takes))
+                throw Err(Li.BorrowForm, b.Pos, $"an access is the view a name takes with '<-', and its drop gives it back: {b.Name}: {elem} <- ..., "
+                    + "not in a STACK place");
             if (IsBorrowedType(InferQuiet(value)) || IsBorrowedType(Resolve(elem)))
                 throw Err(Li.BorrowForm, b.Pos, $"a {elem} is borrowed from its own manager and given back with drop: bind it with "
                     + $"<- from the call that borrows it, {b.Name}: {elem} <- ..., not in a STACK place");
             var slot = new TypeRef("PointedCell", [new TypeArgType(elem)], written.Pos);
             return (new BindStmt(b.Name, slot, new ClaimExpr(b.Pos) { Contents = value }, b.Pos) { Source = b.Source }, true);
         }
+        // `m: @T <- p.get_exclusive_access()`: an access, whose view the name is.
+        if (written is { Name: "PointedCell" or "PointedSlice", Path: null } && fromManager is null
+            && value is CallExpr or NsCallExpr or MethodCallExpr && AccessTaker(value) is { } taker)
+        {
+            if (taker.Decl.IsLibrary && !TakesAccess(taker.Decl))
+                throw Err(Li.BorrowForm, b.Pos, $"'{taker.Decl.DisplayName}' gives a view, not an access, and '<-' takes an access: bind the view with '=', "
+                    + $"{b.Name}: {written} = ..., or take an access with get_exclusive_access or get_shared_read_access");
+            return (new BindStmt(b.Name, written, value, b.Pos) { Source = b.Source, TakesAccess = true }, false);
+        }
+        if (written is { Name: "PointedCell" or "PointedSlice", Path: null } && value is ValueRef again && _accessBound.Contains(again.Name))
+            throw Err(Li.BorrowForm, b.Pos, $"'{again.Name}' holds an access already, and only the name that took it gives it back: a second name "
+                + $"for it is a view, {b.Name}: {written} = {again.Name}");
         if (written is { Name: "PointedCell" or "PointedSlice", Path: null })
             throw Err(Li.BorrowForm, written.Pos, $"{written} only views memory, and '<-' borrows a place: {b.Name}: "
                 + (written.Args is [TypeArgType inner] ? (written.Name == "PointedCell" ? $"&{inner}" : $"&[{inner}]") : "&T") + " <- value");
@@ -197,13 +212,15 @@ public sealed partial class FunctionGen
     private string? BorrowedWithEquals(BindStmt b, DType t)
     {
         // A binding whose type is a type parameter takes whatever the instance holds: only a written type says borrowed.
-        if (b.Value is ClaimExpr || b.Lowered || b.Name.StartsWith('$') || SourceTypeParams.Contains(b.Type.Name)) return null;
+        if (b.Value is ClaimExpr || b.Lowered || b.TakesAccess || b.Name.StartsWith('$') || SourceTypeParams.Contains(b.Type.Name)) return null;
         if (IsPlaceType(b.Type) && b.Type.Known is null)
             return $"a {b.Type} is a place borrowed from a manager, and '=' only binds a value or a view: {b.Name}: "
                 + $"{b.Type} <- value";
         if (IsBorrowedType(t))
             return $"a {t.Name} is borrowed and given back with drop, so it is bound with '<-' from the call that borrows "
                 + $"it: {b.Name}: {b.Type} <- ...";
+        if (b.Value is CallExpr or NsCallExpr or MethodCallExpr && AccessTaker(b.Value) is { Decl: var takes } && TakesAccess(takes))
+            return $"'{takes.DisplayName}' takes an access, and the name whose drop gives it back is bound with '<-': {b.Name}: {b.Type} <- ...";
         return null;
     }
 

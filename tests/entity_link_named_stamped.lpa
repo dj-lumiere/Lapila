@@ -13,8 +13,8 @@ record Link
 
 routine start() -> None
     link: &Link <- Link(target: Stamped(at: 7))
-    reading: ReadAuthorized[Link] <- link.get_shared_read_access()
-    view: @Link = reading.getview()
+    reading: %Link <- link.get_shared_read_access()
+    view: %Link = reading
     copy: Link = view.peek()
     Console.show("{copy.target.at}")
     drop reading

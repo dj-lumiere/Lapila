@@ -11,10 +11,10 @@ record Steps
 ### :param m: The memory.
 ### :param steps: Where the order is noted.
 routine hold_a_while(m: @BorrowedSlice[U64], steps: @Steps) -> None
-    second: Authorized[U64] <- m.getslot(1).get_exclusive_access()
+    second: @U64 <- m.getslot(1).get_exclusive_access()
     steps.started.poke(1)
     waitfor(40ms)
-    second.getview().poke(9)
+    second.poke(9)
     steps.given_back.poke(1)
     drop second
     return

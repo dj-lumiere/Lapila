@@ -5,8 +5,8 @@ import Hosted
 global COUNTER: &U64
 
 routine start() -> None
-    held: ReadAuthorized[U64] <- COUNTER.get_shared_read_access()
-    Console.show("{held.getview().peek()}")
+    held: %U64 <- COUNTER.get_shared_read_access()
+    Console.show("{held.peek()}")
     drop held
     drop held
     return

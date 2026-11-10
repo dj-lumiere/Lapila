@@ -30,8 +30,8 @@ routine Handle.fetch() -> @Node
 routine start() -> None
     node: &Node <- Node.construct(value: 1)
     link: &Link <- Link(target: Handle(at: node.getview().to[Addr]()))
-    reading: ReadAuthorized[Link] <- link.get_shared_read_access()
-    view: @Link = reading.getview()
+    reading: %Link <- link.get_shared_read_access()
+    view: %Link = reading
     copy: Link = view.peek()
     drop reading
     return

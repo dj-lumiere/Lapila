@@ -1,15 +1,18 @@
-# A routine gives back memory its caller holds.
+# A routine that drops the view it is handed ends that reference alone: the memory stays its caller's, which gives it
+# back itself.
 import Hosted
 
-### Gives it back.
-### :param m: The memory.
+### Drops its view of the memory.
+### :param m: The memory's view.
 routine kill(m: @BorrowedSlice[Byte]) -> None
     drop m
     return
 
+### Hands the memory's view on and gives the memory back.
 routine start() -> None
     m: &[Byte] <- [Byte('h')] * 8 from HEAP
 
     kill(m: m)
+    Console.show("still here: {m.count()}")
     drop m
     return

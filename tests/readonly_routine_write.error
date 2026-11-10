@@ -1,1 +1,1 @@
-me.count is the me of the @readonly routine 'Counter.bump', which only reads, and
+me.count is reached through the me of the @readonly routine 'Counter.bump', which only reads, and

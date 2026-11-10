@@ -90,8 +90,8 @@ routine read_held(at: U64, manager: @MemoryManager) -> S64
 ### :param at: The index read.
 ### :returns: The element.
 routine read_locked(xs: @List[S64], at: U64) -> S64
-    held: Authorized[List[S64]] <- xs.get_exclusive_access()
-    value: S64 = held.getview().getitem(at)
+    held: @List[S64] <- xs.get_exclusive_access()
+    value: S64 = held.getitem(at)
     drop held
     return value
 

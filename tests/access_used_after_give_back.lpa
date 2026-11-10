@@ -6,8 +6,8 @@ import Hosted
 global COUNTER: &U64
 
 routine start() -> None
-    held: Authorized[U64] <- COUNTER.get_exclusive_access()
-    held.getview().poke(1)
+    held: @U64 <- COUNTER.get_exclusive_access()
+    held.poke(1)
     drop held
-    held.getview().poke(2)
+    held.poke(2)
     return

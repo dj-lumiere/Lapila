@@ -9,10 +9,10 @@ routine start() -> None
 
     xs.add_last(7)
     xs.add_last(8)
-    list: Authorized[List[S64]] <- xs.get_exclusive_access()
-    first: Authorized[S64] <- xs.getslot(0).get_exclusive_access()
+    list: @List[S64] <- xs.get_exclusive_access()
+    first: @S64 <- xs.getslot(0).get_exclusive_access()
     Console.show("held: {AccessManager.held_count()}")
-    first.getview().poke(first.getview().peek() + list.getview().count().to[S64]())
+    first.poke(first.peek() + list.count().to[S64]())
     drop first
     drop list
     Console.show("first: {xs[0]}, held: {AccessManager.held_count()}")

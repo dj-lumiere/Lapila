@@ -13,8 +13,8 @@ record Ledger
 ### :param book: The access to the ledger.
 ### :param count: How many.
 ### :returns: The ledger's entries after.
-routine write_entries(book: @Authorized[Ledger], count: U64) -> U64
-    view: @Ledger = book.getview()
+routine write_entries(book: @Ledger, count: U64) -> U64
+    view: @Ledger = book
     (view.entries.peek() + count).poke_into(view.entries)
     return view.entries.peek()
 
@@ -32,7 +32,7 @@ routine start() -> None
     book: &Ledger <- Ledger(entries: 1)
 
     t: Thread[U64] <- get_thread[U64]()
-    held: Authorized[Ledger] <- book.get_exclusive_access()
+    held: @Ledger <- book.get_exclusive_access()
     writing: Work[U64] = write_entries.to[Work](book: held, count: 4)
     t.put_work(steal writing)
     written: U64 = t.retrieve()

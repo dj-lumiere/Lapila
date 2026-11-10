@@ -67,6 +67,27 @@ public sealed class AccessFacts
         lock (_facts) Of(routine).Passes.Add((param, callee, index));
     }
 
+    /// The `<-` lines that took an access from a routine of the program: `name` on line `pos` from `routine`.
+    private readonly List<(string Routine, string Name, Pos Pos)> _boundFrom = [];
+
+    /// `name` was bound with `<-` to what `routine` returns, as an access whose drop gives it back.
+    public void NoteBoundFrom(string routine, string name, Pos pos)
+    {
+        lock (_facts) _boundFrom.Add((routine, name, pos));
+    }
+
+    /// A `<-` line that took an access from a routine that returns a view and no access: the name's drop would give
+    /// back an access nobody took.
+    public IEnumerable<CompileError> CheckBoundFrom()
+    {
+        List<(string Routine, string Name, Pos Pos)> lines;
+        lock (_facts) lines = [.. _boundFrom];
+        foreach (var (routine, name, pos) in lines.Distinct())
+            if (!ReturnsAccess(routine))
+                yield return new CompileError(Li.BorrowForm, pos, $"'{name}' is bound with '<-' as an access, and the routine on the right returns a "
+                    + $"view, not an access it took: bind the view with '=' ({name}: @T = ...)");
+    }
+
     /// Whether `routine` returns an access, itself or through the routines it returns the result of.
     public bool ReturnsAccess(string routine)
     {

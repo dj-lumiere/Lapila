@@ -274,7 +274,7 @@ routine @WorkSlot.wait_until(deadline: Duration, cancellable: Bool) -> Bool
     # sees it done, or `complete` sees the waiter. One left behind when the wait ends otherwise only wakes it once more later,
     # which a park allows.
     loop
-        held: Authorized[U8] <- me.guard.get_exclusive_access()
+        held: @U8 <- me.guard.get_exclusive_access()
         if me.is_finished()
             drop held
             break
@@ -299,7 +299,7 @@ routine blocked_until_cancelled(waiter: Waiter) -> Bool
     if running.is_absent()
         return false
     slot: @WorkSlot = running.unwrap()
-    held: Authorized[U8] <- slot.guard.get_exclusive_access()
+    held: @U8 <- slot.guard.get_exclusive_access()
     slot.blocked.poke(waiter)
     drop held
     return slot.is_cancelled()
@@ -309,7 +309,7 @@ routine blocked_until_cancelled(waiter: Waiter) -> Bool
 ### :returns: True when the work has finished already (`waiter` isn't kept).
 @target(os: not "none")
 routine @WorkSlot.register(waiter: Waiter) -> Bool
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if me.is_finished()
         return true
     me.waiter.poke(waiter)
@@ -319,7 +319,7 @@ routine @WorkSlot.register(waiter: Waiter) -> Bool
 ### :param waiter: The waiter.
 @target(os: not "none")
 routine @WorkSlot.unregister(waiter: Waiter) -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if me.waiter.peek() == waiter
         me.waiter.zeroinit(1)
     return
@@ -332,7 +332,7 @@ routine @WorkSlot.complete() -> None
     wake_all(me.state)
     # The wake goes out under the exclusive access: a waiter that sees the work done takes it first, so it can't go on,
     # end, and take its fiber's manager with it while the wake still reaches into them.
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     waiter: Waiter = me.waiter.peek()
     me.waiter.zeroinit(1)
     waiter.wake()
@@ -366,7 +366,7 @@ routine @WorkSlot.is_cancelled() -> Bool
 @target(os: not "none")
 routine @WorkSlot.request_cancel() -> None
     me.cancel.poke_unbroken(1)
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     blocked: Waiter = me.blocked.peek()
     blocked.wake()
     return

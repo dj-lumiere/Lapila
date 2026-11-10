@@ -5,8 +5,8 @@ import Hosted
 ### Reads a value and keeps it doubled.
 ### :param slot: The value.
 routine double(slot: @S64) -> None
-    held: Authorized[S64] <- slot.get_exclusive_access()
-    value: @S64 = held.getview()
+    held: @S64 <- slot.get_exclusive_access()
+    value: @S64 = held
     value.poke(value.peek() * 2)
     drop held
     return

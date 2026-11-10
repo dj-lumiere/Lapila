@@ -376,6 +376,9 @@ public sealed partial class FunctionGen
     /// out of a place for `steal place as old inject fresh`, which ends nothing: the place gets `fresh` right after.
     private Val EvalSteal(StealExpr s, DType expected)
     {
+        if (s.Value is ValueRef stolenAccess && _accessBound.Contains(stolenAccess.Name))
+            throw Err(Li.BorrowForm, s.Pos, $"'{stolenAccess.Name}' is the view of an access it took with '<-', and only that name gives the access back: "
+                + $"hand the view on without steal ({stolenAccess.Name}) and drop it here, or let the end of its scope give it back");
         if (s.Value is ValueRef handedOn)
         {
             _hollowSeen = handedOn;
@@ -1572,6 +1575,7 @@ public sealed partial class FunctionGen
             }
             if (!_routineParams.TryAdd(p.Name, given))
                 throw Err(Li.DuplicateParameter, p.Pos, $"parameter '{p.Name}' is declared twice");
+            if (p.Type is { Name: "PointedCell" or "PointedSlice", Path: null } && !p.Implicit) _viewNamesWritten.Add(p.Name);
             // A `%T` parameter, and the me of a `@readonly` routine, only read.
             if (p.Type.ReadOnly)
                 _readOnlyWhy[p.Name] = p.Name == "me" && p.Implicit
@@ -2232,8 +2236,12 @@ public sealed partial class FunctionGen
                         ? Resolve(pointee.Type) : written);
                 }
                 var (lowered, stack) = LowerBorrow(borrow);
+                if (lowered.TakesAccess) _accessBound.Add(lowered.Name);
                 EmitStmtCore(lowered);
                 if (stack && !_cur.Terminated) RegisterStackPlace(lowered.Name, lowered.Pos);
+                // An access the name took: the builder gives it back at every exit of the body, unless the program
+                // dropped it or returned it first.
+                else if (lowered.TakesAccess && !_cur.Terminated) HoldUntilExit(lowered.Name, lowered.Pos);
                 // Something borrowed from a manager (or a call that hands it over): the builder drops it at every exit
                 // of the body, unless the program ended it or handed it on first.
                 else if (MemOn && !_cur.Terminated && lowered.Type is { Name: "PointedCell" }
@@ -2330,12 +2338,9 @@ public sealed partial class FunctionGen
                     BindClaim(b.Name, FrameSlotWords(b, t));
                 else BindAtoms(b.Name, b.Value, t);
                 NoteBoundViews(b, t);
-                if (b.Value is not ClaimExpr) NoteAccessBinding(b.Name, b.Value, t, b.Pos);
+                if (b.Value is not ClaimExpr) NoteAccessBinding(b.Name, b.Value, t, b.Pos, b.TakesAccess, b.Type.ReadOnly);
                 if (b.Value is not ClaimExpr) NoteReadOnlyBinding(b, t);
                 if (b.Value is not ClaimExpr) NoteStampView(b.Name, b.Value, t, b.Pos);
-                // An access bound with `<-` is the place that holds it: the access check follows it by that name.
-                bool accessPlace = b.Value is ClaimExpr { Contents: { } accessCall } && t is PtrType { Pointee: { } accessType }
-                    && IsAccessType(accessType) && b.Ticket is false && accessCall is not ImplicitCallExpr;
                 if ((b.Value is ClaimExpr { Contents: { } madeFrom } ? madeFrom : b.Value) is { } made3 && Tracked(t))
                     NoteManagedThrough(b.Name, made3, b.Pos);
                 if (MemOn && b.Ticket && (!Tracked(t) || IsWorkTicket(t)))
@@ -2346,7 +2351,7 @@ public sealed partial class FunctionGen
                     Mem(new MemoryRules.Acquire(b.Name, "borrowed here", b.Pos)
                         { Entity = (t is PtrType { Pointee: { } held } ? held : t).Name });
                 }
-                else if (MemOn && Tracked(t) && !_workBlocks.Contains(b.Name) && !accessPlace)
+                else if (MemOn && Tracked(t) && !_workBlocks.Contains(b.Name))
                 {
                     if (b.Value is ClaimExpr { Contents: { } held }) MemBind(b.Name, held, b.Pos, warn: false, type: t);
                     else if (b.Value is not ClaimExpr) MemBind(b.Name, b.Value, b.Pos, type: t);
@@ -2375,8 +2380,6 @@ public sealed partial class FunctionGen
                     {
                         _claimContents = outerClaim;
                     }
-                    // The access the call took is the place's from here on (the take is noted by the call).
-                    if (accessPlace) NoteAccessBinding(b.Name, contents, ((PtrType)t).Pointee!, b.Pos);
                 }
                 break;
             }
@@ -2427,6 +2430,9 @@ public sealed partial class FunctionGen
                     var printer = new Printer();
                     throw Err(Li.InvalidDropTarget, e.Pos, $"a value is given back with drop: drop {printer.Expr(direct.Receiver, 0)}");
                 }
+                // An access is given back by the drop of the name that took it.
+                if (e.Value is MethodCallExpr { Name: "end_access", Args.Count: 0, Builder: false } ended && !_decl.IsLibrary)
+                    throw Err(Li.InvalidDropTarget, e.Pos, $"an access is given back by the name that took it with '<-': drop {new Printer().Expr(ended.Receiver, 0)}");
                 // A call that hands back an entity (or a value holding one) has given it to this line: dropping it on
                 // the floor would leak what it holds.
                 if (e.Value is CallExpr or NsCallExpr or MethodCallExpr && InferQuiet(e.Value) is { } made && Entities.Holds(made))
@@ -2438,6 +2444,18 @@ public sealed partial class FunctionGen
             case DropStmt d:
             {
                 if (d.Value is ValueRef givenBackName) _hollowSeen = givenBackName;
+                // The view of an access the name took: its drop gives the access back.
+                if (d.Value is ValueRef accessName && _accessBound.Contains(accessName.Name))
+                {
+                    NoteAccessDrop(d.Value, d.Pos);
+                    _givingBack = d.Value;
+                    try { EvalAny(new MethodCallExpr(d.Value, "end_access", [], [], d.Pos) { Builder = true }); }
+                    finally { _givingBack = null; }
+                    SetHold(accessName.Name, false);
+                    break;
+                }
+                // Any other view's drop ends that reference alone: what it views goes on.
+                if (d.Value is ValueRef viewName && _viewNamesWritten.Contains(viewName.Name)) break;
                 // A piece of work ends only on a ticket, which runs it and ends its arguments.
                 if (d.Value is ValueRef droppedWork && RunsOnce(droppedWork.Name, out var droppedOnce))
                     throw Err(Li.WorkRunsOnce, d.Pos, $"{droppedOnce}, so the work in '{droppedWork.Name}' runs once, and only the ticket that runs it "

@@ -1,1 +1,1 @@
-view is the view of a shared read access, which reads only: take exclusive access (get_exclusive_access, an Authorized[T], or an AuthorizedSlice[T] for a run of values) to write
+view is a %U64, a view that only reads, and 'poke' writes through it

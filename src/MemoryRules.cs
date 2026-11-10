@@ -41,7 +41,7 @@ public static class MemoryRules
         public string? Access { get; init; }
         public string? Shown { get; init; }
 
-        /// The access covers a run of values (`AuthorizedSlice[T]`): its elements are inside it.
+        /// The access covers a run of values (`m: @[T] <- s.get_exclusive_access()`): its elements are inside it.
         public bool Run { get; init; }
 
         /// The group is a piece of work (`Work[T]`): the messages say so.

@@ -5,15 +5,15 @@ import Hosted
 
 ### Doubles the value.
 ### :param value: An exclusive access to it.
-routine double(value: @Authorized[U64]) -> None
-    at: @U64 = value.getview()
+routine double(value: @U64) -> None
+    at: @U64 = value
     at.poke(at.peek() * 2)
     return
 
 routine start() -> None
     n: &U64 <- 21
 
-    view: Authorized[U64] <- n.get_exclusive_access()
+    view: @U64 <- n.get_exclusive_access()
     t: Thread[None] <- get_thread[None]()
     work_t: Work[None] = double.to[Work](value: view)
     t.put_work(steal work_t)

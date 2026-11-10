@@ -8,9 +8,9 @@ import Hosted
 record Slot
     value: U64
 
-routine hash_once(slot: @Authorized[Slot]) -> None
+routine hash_once(slot: @Slot) -> None
     n: U64 = 0x5EED
-    n.hash().poke_into(slot.getview().value)
+    n.hash().poke_into(slot.value)
     return
 
 routine start() -> None
@@ -20,10 +20,10 @@ routine start() -> None
     d: &Slot <- Slot(value: 0)
 
     # Each thread writes its own slot through the view of an exclusive access handed to it.
-    va: Authorized[Slot] <- a.get_exclusive_access()
-    vb: Authorized[Slot] <- b.get_exclusive_access()
-    vc: Authorized[Slot] <- c.get_exclusive_access()
-    vd: Authorized[Slot] <- d.get_exclusive_access()
+    va: @Slot <- a.get_exclusive_access()
+    vb: @Slot <- b.get_exclusive_access()
+    vc: @Slot <- c.get_exclusive_access()
+    vd: @Slot <- d.get_exclusive_access()
 
     t1: Thread[None] <- get_thread[None]()
     work_t1: Work[None] = hash_once.to[Work](slot: va)

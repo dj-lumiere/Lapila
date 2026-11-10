@@ -88,7 +88,7 @@ routine @Thread[T].destruct() -> None
         return
     worker.slot.give_back()
     manager: @ThreadManager = worker.manager.peek()
-    held: Authorized[U8] <- manager.guard.get_exclusive_access()
+    held: @U8 <- manager.guard.get_exclusive_access()
     worker.next.poke(manager.idle.peek())
     manager.idle.poke(worker.to[Addr]())
     drop held
@@ -116,7 +116,7 @@ common routine ThreadManager.construct(manager: @MemoryManager) -> Me
 ### Ends the idle threads. Every ticket goes back first: a ticket given back to a manager that is gone reaches memory
 ### that is gone, and its thread never ends.
 routine @ThreadManager.destruct() -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
 
     loop
         idle: @ThreadWorker? = me.idle.peek().to[@ThreadWorker?]()
@@ -171,7 +171,7 @@ needs AnyType T
 ### :returns: The worker, with an empty slot.
 @track_caller
 secret routine @ThreadManager.take_worker() -> @ThreadWorker
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     idle_or_none: @ThreadWorker? = me.idle.peek().to[@ThreadWorker?]()
     if idle_or_none.is_absent()
         drop held

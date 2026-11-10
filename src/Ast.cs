@@ -313,6 +313,10 @@ public sealed record BindStmt(string Name, TypeRef Type, Expr Value, Pos Pos) : 
     /// The `<-` line bound a ticket, a piece of work, or a mapped file's storage: the memory rules follow the name as
     /// one thing the program gives back with `drop` exactly once.
     public bool Ticket { get; init; }
+
+    /// `m: @T <- p.get_exclusive_access()`: the line takes an access, and the name is its view (`@T`, or `%T` for a
+    /// shared read access). The name's drop, by the program or at the end of its scope, gives the access back.
+    public bool TakesAccess { get; init; }
 }
 
 /// `call(...)` evaluated for its side effect. A call to a `@noreturn` routine (`Crash.stop()`) ends the body it is in.

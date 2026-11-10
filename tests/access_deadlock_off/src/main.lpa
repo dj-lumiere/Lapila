@@ -27,7 +27,7 @@ routine meet(pair: @Pair, count: @Unbroken[U64]) -> None
         return
 
 routine forward(pair: @Pair) -> Bool
-    first: Authorized[U64] <- pair.first.get_exclusive_access()
+    first: @U64 <- pair.first.get_exclusive_access()
     meet(pair, count: pair.ready)
     got: Bool = take_second(pair.second)
     meet(pair, count: pair.done)
@@ -35,7 +35,7 @@ routine forward(pair: @Pair) -> Bool
     return got
 
 routine backward(pair: @Pair) -> Bool
-    second: Authorized[U64] <- pair.second.get_exclusive_access()
+    second: @U64 <- pair.second.get_exclusive_access()
     meet(pair, count: pair.ready)
     got: Bool = take_second(pair.first)
     meet(pair, count: pair.done)

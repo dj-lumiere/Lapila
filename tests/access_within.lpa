@@ -27,8 +27,8 @@ routine elsewhere(at: @U64, mode: U8) -> Bool
 routine start() -> None
     shared: &Shared <- Shared(value: 0, readers: 0)
 
-    value: Authorized[U64] <- shared.value.get_exclusive_access()
-    readers: ReadAuthorized[U64] <- shared.readers.get_shared_read_access()
+    value: @U64 <- shared.value.get_exclusive_access()
+    readers: %U64 <- shared.readers.get_shared_read_access()
     Console.show("held: {AccessManager.held_count()}")
     late: Bool = elsewhere(at: shared.value, mode: ACCESS_WRITE)
     blocked: Bool = elsewhere(at: shared.readers, mode: ACCESS_WRITE)

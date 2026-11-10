@@ -1,1 +1,1 @@
-a Authorized[S64] is borrowed from its own manager and given back with drop: bind it with <- from the call that borrows it, held: Authorized[S64] <- ..., not in a STACK place
+an access is the view a name takes with '<-', and its drop gives it back: held: @S64 <- ..., not in a STACK place

@@ -5,7 +5,7 @@ import Hosted
 global COUNT: &S64 <- 0
 
 routine start() -> None
-    held: Authorized[S64] <- COUNT.get_exclusive_access()
-    again: Authorized[S64] <- held
+    held: @S64 <- COUNT.get_exclusive_access()
+    again: @S64 <- held
     drop held
     return

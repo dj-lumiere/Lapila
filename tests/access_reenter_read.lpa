@@ -6,10 +6,10 @@ import Hosted
 routine start() -> None
     counter: &U64 <- 0
 
-    held: ReadAuthorized[U64] <- counter.get_shared_read_access()
+    held: %U64 <- counter.get_shared_read_access()
     Console.show("reading")
     same: @U64 = counter.stride(0)
-    again: ReadAuthorized[U64] <- same.get_shared_read_access()
+    again: %U64 <- same.get_shared_read_access()
     Console.show("not reached")
     drop again
     drop held

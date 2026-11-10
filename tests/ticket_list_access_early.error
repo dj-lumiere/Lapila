@@ -1,1 +1,1 @@
-'reads' is handed to the work put on 'ts' on line 33, which works through it until it is waited for: give the access back after ts.retrieve_all()
+is handed to the work put on 'ts' on line 27, which works through it until it is waited for: give the access back after ts.retrieve_all()

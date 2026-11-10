@@ -1,14 +1,13 @@
-# A run of values is taken at once: each thread's work is handed the exclusive access to its half, an
-# AuthorizedSlice[S64], and changes the half through the access's view. The accesses wait in a list until the tickets'
-# work is over.
+# A run of values is taken at once: each thread's work is handed the exclusive access to its half, an @[S64], and
+# changes the half through it. Each access has its name, dropped once the tickets' work is over.
 
 import Collections
 import Hosted
 
 ### Doubles every value the access covers.
 ### :param part: The exclusive access to the values.
-routine double_all(part: @AuthorizedSlice[S64]) -> None
-    view: @[S64] = part.getview()
+routine double_all(part: @[S64]) -> None
+    view: @[S64] = part
 
     for i in 0 til view.count()
         view.getslot(i).poke(view[i] * 2)
@@ -18,25 +17,25 @@ routine double_all(part: @AuthorizedSlice[S64]) -> None
 routine start() -> None
     numbers: &[S64] <- [1, 2, 3, 4, 5, 6, 7, 8] * 1 from HEAP
     ts: &List[Thread[None]] <- .construct(HEAP)
-    halves: &List[AuthorizedSlice[S64]] <- .construct(HEAP)
     view: @[S64] = numbers.getslice()
+    low: @[S64] <- view.getslice(start: 0, count: 4).get_exclusive_access()
+    high: @[S64] <- view.getslice(start: 4, count: 4).get_exclusive_access()
 
-    for half: U64 in 0 til 2
-        held: AuthorizedSlice[S64] <- view.getslice(start: half * 4,
-            count: 4).get_exclusive_access()
-        halves.add_last(steal held)
-
-    for half: U64 in 0 til 2
-        t: Thread[None] <- get_thread[None]()
-        work: Work[None] = double_all.to[Work](part: halves.getslot(half))
-        t.put_work(steal work)
-        ts.add_last(steal t)
+    first: Thread[None] <- get_thread[None]()
+    on_low: Work[None] = double_all.to[Work](part: low)
+    first.put_work(steal on_low)
+    ts.add_last(steal first)
+    second: Thread[None] <- get_thread[None]()
+    on_high: Work[None] = double_all.to[Work](part: high)
+    second.put_work(steal on_high)
+    ts.add_last(steal second)
     for i in 0 til ts.count()
         ts.getslot(i).retrieve()
     ts.give_back_all()
-    drop halves
-    whole: ReadAuthorizedSlice[S64] <- numbers.get_shared_read_access()
-    seen: @[S64] = whole.getview()
+    drop low
+    drop high
+    whole: %[S64] <- numbers.get_shared_read_access()
+    seen: %[S64] = whole
     Console.show("{seen[0]} {seen[3]} {seen[4]} {seen[7]}")
     drop whole
     drop numbers

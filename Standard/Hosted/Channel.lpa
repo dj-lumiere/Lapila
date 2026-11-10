@@ -233,7 +233,7 @@ routine @ChannelCore[T].transmit(value: T) -> None
     node: &ChannelWait <- ChannelWait(waiter, next: Addr.zero())
 
     loop
-        held: Authorized[U8] <- me.guard.get_exclusive_access()
+        held: @U8 <- me.guard.get_exclusive_access()
         if me.receivers.peek() == 0
             drop held
             drop value
@@ -245,13 +245,13 @@ routine @ChannelCore[T].transmit(value: T) -> None
         me.putters.poke(node.to[Addr]())
         drop held
         if blocked_until_cancelled(waiter)
-            held2: Authorized[U8] <- me.guard.get_exclusive_access()
+            held2: @U8 <- me.guard.get_exclusive_access()
             unlink(list: me.putters, node)
             drop held2
             drop value
             throw CancelRequested()
         waiter.park()
-        held3: Authorized[U8] <- me.guard.get_exclusive_access()
+        held3: @U8 <- me.guard.get_exclusive_access()
         unlink(list: me.putters, node)
         drop held3
 
@@ -260,7 +260,7 @@ routine @ChannelCore[T].transmit(value: T) -> None
 ### :returns: None when it went in, and `value` when it didn't.
 @target(os: not "none")
 routine @ChannelCore[T].transmit_if_room(value: T) -> T?
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if not (me.receivers.peek() != 0 and me.count.peek() < me.items.count())
         drop held
         return steal value
@@ -275,7 +275,7 @@ routine @ChannelCore[T].receive() -> T
     node: &ChannelWait <- ChannelWait(waiter, next: Addr.zero())
 
     loop
-        held: Authorized[U8] <- me.guard.get_exclusive_access()
+        held: @U8 <- me.guard.get_exclusive_access()
         if me.count.peek() != 0
             value: &T <- me.pop()
             drop held
@@ -287,26 +287,26 @@ routine @ChannelCore[T].receive() -> T
         me.getters.poke(node.to[Addr]())
         drop held
         if blocked_until_cancelled(waiter)
-            held2: Authorized[U8] <- me.guard.get_exclusive_access()
+            held2: @U8 <- me.guard.get_exclusive_access()
             unlink(list: me.getters, node)
             drop held2
             throw CancelRequested()
         waiter.park()
-        held3: Authorized[U8] <- me.guard.get_exclusive_access()
+        held3: @U8 <- me.guard.get_exclusive_access()
         unlink(list: me.getters, node)
         drop held3
 
 ### Counts one more transmitter.
 @target(os: not "none")
 routine @ChannelCore[T].add_transmitter() -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     me.transmitters.poke(me.transmitters.peek() + 1)
     return
 
 ### Counts one more receiver.
 @target(os: not "none")
 routine @ChannelCore[T].add_receiver() -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     me.receivers.poke(me.receivers.peek() + 1)
     return
 
@@ -315,7 +315,7 @@ routine @ChannelCore[T].add_receiver() -> None
 @target(os: not "none")
 @track_caller
 routine @ChannelCore[T].close_transmitting() -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if me.transmitters.peek() == 0
         drop held
         throw UnacceptedValueError(description: "Every transmitter of this channel has closed already.")
@@ -328,7 +328,7 @@ routine @ChannelCore[T].close_transmitting() -> None
 @target(os: not "none")
 @track_caller
 routine @ChannelCore[T].close_receiving() -> None
-    held: Authorized[U8] <- me.guard.get_exclusive_access()
+    held: @U8 <- me.guard.get_exclusive_access()
     if me.receivers.peek() == 0
         drop held
         throw UnacceptedValueError(description: "Every receiver of this channel has closed already.")

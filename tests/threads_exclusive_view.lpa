@@ -1,5 +1,5 @@
 # Thread work changes shared memory through an exclusive access it is handed: the routine that puts the work takes the
-# access before put_work, hands the Authorized[T] to the work, waits for it, and gives the access back. Work
+# access before put_work, hands the @T to the work, waits for it, and gives the access back. Work
 # that takes an exclusive access itself (each round, to one counter) builds too, and four threads lose nothing.
 
 import Collections
@@ -10,9 +10,9 @@ global COUNTER: &U64
 ### Adds `rounds` values to the list it is handed exclusive access to.
 ### :param list: The exclusive access to the list.
 ### :param rounds: How many.
-routine fill(list: @Authorized[List[U64]], rounds: U64) -> None
+routine fill(list: @List[U64], rounds: U64) -> None
     for i in 0 til rounds
-        list.getview().add_last(i)
+        list.add_last(i)
     then
         return
 
@@ -20,8 +20,8 @@ routine fill(list: @Authorized[List[U64]], rounds: U64) -> None
 ### :param rounds: How many.
 routine bump(rounds: U64) -> None
     for i in 0 til rounds
-        counter: Authorized[U64] <- COUNTER.get_exclusive_access()
-        counter.getview().poke(counter.getview().peek() + 1)
+        counter: @U64 <- COUNTER.get_exclusive_access()
+        counter.poke(counter.peek() + 1)
         drop counter
     then
         return
@@ -30,7 +30,7 @@ routine start() -> None
     xs: &List[U64] <- .construct(HEAP)
     threads: &Slots[Thread[None], 4]
 
-    list: Authorized[List[U64]] <- xs.get_exclusive_access()
+    list: @List[U64] <- xs.get_exclusive_access()
     t: Thread[None] <- get_thread[None]()
     work_t: Work[None] = fill.to[Work](list: list, rounds: 1000)
     t.put_work(steal work_t)

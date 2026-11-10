@@ -10,17 +10,17 @@ record Pair
     second: U64
 
 routine forward(pair: @Pair) -> None
-    first: Authorized[U64] <- pair.first.get_exclusive_access()
+    first: @U64 <- pair.first.get_exclusive_access()
     FIBERS.waitfor(10ms)
-    second: Authorized[U64] <- pair.second.get_exclusive_access()
+    second: @U64 <- pair.second.get_exclusive_access()
     drop second
     drop first
     return
 
 routine backward(pair: @Pair) -> None
-    second: Authorized[U64] <- pair.second.get_exclusive_access()
+    second: @U64 <- pair.second.get_exclusive_access()
     FIBERS.waitfor(10ms)
-    first: Authorized[U64] <- pair.first.get_exclusive_access()
+    first: @U64 <- pair.first.get_exclusive_access()
     drop first
     drop second
     return

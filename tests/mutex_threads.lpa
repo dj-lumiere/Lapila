@@ -8,8 +8,8 @@ record Shared
 
 routine add_many(state: @Shared) -> None
     until i == 100000 with i: U64 = 0
-        held: Authorized[Shared] <- state.get_exclusive_access()
-        view: @Shared = held.getview()
+        held: @Shared <- state.get_exclusive_access()
+        view: @Shared = held
         next_count: U64 = view.count.peek() + 1
         next_count.poke_into(view.count)
         drop held
@@ -51,7 +51,7 @@ routine start() -> None
     drop t4
     Console.show("{state.count.peek()}")
     Console.show("cpus: {cpu_count().gt(0)}")
-    held: Authorized[Shared] <- state.get_exclusive_access()
+    held: @Shared <- state.get_exclusive_access()
     t5: Thread[Bool] <- get_thread[Bool]()
     work_t5: Work[Bool] = try_take.to[Work](state: state)
     t5.put_work(work_t5)

@@ -278,7 +278,7 @@ common routine Console.input() -> @ConsoleInput
 routine @ConsoleInput.read_into(buffer: @Byte, count: U64) -> U64
     b: @InputBuffer = STDIN_BUFFER
 
-    held: Authorized[U8] <- b.guard.get_exclusive_access()
+    held: @U8 <- b.guard.get_exclusive_access()
     if not (b.start.peek() < b.end.peek())
         # Nothing held: a read that wants a bufferful or more goes straight to the caller's buffer.
         if count >= IN_BUFFER
@@ -307,7 +307,7 @@ needs T obeys Parsable
     b: @InputBuffer = STDIN_BUFFER
     lateinit spill: &[Byte]
 
-    held: Authorized[U8] <- b.guard.get_exclusive_access()
+    held: @U8 <- b.guard.get_exclusive_access()
     word: Optional[@[Byte]] = b.word(spill, STDIN_SOURCE)
     when word
         is @[Byte] as text =>
@@ -396,7 +396,7 @@ common routine Console.ask_all(manager: @MemoryManager) -> BorrowedSlice[Byte]
 common routine Console.ask_line(manager: @MemoryManager) -> BorrowedSlice[Byte]
     b: @InputBuffer = STDIN_BUFFER
 
-    held: Authorized[U8] <- b.guard.get_exclusive_access()
+    held: @U8 <- b.guard.get_exclusive_access()
     line: &Optional[BorrowedSlice[Byte]] <- b.line(manager, STDIN_SOURCE)
     drop held
     when steal line
@@ -490,7 +490,7 @@ secret routine is_space(c: Byte) -> Bool
 common routine Console.ask_word(manager: @MemoryManager) -> BorrowedSlice[Byte]
     b: @InputBuffer = STDIN_BUFFER
 
-    held: Authorized[U8] <- b.guard.get_exclusive_access()
+    held: @U8 <- b.guard.get_exclusive_access()
     word: &Optional[BorrowedSlice[Byte]] <- b.take_word(manager, STDIN_SOURCE)
     drop held
     when steal word

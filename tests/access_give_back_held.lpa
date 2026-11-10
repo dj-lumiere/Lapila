@@ -6,7 +6,7 @@ import Hosted
 routine start() -> None
     m: &[U64] <- [0] * 4 from HEAP
 
-    held: Authorized[U64] <- m.getslot(2).get_exclusive_access()
+    held: @U64 <- m.getslot(2).get_exclusive_access()
     Console.show("holding the third element")
     drop m
     drop held

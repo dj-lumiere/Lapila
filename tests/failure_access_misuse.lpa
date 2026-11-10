@@ -52,9 +52,9 @@ routine @Counting.give_back(at: Addr) -> None
 ### :param counter: The value.
 ### :returns: Whether it was taken.
 routine take_twice(counter: @U64) -> Bool
-    held: Authorized[U64] <- counter.get_exclusive_access()
+    held: @U64 <- counter.get_exclusive_access()
     same: @U64 = counter.stride(0)
-    again: Authorized[U64] <- same.get_exclusive_access()
+    again: @U64 <- same.get_exclusive_access()
     drop again
     drop held
     return true
@@ -63,7 +63,7 @@ routine take_twice(counter: @U64) -> Bool
 ### :param memory: The memory.
 ### :returns: Whether it was resized.
 routine resize_held(memory: @BorrowedSlice[U64]) -> Bool
-    held: Authorized[U64] <- memory.getslot(1).get_exclusive_access()
+    held: @U64 <- memory.getslot(1).get_exclusive_access()
     memory.resize(count: 64)
     drop held
     return true
@@ -72,8 +72,8 @@ routine resize_held(memory: @BorrowedSlice[U64]) -> Bool
 ### :param counter: The value.
 ### :returns: The value.
 routine read_through_access(counter: @U64) -> U64
-    held: Authorized[U64] <- counter.get_exclusive_access()
-    value: U64 = held.getview().peek()
+    held: @U64 <- counter.get_exclusive_access()
+    value: U64 = held.peek()
     drop held
     return value
 

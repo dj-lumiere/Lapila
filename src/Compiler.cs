@@ -100,7 +100,8 @@ public sealed partial class Compiler
 
     /// The deferred memory checks, run after Escapes.Verify.
     private List<CompileError> CheckKeptViews() =>
-        _keptViewChecks.SelectMany(check => check(new MemoryRules.Effects(Escapes.KeepsInto, Access.ReturnsAccess, Access.GivesBack))).GroupBy(e => e.Pos).Select(g => g.First())
+        _keptViewChecks.SelectMany(check => check(new MemoryRules.Effects(Escapes.KeepsInto, Access.ReturnsAccess, Access.GivesBack)))
+            .Concat(Access.CheckBoundFrom()).GroupBy(e => e.Pos).Select(g => g.First())
             .OrderBy(e => e.Pos.File, StringComparer.Ordinal).ThenBy(e => e.Pos.Line).ThenBy(e => e.Pos.Col).ToList();
     private readonly Dictionary<string, List<(string Name, DType Type)>> _fieldCache = [];
     private readonly Dictionary<string, string> _strings = [];

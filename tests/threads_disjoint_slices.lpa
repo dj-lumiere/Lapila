@@ -8,8 +8,8 @@ import Hosted
 ### :returns: 0.
 routine fill(part: @[S64]) -> S64
     for i in 0 til part.count
-        element: Authorized[S64] <- part.getslot(i).get_exclusive_access()
-        element.getview().poke(7)
+        element: @S64 <- part.getslot(i).get_exclusive_access()
+        element.poke(7)
         drop element
     return 0
 

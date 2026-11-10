@@ -9,12 +9,13 @@ public static class OldSpellings
     /// The message for a type that is gone or renamed, else null.
     public static string? OldTypeName(string name) => name switch
     {
-        "ExclusiveAccess" or "ExclusiveLock" => $"'{name}' is gone: the AccessManager hands out access to the memory itself. "
-            + "Take exclusive access to the value with held: Authorized[T] <- p.get_exclusive_access(), work through "
-            + "held.getview(), and give it back with drop held",
-        "MultiReadAccess" or "MultiReadLock" => $"'{name}' is gone: the AccessManager hands out access to the memory itself. "
-            + "Readers take a ReadAuthorized[T] with p.get_shared_read_access(), a writer an Authorized[T] with "
-            + "p.get_exclusive_access(), each reads and writes through getview(), and gives it back with drop",
+        "ExclusiveAccess" or "ExclusiveLock" or "Authorized" or "AuthorizedSlice" => $"'{name}' is gone: an access is the view the name "
+            + "takes. Take exclusive access with held: @T <- p.get_exclusive_access() (@[T] for a run of values), work through held, "
+            + "and give it back with drop held or at the end of its scope",
+        "MultiReadAccess" or "MultiReadLock" or "ReadAuthorized" or "ReadAuthorizedSlice" => $"'{name}' is gone: an access is the view "
+            + "the name takes. Readers take reading: %T <- p.get_shared_read_access() (%[T] for a run of values), a writer "
+            + "held: @T <- p.get_exclusive_access(), and each gives it back with drop or at the end of its scope",
+        "PoolManager" => Renamed(name, "StampManager now, a pool the program holds: pool: &StampManager <- .construct(manager: HEAP), then pool.add(value)"),
         "Ptr" => Renamed(name, "PointedCell[T] now (written @T)"),
         "Span" => Renamed(name, "PointedSlice[T] now (written @[T])"),
         "Box" => Renamed(name, "BorrowedCell[T] now (written &T)"),

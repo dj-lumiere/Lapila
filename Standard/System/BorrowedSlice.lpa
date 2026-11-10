@@ -439,7 +439,7 @@ routine @BorrowedCell[T].destruct() -> None
     at: @T = me.at.peek()
     if at.to[Addr]().is_hollow()
         return
-    drop at
+    drop me.at.peek()
     manager: @MemoryManager = me.manager.peek()
     if not manager.to[Addr]().is_hollow()
         give_block[T](data: me.at.peek(), count: 1, manager)

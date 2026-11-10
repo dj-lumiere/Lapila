@@ -1,7 +1,7 @@
 namespace Lapila;
 
 /// The accesses a routine takes from the AccessManager (Hosted): `p.get_exclusive_access()` gives an
-/// `Authorized[T]` and `p.get_shared_read_access()` a `ReadAuthorized[T]`, read and written through `getview()`, and
+/// `m: @T <- p.get_exclusive_access()` takes exclusive access, `v: %T <- p.get_shared_read_access()` shared read access: the name is the view, and its drop (or the end of its scope) gives the access back.
 /// `drop` ends the access. An access comes from
 /// a manager, so the memory check follows it as it follows memory: it is given back on every path, once, its view isn't
 /// used after, and a routine that returns one or gives back one it was handed tells its callers so (AccessFacts). The
@@ -30,22 +30,25 @@ public sealed partial class FunctionGen
     /// what this routine returns.
     private readonly Dictionary<string, string> _resultOf = [];
 
+    /// The names bound with `<-` to the view of an access they took (`m: @T <- p.get_exclusive_access()`, or from a
+    /// routine of the program that returns one): their drop gives the access back.
+    private readonly HashSet<string> _accessBound = [];
+
+    /// The names written as a view (`v: @T = ...`, a parameter `p: %[T]`): a `drop` of one ends that reference alone.
+    private readonly HashSet<string> _viewNamesWritten = [];
+
+    /// The call a `<-` line of a view stands on, planned, or null when it can't be planned.
+    private CallPlan? AccessTaker(Expr call)
+    {
+        try { return PlanCall(call, null); }
+        catch (CompileError) { return null; }
+    }
+
     /// Whether `d` is one of the standard library's routines that take an access.
     private static bool TakesAccess(RoutineDecl d) => d.IsLibrary && d.Name is "get_exclusive_access" or "get_shared_read_access"
         && d.Owner is { Name: "PointedCell" or "BorrowedCell" or "PointedSlice" or "BorrowedSlice" };
 
-    /// Whether `t` is an access the AccessManager hands out: `Authorized[T]` or `ReadAuthorized[T]` for one value,
-    /// `AuthorizedSlice[T]` or `ReadAuthorizedSlice[T]` for a run of them.
-    private static bool IsAccessType(DType? t) =>
-        (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType
-        { Decl.Name: "Authorized" or "ReadAuthorized" or "AuthorizedSlice" or "ReadAuthorizedSlice", Args.Count: 1 } r
-        && r.Decl.Module == Compiler.HostedModule;
-
-    /// Whether `t` is `Authorized[T]` or `AuthorizedSlice[T]`, exclusive access.
-    private static bool IsExclusiveAccessType(DType? t) =>
-        IsAccessType(t) && (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType { Decl.Name: "Authorized" or "AuthorizedSlice" };
-
-    /// The names that are a `ReadAuthorized[T]` or a view made from one: what is reached through them is read only.
+    /// The names bound to a shared read access taken from a routine of the program (`v: %T <- f()`): read only.
     private readonly HashSet<string> _readOnlyViews = [];
 
     /// The names that are a view that only reads (`v: %T`, a `%T` parameter, the me of a `@readonly` routine, a view
@@ -65,9 +68,6 @@ public sealed partial class FunctionGen
             if (at is ValueRef named && _readOnlyWhy.TryGetValue(named.Name, out var why)) return why;
             if (ReadOnlyResult(at) is { } given) return given;
             if (at is ValueRef r && _readOnlyViews.Contains(r.Name)) return "the view of a shared read access, which reads only";
-            if (at is MethodCallExpr { Name: "getview", Args.Count: 0 } g && InferQuiet(g.Receiver) is { } owner && IsAccessType(owner)
-                && !IsExclusiveAccessType(owner))
-                return "the view of a shared read access, which reads only";
             at = at switch
             {
                 FieldExpr f => f.Base,
@@ -123,11 +123,15 @@ public sealed partial class FunctionGen
         if (e is not (CallExpr or NsCallExpr or MethodCallExpr)) return null;
         try
         {
-            if (PlanCall(e, null) is { Decl: { IsLibrary: false, ReturnType.ReadOnly: true } d }) return $"what '{d.DisplayName}' gives, a {d.ReturnType}, a view that only reads";
+            if (PlanCall(e, null) is { Decl: { ReturnType.ReadOnly: true } d }) return $"what '{d.DisplayName}' gives, a {d.ReturnType}, a view that only reads";
         }
         catch (CompileError) { }
         return null;
     }
+
+    /// How a message says what makes `e` read only: `is` for the name itself, `is reached through` for a part of it.
+    private string ReachedAs(Expr e) =>
+        e is ValueRef r && (_readOnlyWhy.ContainsKey(r.Name) || _readOnlyViews.Contains(r.Name)) || ReadOnlyResult(e) is not null ? "is" : "is reached through";
 
     /// The written type of a field when it is a `%T` or `%[T]`, else null.
     private TypeRef? ReadOnlyField(FieldExpr f)
@@ -141,10 +145,10 @@ public sealed partial class FunctionGen
     private void CheckReadOnlyNarrowing(Expr value, TypeRef? into, string where)
     {
         if (_c.Prechecking || into is not { Name: "PointedCell" or "PointedSlice", Path: null, ReadOnly: false }) return;
-        if (ReadOnlyReason(value) is not { } why || why.StartsWith("the view of a shared read access", StringComparison.Ordinal)) return;
-        string spelled = Spelled(value);
+        if (ReadOnlyReason(value) is not { } why) return;
+        string spelled = $"{Spelled(value)} {ReachedAs(value)}";
         string narrow = into.Name == "PointedCell" && into.Args is [TypeArgType held] ? $"%{held.Type}" : into.Args is [TypeArgType elems] ? $"%[{elems.Type}]" : "%T";
-        throw Err(Li.ReadOnlyViewWrite, value.Pos, $"{spelled} is {why}, and {where}, which could write through it: a {narrow} becomes no "
+        throw Err(Li.ReadOnlyViewWrite, value.Pos, $"{spelled} {why}, and {where}, which could write through it: a {narrow} becomes no "
             + $"{into} (write {narrow} there, or take a view that writes)");
     }
 
@@ -152,6 +156,8 @@ public sealed partial class FunctionGen
     /// a view that only reads is a build error.
     private void NoteReadOnlyBinding(BindStmt b, DType t)
     {
+        if (b.Type is { Name: "PointedCell" or "PointedSlice", Path: null, Known: null }) _viewNamesWritten.Add(b.Name);
+        else _viewNamesWritten.Remove(b.Name);
         if (b.Type.ReadOnly)
         {
             _readOnlyWhy[b.Name] = $"a {b.Type}, a view that only reads";
@@ -182,8 +188,8 @@ public sealed partial class FunctionGen
         if (written is not null && ReadOnlyReason(written) is { } why)
             throw why.StartsWith("the view of a shared read access", StringComparison.Ordinal)
                 ? Err(Li.SharedAccessWrite, plan.Pos, $"{Spelled(written)} is the view of a shared read access, which reads only: take exclusive access "
-                    + "(get_exclusive_access, an Authorized[T], or an AuthorizedSlice[T] for a run of values) to write")
-                : Err(Li.ReadOnlyViewWrite, plan.Pos, $"{Spelled(written)} is {why}, and '{plan.Decl.DisplayName}' writes through it: "
+                    + "to write (m: @T <- p.get_exclusive_access(), or @[T] for a run of values)")
+                : Err(Li.ReadOnlyViewWrite, plan.Pos, $"{Spelled(written)} {ReachedAs(written)} {why}, and '{(plan.Decl.IsLibrary ? plan.Decl.Name : plan.Decl.DisplayName)}' writes through it: "
                     + "take a @T (or a @[T]) to write");
         // A view that only reads, handed where a routine of the program takes a view that writes.
         if (!plan.Decl.IsLibrary)
@@ -209,7 +215,7 @@ public sealed partial class FunctionGen
             if (arg is not null && ReadOnlyReason(arg) is { } moved)
                 throw Err(moved.StartsWith("the view of a shared read access", StringComparison.Ordinal) ? Li.SharedAccessWrite : Li.ReadOnlyViewWrite,
                     plan.Pos, $"'{plan.Decl.DisplayName}' may move the memory of {Spelled(arg)} (it is @reshaping), and "
-                    + $"{Spelled(arg)} is {moved}: take a view that writes to change it");
+                    + $"{Spelled(arg)} {ReachedAs(arg)} {moved}: take a view that writes to change it");
         }
     }
 
@@ -286,13 +292,6 @@ public sealed partial class FunctionGen
             if (arg is ValueRef p && ParamIndex(p.Name) is >= 0 and var mine) _c.Access.NotePasses(_inst.Symbol, mine, callee.Symbol, i);
             if (plan.Decl.IsLibrary)
             {
-                // An access handed by value to a library routine that keeps it in a value of this routine
-                // (`accesses.add_last(held)`) is that value's from here on: it gives it back (a List's destruct drops
-                // every element).
-                if (arg is ValueRef kept && _accessViews.Contains(kept.Name) && i > 0 && plan.Receiver is { } into
-                    && RootName(into) is { } holder && !_routineParams.ContainsKey(holder) && BoundInRoutine(holder)
-                    && callee.Params.ElementAtOrDefault(i) is { } param and not PtrType && IsAccessType(param))
-                    Mem(new MemoryRules.KeptInto(kept.Name, ResolveRoot(holder), callee.Symbol, i, 0, $"handed to '{plan.Decl.DisplayName}'", arg.Pos));
                 continue;
             }
             string how = $"handed to '{plan.Decl.DisplayName}'";
@@ -303,28 +302,32 @@ public sealed partial class FunctionGen
         _ = offset;
     }
 
-    /// A binding of an access (`held: Authorized[T] = p.get_exclusive_access()`), of a view made from one
+    /// A binding of an access (`held: @T <- p.get_exclusive_access()`), of a view made from one
     /// (`v: @T = held.getview()`), or of what a routine of the program gave, which may be an access it returns.
-    private void NoteAccessBinding(string name, Expr value, DType t, Pos pos)
+    private void NoteAccessBinding(string name, Expr value, DType t, Pos pos, bool taken = false, bool readOnly = false)
     {
         if (_c.Prechecking || !MemOn) return;
+        // `m: @T <- f()` with f a routine of the program: f returns an access (checked once every routine is built).
+        if (taken && !(_lastAccess is { } took && took.Pos == value.Pos) && CalleeSymbol(value) is { } returning)
+        {
+            _resultOf[name] = returning;
+            _accessViews.Add(name);
+            _takenViews.Add(name);
+            _viewNames.Add(name);
+            Mem(new MemoryRules.MayAcquireAccess(name, returning, name, pos));
+            _c.Access.NoteBoundFrom(returning, name, pos);
+            if (readOnly) _readOnlyViews.Add(name);
+            else _exclusiveRoots.Add(name);
+            return;
+        }
         if (_lastAccess is { } last && last.Pos == value.Pos)
         {
             _accessViews.Add(name);
+            _takenViews.Add(name);
             Mem(new MemoryRules.Alias(name, last.Group, pos));
             _viewNames.Add(name);
             Mem(new MemoryRules.ViewOf(name, last.Group, pos));
             if (last.Exclusive) _exclusiveRoots.Add(name);
-            else _readOnlyViews.Add(name);
-            return;
-        }
-        if (IsAccessType(t) && value is CallExpr or NsCallExpr or MethodCallExpr && CalleeSymbol(value) is { } callee)
-        {
-            _resultOf[name] = callee;
-            _accessViews.Add(name);
-            _viewNames.Add(name);
-            Mem(new MemoryRules.MayAcquireAccess(name, callee, name, pos));
-            if (IsExclusiveAccessType(t)) _exclusiveRoots.Add(name);
             else _readOnlyViews.Add(name);
             return;
         }
@@ -351,7 +354,6 @@ public sealed partial class FunctionGen
     {
         if (_c.Prechecking || !MemOn || dropped is not ValueRef r) return;
         if (_accessViews.Contains(r.Name)) Mem(new MemoryRules.End(r.Name, $"drop {r.Name}", pos));
-        else if (ParamIndex(r.Name) is >= 0 and var index && IsAccessType(InferQuiet(r))) _c.Access.NoteGivesBack(_inst.Symbol, index);
     }
 
     /// The symbol of the routine of the program a call expression resolves to, or null (a library routine, a template).

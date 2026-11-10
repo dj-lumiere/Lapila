@@ -14,8 +14,8 @@ record Counts
 
 routine read_many(pair: @Pair, counts: @Counts) -> None
     until i == 20000 with i: U64 = 0
-        reading: ReadAuthorized[Pair] <- pair.get_shared_read_access()
-        view: @Pair = reading.getview()
+        reading: %Pair <- pair.get_shared_read_access()
+        view: %Pair = reading
         same: Bool = view.a.peek() == view.b.peek()
         drop reading
         if not same
@@ -26,8 +26,8 @@ routine read_many(pair: @Pair, counts: @Counts) -> None
 
 routine write_many(pair: @Pair, counts: @Counts) -> None
     until i == 10000 with i: U64 = 0
-        held: Authorized[Pair] <- pair.get_exclusive_access()
-        view: @Pair = held.getview()
+        held: @Pair <- pair.get_exclusive_access()
+        view: @Pair = held
         view.a.poke(view.a.peek() + 1)
         view.b.poke(view.b.peek() + 1)
         drop held
@@ -73,11 +73,11 @@ routine start() -> None
         t.retrieve()
         drop t
     Console.show("a {pair.a.peek()}, b {pair.b.peek()}, torn reads {counts.torn.peek()}")
-    reading: ReadAuthorized[Pair] <- pair.get_shared_read_access()
+    reading: %Pair <- pair.get_shared_read_access()
     write_while_read: Bool = elsewhere(pair, mode: ACCESS_WRITE)
     read_while_read: Bool = elsewhere(pair, mode: ACCESS_READ)
     drop reading
-    writing: Authorized[Pair] <- pair.get_exclusive_access()
+    writing: @Pair <- pair.get_exclusive_access()
     read_while_written: Bool = elsewhere(pair, mode: ACCESS_READ)
     drop writing
     Console.show("exclusive while read: {write_while_read}, shared while read: {read_while_read}, shared while written: {read_while_written}")

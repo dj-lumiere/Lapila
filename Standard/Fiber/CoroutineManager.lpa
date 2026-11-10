@@ -233,7 +233,7 @@ routine @Fiber[T].destruct() -> None
         return
     fiber.slot.give_back()
     manager: @CoroutineManager = fiber.manager.peek().unwrap()
-    held: Authorized[U8] <- manager.inbox_guard.get_exclusive_access()
+    held: @U8 <- manager.inbox_guard.get_exclusive_access()
     fiber.next_idle.poke(manager.idle.peek())
     manager.idle.poke(fiber.to[Addr]())
     drop held
@@ -313,7 +313,7 @@ secret routine release_fibers() -> None
 routine @CoroutineManager.get_fiber[T]() -> Fiber[T]
 needs AnyType T
     me.ensure()
-    held: Authorized[U8] <- me.inbox_guard.get_exclusive_access()
+    held: @U8 <- me.inbox_guard.get_exclusive_access()
     idle_or_none: @FiberState? = me.idle.peek().to[@FiberState?]()
     if idle_or_none.is_absent()
         drop held
@@ -933,7 +933,7 @@ secret routine @CoroutineManager.place_ready(fiber: @FiberState) -> None
         return
     # The wake word changes before the exclusive access goes back: once it does, the manager's thread may take the
     # fiber, run it to its end and end the manager, so nothing here may touch the manager after that.
-    held: Authorized[U8] <- me.inbox_guard.get_exclusive_access()
+    held: @U8 <- me.inbox_guard.get_exclusive_access()
     me.inbox.add_last(fiber)
     word: @U32 = me.wake_word()
     word.fetch_add_unbroken(1)
@@ -943,7 +943,7 @@ secret routine @CoroutineManager.place_ready(fiber: @FiberState) -> None
 ### Moves the fibers in the inbox to the ready queue.
 @target(os: not "none")
 secret routine @CoroutineManager.take_inbox() -> None
-    held: Authorized[U8] <- me.inbox_guard.get_exclusive_access()
+    held: @U8 <- me.inbox_guard.get_exclusive_access()
 
     until me.inbox.is_empty()
         me.ready.add_last(me.inbox.remove_first())

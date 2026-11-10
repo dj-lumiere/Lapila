@@ -21,13 +21,13 @@ routine start() -> None
     pool: &StampManager <- .construct(manager: HEAP)
     node: Stamped[Node] = pool.add(Node.construct(value: 1))
     link: &Link <- Link(target: node)
-    reading: ReadAuthorized[Link] <- link.get_shared_read_access()
-    view: @Link = reading.getview()
-    seen: @Node = view.target.peek().fetch()
+    reading: %Link <- link.get_shared_read_access()
+    view: %Link = reading
+    seen: %Node = view.target.peek().fetch()
     Console.show("read: {seen.value.peek()}")
     drop reading
-    writing: Authorized[Link] <- link.get_exclusive_access()
-    held: @Link = writing.getview()
+    writing: @Link <- link.get_exclusive_access()
+    held: @Link = writing
     held.target.peek().fetch().value.poke(7)
     drop writing
     Console.show("after write: {node.fetch().value.peek()}")

@@ -5,7 +5,7 @@ import Hosted
 ### Takes a run's access and leaves its give back to the builder.
 routine start() -> None
     numbers: &[S64] <- [1, 2, 3] * 1 from HEAP
-    whole: AuthorizedSlice[S64] <- numbers.get_exclusive_access()
-    whole.getview().getslot(0).poke(4)
-    Console.show("{whole.getview()[0]}")
+    whole: @[S64] <- numbers.get_exclusive_access()
+    whole.getslot(0).poke(4)
+    Console.show("{whole[0]}")
     return

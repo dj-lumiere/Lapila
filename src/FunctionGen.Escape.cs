@@ -870,7 +870,7 @@ public sealed partial class FunctionGen
                         Through = AtomsOf(entry),
                         Work = plan.Decl.Owner is { Name: "Thread" or "PassableFiber" },
                         Handed = parts.Select(p => (Spelled(p is StealExpr st ? st.Value : p), p is StealExpr,
-                            p is not StealExpr && (UnderExclusiveAccess(p) || IsExclusiveAccessType(InferQuiet(p))))).ToList(),
+                            p is not StealExpr && UnderExclusiveAccess(p))).ToList(),
                     });
             }
             if (MemOn)
@@ -883,11 +883,6 @@ public sealed partial class FunctionGen
                     if (part is ValueRef view && _accessViews.Contains(view.Name)) Mem(new MemoryRules.WorkHolds(ticket, view.Name, part.Pos));
                     else if (AccessKey(part) is { } key && _accessGroups.TryGetValue(key, out var group))
                         Mem(new MemoryRules.WorkHolds(ticket, group, part.Pos));
-                    // An access lent from a value of this routine that holds it (`reads.getslot(i)` of a list of
-                    // accesses): the value is the work's until the work is waited for.
-                    else if (part is not ValueRef && IsAccessType(InferQuiet(part)) && InferQuiet(part) is PtrType
-                             && RootName(part) is { } lender && !_routineParams.ContainsKey(lender) && BoundInRoutine(lender))
-                        Mem(new MemoryRules.WorkHolds(ticket, ResolveRoot(lender), part.Pos) { Element = true });
                 // FrameView names a frame slot or span itself "the frame ...", and memory a slot holds "the memory ...".
                 if (parts.Select(FrameView).FirstOrDefault(v => v is not null) is { } sees)
                     Mem(new MemoryRules.WorkStarted(ticket, sees, sees.StartsWith("the frame ", StringComparison.Ordinal), plan.Pos));

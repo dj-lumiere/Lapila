@@ -1931,7 +1931,7 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
             if (Accept(TokenKind.LeftArrow))
             {
                 // `x: &T <- value [from manager]`: a place borrowed from the manager (STACK when none is named), with
-                // the value put in it, or a thing to give back that a call borrows (`held: Authorized[T] <- ...`).
+                // the value put in it, or a thing to give back that a call borrows (`held: @T <- p.get_exclusive_access()`).
                 var borrowed = AtManager(ParseExpr());
                 ExpectLineEnd();
                 _values!.Add(name);
