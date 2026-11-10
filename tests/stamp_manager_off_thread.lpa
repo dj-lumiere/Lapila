@@ -19,7 +19,7 @@ routine show_number(n: S64) -> None
     return
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     s: Stamped[Node] = pool.add(Node.construct(value: 7))
     t: Thread[None] <- get_thread[None]()
     w: Work[None] = show_number.to[Work](n: 5)

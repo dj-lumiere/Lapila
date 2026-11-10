@@ -1,4 +1,4 @@
-# Many entities of two types fill many pages of slots: every other one is removed, the freed slots are reused, and the
+# Many entities of two types, each type in its own pool, fill many pages of slots: every other one is removed, the freed slots are reused, and the
 # stamps still read what was stored.
 
 import Collections
@@ -23,13 +23,14 @@ common routine Node.construct(value: S64) -> Me
 
 ### Adds, removes, sweeps and adds again.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
+    wide_pool: &StampManager[Wide] <- .construct(manager: HEAP)
     nodes: &List[Stamped[Node]] <- .construct(HEAP)
     wides: &List[Stamped[Wide]] <- .construct(HEAP)
     for i in 0 til 20000
         nodes.add_last(pool.add(Node.construct(value: i.to[S64]())))
         if i % 4 == 0
-            wides.add_last(pool.add(Wide(a: i.to[S64](), b: 1, c: 2, d: 3)))
+            wides.add_last(wide_pool.add(Wide(a: i.to[S64](), b: 1, c: 2, d: 3)))
     for i in 0 til 20000
         if i % 2 == 0
             pool.remove(nodes[i.to[U64]()])
@@ -47,5 +48,6 @@ routine start() -> None
         Console.show("wide {total}")
     drop nodes
     drop wides
+    drop wide_pool
     drop pool
     return

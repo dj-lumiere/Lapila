@@ -1,0 +1,1 @@
+'gone', a view fetched through a stamp, is used after drop w on line 30, which may end the entity it was fetched from

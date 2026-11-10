@@ -8,7 +8,7 @@ global HOOK: &Callable[(S64,), None] <- idle.to[Callable[(S64,), None]]()
 ### Makes a pool and ends it.
 ### :param n: Unused.
 routine tidy(n: S64) -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     return
 
 ### Does nothing.
@@ -23,7 +23,7 @@ routine run() -> None
     return
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     t: Thread[None] <- get_thread[None]()
     HOOK.store(tidy.to[Callable[(S64,), None]]())
     w: Work[None] = run.to[Work]()

@@ -1,4 +1,4 @@
-# StampManager.remove ends the entity right there: the stamp's fetch fails (received with try), the destruct runs once,
+# StampManager[Node].remove ends the entity right there: the stamp's fetch fails (received with try), the destruct runs once,
 # and a second remove of the stamp fails.
 
 import Hosted
@@ -33,14 +33,14 @@ routine value_of(s: Stamped[Node]) -> S64
 ### :param pool: The pool.
 ### :param s: The stamp.
 ### :returns: True when it removed the entity.
-routine removed(pool: @StampManager, s: Stamped[Node]) -> Bool
+routine removed(pool: @StampManager[Node], s: Stamped[Node]) -> Bool
     when check pool.remove(s)
         is None => return true
         is StaleStampError => return false
 
 ### Shows a remove.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     a: Stamped[Node] = pool.add(Node.construct(value: 1))
     b: Stamped[Node] = pool.add(Node.construct(value: 2))
     Console.show("before: a {value_of(a)}, ended {ENDED.load()}")

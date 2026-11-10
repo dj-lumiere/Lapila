@@ -28,7 +28,7 @@ routine describe(link: Stamped[Node]?) -> S64
 
 ### Shows the layout and the four ways to read it.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     Console.show("sizes: {sizeof[Stamped[Node]]()} {sizeof[Stamped[Node]?]()}")
     last: Stamped[Node] = pool.add(Node.construct(value: 3, next: None()))
     first: Stamped[Node] = pool.add(Node.construct(value: 1, next: last))

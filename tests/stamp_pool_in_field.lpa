@@ -1,0 +1,33 @@
+# A pool of T held in a field ends with its entity, and that ends the views of T alone: a view of another type stays usable.
+
+import Hosted
+
+entity Node
+    value: S64
+
+entity Label
+    text: S64
+
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+common routine Label.construct(text: S64) -> Me
+    return Me(text)
+
+entity World
+    nodes: StampManager[Node]
+
+common routine World.construct() -> Me
+    return Me(nodes: StampManager[Node].construct(manager: HEAP))
+
+routine start() -> None
+    labels: &StampManager[Label] <- .construct(manager: HEAP)
+    w: &World <- World.construct()
+    a: Stamped[Node] = w.nodes.add(Node.construct(value: 1))
+    l: Stamped[Label] = labels.add(Label.construct(text: 7))
+    seen: @Label = l.fetch()
+    gone: @Node = a.fetch()
+    drop w
+    Console.show("{seen.text.peek()}")
+    Console.show("{gone.value.peek()}")
+    return

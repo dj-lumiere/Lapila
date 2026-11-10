@@ -5,7 +5,7 @@ import Hosted
 ### Makes a pool and ends it.
 ### :param n: Unused.
 routine tidy(n: S64) -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     return
 
 ### The work.
@@ -15,7 +15,7 @@ routine run() -> None
     return
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     t: Thread[None] <- get_thread[None]()
     w: Work[None] = run.to[Work]()
     t.put_work(w)

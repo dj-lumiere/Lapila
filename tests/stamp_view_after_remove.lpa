@@ -16,13 +16,13 @@ common routine Node.construct(value: S64) -> Me
 ### Removes an entity from its pool.
 ### :param pool: The pool.
 ### :param s: The entity's stamp.
-routine kill(pool: @StampManager, s: Stamped[Node]) -> None
+routine kill(pool: @StampManager[Node], s: Stamped[Node]) -> None
     pool.remove(s)
     return
 
 ### Uses a fetched view after a remove.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     a: Stamped[Node] = pool.add(Node.construct(value: 1))
     b: Stamped[Node] = pool.add(Node.construct(value: 2))
     v: @Node = b.fetch()

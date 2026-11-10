@@ -25,15 +25,16 @@ common routine Label.construct(text: S64) -> Me
 ### Removes a node.
 ### :param pool: The pool.
 ### :param s: The node's stamp.
-routine kill(pool: @StampManager, s: Stamped[Node]) -> None
+routine kill(pool: @StampManager[Node], s: Stamped[Node]) -> None
     pool.remove(s)
     return
 
 ### Keeps a label's view across a node's remove.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
+    labels: &StampManager[Label] <- .construct(manager: HEAP)
     a: Stamped[Node] = pool.add(Node.construct(value: 1))
-    l: Stamped[Label] = pool.add(Label.construct(text: 7))
+    l: Stamped[Label] = labels.add(Label.construct(text: 7))
     seen: @Label = l.fetch()
     kill(pool, a)
     Console.show("label still: {seen.text.peek()}")

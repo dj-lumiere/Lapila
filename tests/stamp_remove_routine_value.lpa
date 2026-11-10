@@ -18,7 +18,7 @@ routine idle() -> None
 
 ### Uses a view after a call through a routine value.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     a: Stamped[Node] = pool.add(Node.construct(value: 1))
     f: Callable[(), None] = idle.to[Callable[(), None]]()
     v: @Node = a.fetch()

@@ -1,0 +1,34 @@
+# Ending a pool of T ends the views of T fetched before it and leaves views of other types usable.
+
+import Hosted
+
+### A node.
+entity Node
+    value: S64
+
+### A label.
+entity Label
+    text: S64
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value)
+
+### Makes a label.
+### :param text: Its text.
+### :returns: The label.
+common routine Label.construct(text: S64) -> Me
+    return Me(text)
+
+### Keeps a label's view across the end of the pool of nodes.
+routine start() -> None
+    labels: &StampManager[Label] <- .construct(manager: HEAP)
+    nodes: &StampManager[Node] <- .construct(manager: HEAP)
+    a: Stamped[Node] = nodes.add(Node.construct(value: 1))
+    l: Stamped[Label] = labels.add(Label.construct(text: 7))
+    seen: @Label = l.fetch()
+    drop nodes
+    Console.show("label still: {seen.text.peek()}, node: {a === a}")
+    return

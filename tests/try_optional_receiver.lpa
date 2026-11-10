@@ -56,7 +56,7 @@ routine what_happened(link: Stamped[Node]?) -> @[Byte]
         is Crashables as e => return "other"
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     some: Pt? = Pt(x: 21)
     empty: Pt? = None()
     tried: S64? = try some.twice(2)

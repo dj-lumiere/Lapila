@@ -18,7 +18,7 @@ common routine Node.construct(value: S64) -> Me
     return Me(value)
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     node: Stamped[Node] = pool.add(Node.construct(value: 1))
     link: &Link <- Link(target: node)
     reading: %Link <- link.get_shared_read_access()

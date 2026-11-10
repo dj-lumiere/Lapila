@@ -1,21 +1,22 @@
-# Lapila stdlib: the StampManager and Stamped, entities of many types linked by stamps
+# Lapila stdlib: the StampManager and Stamped, entities of one type linked by stamps
 #
-# `pool.add(steal node)` hands an entity to a StampManager, which keeps it in a slot and gives a `Stamped[Node]`: 16
-# bytes, the entity's address and its slot's generation (on a 32-bit target the address is padded to 8 bytes).
-# `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended. `pool.remove(stamp)`
-# ends the entity right there: the slot's generation goes up, so every later `fetch` of any stamp of it fails, then
-# the entity's destruct runs and the slot is free for the next `add` of its type. A view fetched before the `remove`
-# must not be used after it, which the build checks: a `remove` of a `Stamped[T]` ends the views of T fetched before
-# it, and those of every type T's destruct may remove. Views of other types stay usable. Ending a pool, and a call
-# through a routine value, may end entities of any type, so they end every view fetched before.
+# A `StampManager[T]` keeps entities of the one type T (a variant type keeps several kinds, `StampManager[Shape]`, and
+# several types take several pools). `pool.add(steal node)` hands an entity over, which the pool keeps in a slot, and
+# gives a `Stamped[T]`: 16 bytes, the entity's address and its slot's generation (on a 32-bit target the address is
+# padded to 8 bytes). `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended.
+# `pool.remove(stamp)` ends the entity right there: the slot's generation goes up, so every later `fetch` of any stamp
+# of it fails, then the entity's destruct runs and the slot is free for the next `add`. A view fetched before the
+# `remove` must not be used after it, which the build checks: a `remove` ends the views of T fetched before it, and
+# those of every type T's destruct may remove. Views of other types stay usable. A call through a routine value may end
+# entities of any type, so it ends every view fetched before.
 #
-# A pool is an entity the program holds, as a local or anywhere else: `pool: &StampManager <- .construct(manager:
+# A pool is an entity the program holds, as a local or anywhere else: `pool: &StampManager[Node] <- .construct(manager:
 # HEAP)`. Ending it (`drop pool`, or the builder's drop at the end of its scope) makes every stamp of it stale, then
-# destructs the entities left in it. A stamp names its pool too: its slot's page names the slot store, and the store is
-# one the pool keeps for the entity's type. Each type the pool keeps has a slot store of its own (SlotStore.lpa), whose
-# pages are never freed, so a fetch of a stale stamp, even one whose pool has ended, always reads a generation that
-# isn't the stamp's. A link that may be missing is a `Stamped[T]?`: a `@none_is_zero` record, so it is the 16-byte stamp
-# itself and the all-zero stamp is None.
+# destructs the entities left in it, and it ends the views the same way a remove does. A stamp names its pool too: its
+# slot's page names the slot store, which is the pool's. The pool's slot store (SlotStore.lpa) never frees its pages,
+# so a fetch of a stale stamp, even one whose pool has ended, always reads a generation that isn't the stamp's. A link
+# that may be missing is a `Stamped[T]?`: a `@none_is_zero` record, so it is the 16-byte stamp itself and the all-zero
+# stamp is None.
 #
 # A pool belongs to one thread, like a global the program changes: the build refuses a routine that a work runs on
 # another thread to make one, add to it, fetch from it, remove from it or end it (see the thread rule in LAPILA-FOR-AI.md).
@@ -38,49 +39,33 @@ obeys Equatable[Stamped[T]], Hashable[Stamped[T]]
     ### The slot's generation when the entity was added, always odd.
     secret generation: U64
 
-### A pool of entities of many types, which the program holds and ends: `pool: &StampManager <- .construct(manager:
+### A pool of entities of type T, which the program holds and ends: `pool: &StampManager[Node] <- .construct(manager:
 ### HEAP)`. Ending it makes every stamp of it stale and destructs the entities left.
+### :typeparam T: The entities' type.
 @target(os: not "none")
-entity StampManager
-    ### The pool's record, which stays where it is when the pool moves: each type's entry names it.
-    secret core: Addr
-    ### Where the pool's records come from.
+entity StampManager[T]
+    ### The pool's slot store, which stays where it is when the pool moves: the stamps' pages name it.
+    secret store: Addr
+    ### Where the pool's slot store comes from.
     secret memory: @MemoryManager
 
 ### A stamp whose entity was removed from its pool, or whose pool has ended.
 crashable StaleStampError
     nothing
 
-### One type a pool keeps. Its slot store comes first, so the store's address is the entry's.
-secret record StampType
-    ### The slots of the type's entities.
-    store: SlotStore
-    ### The type id.
-    id: U32
-    ### Ends the entity at an address: the type's destruct.
-    destroy: Callable[(Addr,), None]
-    ### The pool's record.
-    core: Addr
-    ### The next type of the pool, 0 for the last.
-    next: Addr
-
-### The record of a pool, which stays where it is.
-secret record StampCore
-    ### The pool's first type, 0 for none.
-    types: Addr
-
 ### Makes an empty pool.
-### :param manager: Where the pool's records come from.
+### :typeparam T: The entities' type.
+### :param manager: Where the pool's slot store comes from.
 ### :returns: The pool.
-### :throws: Throws `OutOfMemoryError` when the manager has no memory for the pool's record.
+### :throws: Throws `OutOfMemoryError` when the manager has no memory for the slot store.
 @uses_pool
 @target(os: not "none")
-common routine StampManager.construct(manager: @MemoryManager) -> Me
-    core: Addr = allocate[StampCore](count: 1, manager)
-    if core.is_hollow()
+common routine StampManager[T].construct(manager: @MemoryManager) -> Me
+    store: Addr = allocate[SlotStore](count: 1, manager)
+    if store.is_hollow()
         throw OutOfMemoryError()
-    core.to[@StampCore]().zeroinit(1)
-    return Me(core, memory: manager)
+    store.to[@SlotStore]().zeroinit(1)
+    return Me(store, memory: manager)
 
 ### Writes `The entity this stamp names was removed from its pool, or the pool has ended.`
 ### :typeparam TWriter: The Writer's type.
@@ -90,57 +75,18 @@ needs TWriter obeys Writer
     out.write("The entity this stamp names was removed from its pool, or the pool has ended.")
     return
 
-### Ends the entity at `at`: what a pool calls for each entity left when it ends, kept in the type's entry.
-### :typeparam T: The entity's type.
-### :param at: The entity's address.
-@target(os: not "none")
-secret routine stamp_destroy[T](at: Addr) -> None
-needs AnyType T
-    drop at.to[@T]()
-    return
-
-### The entry of a type in the pool, made when the pool keeps no entity of it yet.
-### :typeparam T: The entity's type.
-### :returns: The entry.
-### :throws: Throws `OutOfMemoryError` when the manager has no memory for the entry.
-@target(os: not "none")
-secret routine @StampManager.type_entry[T]() -> @StampType
-needs AnyType T
-    id: U32 = typeid[T]()
-    core: @StampCore = me.core.peek().to[@StampCore]()
-    loop with at: Addr = core.types.peek()
-        if at.is_hollow()
-            break
-        entry: @StampType = at.to[@StampType]()
-        if entry.id.peek() == id
-            return entry
-        continue with at: entry.next.peek()
-    made: Addr = allocate[StampType](count: 1, manager: me.memory.peek())
-    if made.is_hollow()
-        throw OutOfMemoryError()
-    entry: @StampType = made.to[@StampType]()
-    entry.zeroinit(1)
-    entry.id.poke(id)
-    entry.destroy.poke(stamp_destroy[T].to[Callable]())
-    entry.core.poke(me.core.peek())
-    entry.next.poke(core.types.peek())
-    core.types.poke(made)
-    return entry
-
 ### Hands `value` to the pool, which keeps it in a slot from now on, and gives its stamp.
-### :typeparam T: The entity's type (a record is kept too).
+### :typeparam T: The entities' type.
 ### :param value: The entity, handed over.
 ### :returns: The stamp.
-### :throws: Throws `OutOfMemoryError` when there is no memory for a new page of slots or the type's entry. Throws `UnacceptedValueError` for a type aligned past 16 bytes. The value ends before the failure goes on.
+### :throws: Throws `OutOfMemoryError` when there is no memory for a new page of slots. Throws `UnacceptedValueError` for a type aligned past 16 bytes. The value ends before the failure goes on.
 @uses_pool
 @target(os: not "none")
-routine @StampManager.add[T](value: T) -> Stamped[T]
-needs AnyType T
+routine @StampManager[T].add(value: T) -> Stamped[T]
     if alignof[T]() > 16
         drop value
         throw UnacceptedValueError(description: "A StampManager keeps types aligned to at most 16 bytes.")
-    entry: @StampType = me.type_entry[T]()
-    at: Addr = entry.store.take(sizeof[T]())
+    at: Addr = me.store.peek().to[@SlotStore]().take(sizeof[T]())
     if at.is_hollow()
         drop value
         throw OutOfMemoryError()
@@ -192,20 +138,18 @@ routine Stamped[T].hash() -> U64
     return hash_combine(first: ptrtoint[Addr, U64](me.at), second: me.generation)
 
 ### Ends the entity of a stamp, right there: every `fetch` of its stamps fails from now on, its destruct runs, and its
-### slot is free for the next entity of its type. A view of T fetched before (or of a type T's destruct may remove)
-### must not be used after this, which the build checks.
-### :typeparam T: The entity's type.
+### slot is free for the next entity. A view of T fetched before (or of a type T's destruct may remove) must not be used
+### after this, which the build checks.
+### :typeparam T: The entities' type.
 ### :param stamp: The entity's stamp.
-### :throws: `StaleStampError` when the entity was removed already. Throws `UnacceptedValueError` when the stamp is of another pool.
+### :throws: `StaleStampError` when the entity was removed already. Throws `UnacceptedValueError` when the stamp is of another pool of T: its entity stays.
 @uses_pool
 @ends_stamped
 @target(os: not "none")
-routine @StampManager.remove[T](stamp: Stamped[T]) -> None
-needs AnyType T
+routine @StampManager[T].remove(stamp: Stamped[T]) -> None
     if SlotStore.generation_of(stamp.at).peek() != stamp.generation
         throw StaleStampError()
-    entry: @StampType = bitcast[@SlotStore, Addr](SlotStore.store_of(stamp.at)).to[@StampType]()
-    if entry.core.peek() !== me.core.peek()
+    if bitcast[@SlotStore, Addr](SlotStore.store_of(stamp.at)) !== me.store.peek()
         throw UnacceptedValueError(description: "This stamp is of another StampManager: remove it from the pool it was added to.")
     SlotStore.end(stamp.at)
     drop stamp.at.to[@T]()
@@ -213,64 +157,37 @@ needs AnyType T
     return
 
 ### How many entities the pool keeps.
+### :typeparam T: The entities' type.
 ### :returns: The count.
 @uses_pool
 @target(os: not "none")
-routine @StampManager.count() -> U64
-    loop with at: Addr = me.core.peek().to[@StampCore]().types.peek(), total: U64 = 0
-        if at.is_hollow()
-            return total
-        entry: @StampType = at.to[@StampType]()
-        continue with at: entry.next.peek(), total: total + entry.store.count()
+routine @StampManager[T].count() -> U64
+    return me.store.peek().to[@SlotStore]().count()
 
-### Ends the pool: makes every stamp of it stale first (the generation of each entity's slot goes up, so a destruct
-### that fetches another entity of the pool always sees it ended, whatever the order), then destructs the entities left
-### and puts the slots' pages on the spare list. A pool whose record couldn't be read ends with nothing to do.
+### Ends the pool: makes every stamp of it stale first (the generation of each entity's slot goes up, so a destruct that
+### fetches another entity of the pool always sees it ended, whatever the order), then destructs the entities left and
+### puts the slots' pages on the spare list.
+### :typeparam T: The entities' type.
 @uses_pool
 @ends_stamped
 @target(os: not "none")
-routine @StampManager.destruct() -> None
-    if me.core.peek().is_hollow()
+routine @StampManager[T].destruct() -> None
+    if me.store.peek().is_hollow()
         return
     memory: @MemoryManager = me.memory.peek()
-    core: @StampCore = me.core.peek().to[@StampCore]()
-    total: U64 = me.count()
-    # Each entity is two addresses in the list: its type's entry and the entity.
-    list: Addr = when
-        total == 0 => Addr.zero()
-        else => allocate[Addr](count: total * 2, manager: memory)
-    if total > 0 and list.is_hollow()
-        throw OutOfMemoryError()
-    found: &U64 <- 0
-    loop with at: Addr = core.types.peek()
-        if at.is_hollow()
-            break
-        entry: @StampType = at.to[@StampType]()
-        boxes: @Addr = list.to[@Addr]().stride(total + found.load())
-        ended: U64 = entry.store.end_each(out: boxes)
-        for i in 0 til ended
-            list.to[@Addr]().stride(found.load() + i).poke(at)
-        found.store(found.load() + ended)
-        continue with at: entry.next.peek()
-    for i in 0 til found.load()
-        entry: @StampType = list.to[@Addr]()
-            .stride(i)
-            .peek()
-            .to[@StampType]()
-        box: Addr = list.to[@Addr]().stride(total + i).peek()
-        destroy: Callable[(Addr,), None] = entry.destroy.peek()
-        destroy.call(box)
-        SlotStore.give_back(box)
+    store: @SlotStore = me.store.peek().to[@SlotStore]()
+    total: U64 = store.count()
     if total > 0
-        deallocate(list.to[@Addr](), manager: memory)
-    loop with at: Addr = core.types.peek()
-        if at.is_hollow()
-            break
-        entry: @StampType = at.to[@StampType]()
-        next: Addr = entry.next.peek()
-        entry.store.end_all()
-        deallocate(entry, manager: memory)
-        continue with at: next
-    deallocate(core, manager: memory)
-    me.core.poke(Addr.zero())
+        boxes: Addr = allocate[Addr](count: total, manager: memory)
+        if boxes.is_hollow()
+            throw OutOfMemoryError()
+        ended: U64 = store.end_each(out: boxes.to[@Addr]())
+        for i in 0 til ended
+            box: Addr = boxes.to[@Addr]().stride(i).peek()
+            drop box.to[@T]()
+            SlotStore.give_back(box)
+        deallocate(boxes.to[@Addr](), manager: memory)
+    store.end_all()
+    deallocate(store, manager: memory)
+    me.store.poke(Addr.zero())
     return

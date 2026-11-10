@@ -3,6 +3,6 @@
 import Hosted
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     Console.show("set up")
     return

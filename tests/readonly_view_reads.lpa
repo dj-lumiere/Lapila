@@ -44,7 +44,7 @@ routine next_value(n: %Node) -> S64
 
 ### Shows reading through %T.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     a: &Node <- Node.construct(value: 3)
     show(a)
     r: %Node = a.getview()

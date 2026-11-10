@@ -9,7 +9,7 @@ entity Child
 
 ### A parent that removes its child when it ends.
 entity Parent
-    pool: @StampManager
+    pool: @StampManager[Child]
     child: Stamped[Child]
 
 ### Makes a child.
@@ -22,7 +22,7 @@ common routine Child.construct(value: S64) -> Me
 ### :param pool: The pool both are in.
 ### :param child: The child's stamp.
 ### :returns: The parent.
-common routine Parent.construct(pool: @StampManager, child: Stamped[Child]) -> Me
+common routine Parent.construct(pool: @StampManager[Child], child: Stamped[Child]) -> Me
     return Me(pool, child)
 
 ### Removes the child.
@@ -32,10 +32,11 @@ routine @Parent.destruct() -> None
 
 ### Uses a child's view after its parent's remove.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Child] <- .construct(manager: HEAP)
+    parents: &StampManager[Parent] <- .construct(manager: HEAP)
     c: Stamped[Child] = pool.add(Child.construct(value: 1))
-    p: Stamped[Parent] = pool.add(Parent.construct(pool, child: c))
+    p: Stamped[Parent] = parents.add(Parent.construct(pool, child: c))
     kid: @Child = c.fetch()
-    pool.remove(p)
+    parents.remove(p)
     Console.show("{kid.value.peek()}")
     return

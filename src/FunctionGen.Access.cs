@@ -177,15 +177,15 @@ public sealed partial class FunctionGen
             Mem(new MemoryRules.Reshape(StampRoot(key), how, pos) { Ends = true, ThroughValue = routineValue });
     }
 
-    /// What a call of the standard library's `@ends_stamped` routines may end: `remove` of a `Stamped[T]` ends the
-    /// entities of T and what T's destruct may end, and ending a pool may end entities of any type.
+    /// What a call of the standard library's `@ends_stamped` routines may end: `remove` from a `StampManager[T]`, and
+    /// ending one, ends the entities of T and what T's destruct may end.
     private List<(string Param, string? Field)> StampedEnds(CallPlan plan)
     {
-        if (plan.Decl.Name != "remove" || plan.Env.Get("T") is not { } t) return [(StampedEntities, null)];
+        if (plan.Env.Get("T") is not { } t) return [(StampedEntities, null)];
         var ends = new List<(string, string?)> { (StampRoot(t.Key), null) };
         if (t is not RecordType owner) return ends;
         foreach (var destruct in _c.MethodCandidates(t, "destruct", _env.File, plan.Pos, anyModule: true)
-                     .Where(d => d.Owner?.Name == owner.Decl.Name && d.Module == owner.Decl.Module && d.Blocks is { Count: > 0 }))
+                     .Where(d => d.Owner?.Name == owner.Decl.Name && d.Module == owner.Decl.Module && d.Blocks is not null))
         {
             try
             {

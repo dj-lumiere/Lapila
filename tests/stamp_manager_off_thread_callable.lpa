@@ -22,7 +22,7 @@ routine run() -> None
     return
 
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[S64] <- .construct(manager: HEAP)
     t: Thread[None] <- get_thread[None]()
     HOOK.store(show_it.to[Callable[(S64,), None]]())
     w: Work[None] = run.to[Work]()

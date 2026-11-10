@@ -1003,9 +1003,9 @@ public sealed partial class FunctionGen
     }
 
     /// The name the memory check gives the entities of every StampManager, and with `:` and a type's key those of one
-    /// type (`$stamped:Node`). A routine that may end entities of a type (`remove` of a `Stamped[T]`, which also ends
-    /// what T's destruct may end) ends the views of that type fetched through a stamp before the call, and a routine
-    /// that may end entities of any type (ending a pool, a call through a routine value) ends them all. A routine that
+    /// type (`$stamped:Node`). A routine that may end entities of a type (`remove` from a `StampManager[T]` or ending
+    /// one, which also ends what T's destruct may end) ends the views of that type fetched through a stamp before the
+    /// call, and a call through a routine value, which may end entities of any type, ends them all. A routine that
     /// calls one does the same: what it may end is one of its moves, which its callers read.
     internal const string StampedEntities = "$stamped";
 
@@ -1033,7 +1033,7 @@ public sealed partial class FunctionGen
         {
             if (name.StartsWith(StampedEntities, StringComparison.Ordinal))
             {
-                EndStampViews(name, SpelledCall(plan), plan.Pos, routineValue: false);
+                EndStampViews(name, _dropping is not null && plan.Decl.Name == "destruct" ? $"drop {Spelled(_dropping)}" : SpelledCall(plan), plan.Pos, routineValue: false);
                 continue;
             }
             int index = sig.Decl.Params.FindIndex(p => p.Name == name);

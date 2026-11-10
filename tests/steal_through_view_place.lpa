@@ -86,7 +86,7 @@ routine left_value(root: @Node) -> S64
 
 ### Runs the three moves.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
     root: &Node <- Node.construct(value: 1) from HEAP
     keeper: &Node <- Node.construct(value: 9) from HEAP
     grow(root, value: 3)

@@ -1,1 +1,1 @@
-'kid', a view fetched through a stamp, is used after pool.remove(...) on line 39, which may end the entity it was fetched from
+'kid', a view fetched through a stamp, is used after parents.remove(...) on line 40, which may end the entity it was fetched from

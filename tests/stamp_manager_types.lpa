@@ -1,5 +1,5 @@
-# One StampManager keeps entities of two types (and a record), each type in a slot store of its own. A link that may be missing
-# is a Stamped[T]? and is taken with try. Entities left in the pool end when the pool is dropped, each once, through their own type.
+# Entities of two types (and a record) in a pool of their own each. A link that may be missing is a Stamped[T]? and is
+# taken with try. Entities left in a pool end when the pool is dropped, each once, through their own type.
 
 import Hosted
 
@@ -50,11 +50,13 @@ routine follow(link: Stamped[Item]?) -> S64
 
 ### Shows two types, a record and the links.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Item] <- .construct(manager: HEAP)
+    labels: &StampManager[Label] <- .construct(manager: HEAP)
+    points: &StampManager[Point] <- .construct(manager: HEAP)
     last: Stamped[Item] = pool.add(Item.construct(value: 3, next: None()))
     first: Stamped[Item] = pool.add(Item.construct(value: 1, next: last))
-    label: Stamped[Label] = pool.add(Label.construct(text: 7))
-    spot: Stamped[Point] = pool.add(Point(x: 4, y: 5))
+    label: Stamped[Label] = labels.add(Label.construct(text: 7))
+    spot: Stamped[Point] = points.add(Point(x: 4, y: 5))
     missing: Stamped[Item]? = None()
     Console.show("follow: {follow(first.fetch().next.peek())}, none: {follow(missing)}")
     Console.show("label: {label.fetch().text.peek()}, point: {spot.fetch().x.peek()},{spot.fetch().y.peek()}")

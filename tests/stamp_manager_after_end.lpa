@@ -26,20 +26,20 @@ routine value_of(s: Stamped[Node]) -> S64
 ### :param pool: The pool.
 ### :param s: The stamp.
 ### :returns: True when it removed the entity.
-routine removed(pool: @StampManager, s: Stamped[Node]) -> Bool
+routine removed(pool: @StampManager[Node], s: Stamped[Node]) -> Bool
     done: Bool = try pool.remove(s)
     return done
 
 ### Shows stamps across the end of a pool.
 routine start() -> None
-    pool: &StampManager <- .construct(manager: HEAP)
-    other: &StampManager <- .construct(manager: HEAP)
+    pool: &StampManager[Node] <- .construct(manager: HEAP)
+    other: &StampManager[Node] <- .construct(manager: HEAP)
     a: Stamped[Node] = pool.add(Node.construct(value: 1))
     b: Stamped[Node] = other.add(Node.construct(value: 2))
     Console.show("alive: {value_of(a)} {value_of(b)}, other pool takes a: {removed(other, a)}")
     drop pool
     Console.show("after the end: {value_of(a)} {value_of(b)}")
-    again: &StampManager <- .construct(manager: HEAP)
+    again: &StampManager[Node] <- .construct(manager: HEAP)
     c: Stamped[Node] = again.add(Node.construct(value: 3))
     Console.show("new pool: {value_of(c)}, old stamp: {value_of(a)}, same: {a === c}")
     return
