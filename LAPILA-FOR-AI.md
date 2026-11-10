@@ -403,7 +403,7 @@ routine start() -> None
     error when the view's source can end (a place of the routine or its caller): `me.next.poke(t) keeps 't' (a view the caller handed in) in a field of the
     entity Node, which any routine that reaches the entity may use later, and the build can't compare those later uses
     with where that view's place is given back: keep a Stamped of the entity there ...`. Keep a `Stamped[E]` of an
-    entity in a StampManager (below) for a link that may outlive what it points at (a tree node's parent), make the field an `&E?` when
+    entity in a StampManager[E] (below) for a link that may outlive what it points at (a tree node's parent), make the field an `&E?` when
     one holder keeps the value, or hand the view as an argument to the routines that use it. An `Addr` (turned back
     with `.to[@T?]()` and a `when`) is for links the program keeps right itself with no check (the runtime's
     scheduler queues). An entity made with a view (`Me(source: text, ...)`, a matcher over text) is a value
@@ -416,9 +416,10 @@ routine start() -> None
     `SourceLocation` (the builder's read-only text) don't count as views here.
   - **`typeid[T]()`** (a builder query like `sizeof`, also in presets): a `U32` that is a hash of the type's name (FNV-1a, never 0), the
     same in every module of one program including the library base, and a build error when two types of one build share it.
-  - **`StampManager` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
-    A pool is an entity the program holds, as a local or in a field: `pool: &StampManager <- .construct(manager: HEAP)` (the manager gives
-    the pool's records). `s = pool.add(e)` hands an entity of any type over (a record too) and gives its `Stamped[E]`, 16 bytes (the
+  - **`StampManager[T]` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
+    A pool is an entity the program holds, as a local or in a field: `pool: &StampManager[Node] <- .construct(manager: HEAP)` (the
+    manager gives the pool's slot store). A pool keeps one type (a record too): several types take a pool each, or one pool of a
+    variant type (`StampManager[Shape]`). `s = pool.add(e)` hands an entity over and gives its `Stamped[E]`, 16 bytes (the
     entity's address and its slot's generation, a U64; on a 32-bit target the address is padded to 8 bytes), copied for free, kept in a
     field, a global, a list. `s.fetch()` gives the entity's `@E`, or throws `StaleStampError` once it was removed or its pool ended: a
     bare `fetch()` crashes, `try s.fetch()` gives None. There is no empty `Stamped[E]` (its fields are `secret`): a link that may be
@@ -427,19 +428,20 @@ routine start() -> None
     `StaleStampError`. Two stamps compare with `===` / `!==` and with `==` (the same entity: address and generation), and a stamp
     hashes by the entity it names, so it is a `Set` or `Dict` key (`seen: &Set[Stamped[Node]]`). A stamp doesn't keep the entity alive.
     `pool.remove(s)` ends the entity right there: its slot's generation goes up (every `fetch` of its stamps fails from then on, a
-    second `remove` throws `StaleStampError`), its `destruct` runs, and the slot is free for the next entity of its type. A stamp knows
-    its pool (its slot's page names the type's slot store, which is the pool's), so `remove` of a stamp of another pool is
-    `UnacceptedValueError`. **A view fetched before a remove isn't used after it**: `remove` of a `Stamped[T]` ends the views of `T`
+    second `remove` throws `StaleStampError`), its `destruct` runs, and the slot is free for the next entity. A stamp of another type
+    is a build error by type, and a stamp knows its pool (its slot's page names the pool's slot store), so `remove` of a stamp of
+    another pool of the same type is `UnacceptedValueError` and leaves its entity alone. **A view fetched before a remove isn't used
+    after it**: `remove` from a `StampManager[T]` ends the views of `T`
     bound from a `fetch()` before it, and the views of every type `T`'s destruct may remove (followed through the destructs it
     reaches), so a use after it is a build error (`'v', a view fetched through a stamp, is used after kill(...) on line N, which may
     end the entity it was fetched from: fetch it again after line N, or use it before`). Views of other types stay usable. The
     builder can't tell two stamps of one type apart, so every view of `T` ends. A routine of the program that may remove ends what
-    its removes end, and its callers learn that from its body. Ending a pool, and a call through a routine value (the message says
-    "a call through a routine value, which the build can't name the routine of"), may end entities of any type and end every view
-    fetched before. The pool ends like any entity: `drop pool`
+    its removes end, and its callers learn that from its body. Ending a pool of `T` ends the same views as its `remove` (`'gone', a
+    view fetched through a stamp, is used after drop nodes on line N ...`), also through a field that holds the pool. A call through a
+    routine value (the message says "a call through a routine value, which the build can't name the routine of") may end entities of
+    any type and ends every view fetched before. The pool ends like any entity: `drop pool`
     (or the builder's drop at the end of its scope) makes every stamp of it stale first, then runs each remaining entity's `destruct`
-    (a `fetch` of another entity of the pool there is a stale stamp), the type that came last first. Each type a pool keeps has its
-    own `SlotStore` (System/Memory, `SlotStore.lpa`): slots of one size in 64 KiB pages, each slot an 8-byte generation header and the
+    (a `fetch` of another entity of the pool there is a stale stamp). The pool has its own `SlotStore` (System/Memory, `SlotStore.lpa`): slots of one size in 64 KiB pages, each slot an 8-byte generation header and the
     entity, reused at once. A page whose slots are all free gives its memory back to the operating system past its first 4 KiB, and a
     page is never freed (an ended pool's pages wait on a list of spare pages for a later store with slots of the same size), so a
     fetch of a stale stamp always reads a generation that isn't the stamp's. A type aligned past 16 bytes is refused. Several pools
@@ -1673,7 +1675,7 @@ routine start() -> None
 - In the standard library, these are entities: `BorrowedSlice[T]`, `BorrowedCell[T]`, every collection (`List`, `Set`, `Dict`, the
   sorted ones, `RotatableList`, `PriorityQueue`), `Channel[T]` / `SharedChannel[T]`, `ThreadPoolManager`, `CoroutineManager`,
   `CStr` / `CWStr`, `ProcessOutput`, `File` / `Directory` (each holds the memory of a path it made), `FileStorage[T]`,
-  the tickets (`Thread[T]`, `Fiber[T]`, `PassableFiber[T]`), and `StampManager`. A
+  the tickets (`Thread[T]`, `Fiber[T]`, `PassableFiber[T]`), and `StampManager[T]`. A
   `MemoryManager`, a `@[T]`, a `@T`, and an emitter stay records.
 - An entity value a `routine @E.f` is called on, or that goes where an `@E` is taken, needs no place of its
   own: `Counter.at(n).get()`, `OsFileManager.is_file(at: File.at(p))`. The builder puts it in an unnamed place that ends when
