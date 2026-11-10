@@ -30,7 +30,9 @@ routine describe(link: Stamped[Node]?) -> S64
 routine start() -> None
     pool: &StampManager[Node] <- .construct(manager: HEAP)
     stamp_size: U64 = sizeof[Stamped[Node]]()
-    Console.show("sizes: {stamp_size == sizeof[Addr]() + sizeof[U64]()} {sizeof[Stamped[Node]?]() == stamp_size}")
+    # An address and a U64, with at most the padding that aligns the U64.
+    fits: Bool = sizeof[Addr]() + sizeof[U64]() <= stamp_size <= 2 * sizeof[U64]()
+    Console.show("sizes: {fits} {sizeof[Stamped[Node]?]() == stamp_size}")
     last: Stamped[Node] = pool.add(Node.construct(value: 3, next: None()))
     first: Stamped[Node] = pool.add(Node.construct(value: 1, next: last))
     none: Stamped[Node]? = None()
