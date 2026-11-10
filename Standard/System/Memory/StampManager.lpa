@@ -2,8 +2,8 @@
 #
 # A `StampManager[T]` keeps entities of the one type T (a variant type keeps several kinds, `StampManager[Shape]`, and
 # several types take several pools). `pool.add(steal node)` hands an entity over, which the pool keeps in a slot, and
-# gives a `Stamped[T]`: 16 bytes, the entity's address and its slot's generation (on a 32-bit target the address is
-# padded to 8 bytes). `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended.
+# gives a `Stamped[T]`: the entity's address and its slot's generation, a U64 (16 bytes on a 64-bit target).
+# `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended.
 # `pool.remove(stamp)` ends the entity right there: the slot's generation goes up, so every later `fetch` of any stamp
 # of it fails, then the entity's destruct runs and the slot is free for the next `add`. A view fetched before the
 # `remove` must not be used after it, which the build checks: a `remove` ends the views of T fetched before it, and
@@ -15,7 +15,7 @@
 # destructs the entities left in it, and it ends the views the same way a remove does. A stamp names its pool too: its
 # slot's page names the slot store, which is the pool's. The pool's slot store (SlotStore.lpa) never frees its pages,
 # so a fetch of a stale stamp, even one whose pool has ended, always reads a generation that isn't the stamp's. A link
-# that may be missing is a `Stamped[T]?`: a `@none_is_zero` record, so it is the 16-byte stamp itself and the all-zero
+# that may be missing is a `Stamped[T]?`: a `@none_is_zero` record, so it is the stamp itself and the all-zero
 # stamp is None.
 #
 # A pool belongs to one thread, like a global the program changes: the build refuses a routine that a work runs on

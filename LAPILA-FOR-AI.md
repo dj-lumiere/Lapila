@@ -419,8 +419,8 @@ routine start() -> None
   - **`StampManager[T]` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
     A pool is an entity the program holds, as a local or in a field: `pool: &StampManager[Node] <- .construct(manager: HEAP)` (the
     manager gives the pool's slot store). A pool keeps one type (a record too): several types take a pool each, or one pool of a
-    variant type (`StampManager[Shape]`). `s = pool.add(e)` hands an entity over and gives its `Stamped[E]`, 16 bytes (the
-    entity's address and its slot's generation, a U64; on a 32-bit target the address is padded to 8 bytes), copied for free, kept in a
+    variant type (`StampManager[Shape]`). `s = pool.add(e)` hands an entity over and gives its `Stamped[E]` (the
+    entity's address and its slot's generation, a U64: 16 bytes on a 64-bit target), copied for free, kept in a
     field, a global, a list. `s.fetch()` gives the entity's `@E`, or throws `StaleStampError` once it was removed or its pool ended: a
     bare `fetch()` crashes, `try s.fetch()` gives None. There is no empty `Stamped[E]` (its fields are `secret`): a link that may be
     missing is a `Stamped[E]?`, which is `@none_is_zero` (the stamp alone, the all-zero stamp None, no flag), taken with one
