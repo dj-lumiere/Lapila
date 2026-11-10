@@ -3431,8 +3431,17 @@ public sealed partial class FunctionGen
     {
         if (_c.UserFile(_env.File))
             throw Err(Li.RoutineValue, c.Pos, "open_callable is the standard library's: e.to[Callable[...]]() gives a routine value back");
-        if (Resolve(c.TypeArgs[0]) is not CallableType callable)
-            throw Err(Li.TypeMismatch, c.Pos, $"open_callable makes a routine value, and {Resolve(c.TypeArgs[0])} isn't a Callable");
+        var asked = Resolve(c.TypeArgs[0]);
+        // The generic check runs `ErasedCallable.to[T]` with a stand-in `T` before any instance exists. Only an
+        // instance says which routine type `T` is, so the stand-in gets a value of its own type here.
+        if (_c.Prechecking && asked is ArchetypeType standIn)
+        {
+            Eval(c.Args[0], new PtrType(null));
+            Eval(c.Args[1], IntType.U(8));
+            return new Val("undef", standIn);
+        }
+        if (asked is not CallableType callable)
+            throw Err(Li.TypeMismatch, c.Pos, $"open_callable makes a routine value, and {asked} isn't a Callable");
         var entry = Eval(c.Args[0], new PtrType(null));
         var kind = Eval(c.Args[1], IntType.U(8));
         if (!callable.IsOpen) return new Val(entry.Op, callable);
