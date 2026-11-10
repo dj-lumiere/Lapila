@@ -804,9 +804,15 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
                 + "drop 'common'");
         // A routine on a type takes me, its receiver, without writing it: as a value (`routine Point.scaled(...)`) or by
         // its address (`routine @Point.move(...)`). A `common` one takes none and is called on its type.
+        // A `@readonly` routine on a type (not an assembly one, whose `@readonly` says it doesn't write memory) takes me
+        // as a view that only reads, `%Me`.
+        bool readOnlyMe = !_inAsm && annotations.Any(a => a.Name == "readonly");
+        if (readOnlyMe && (owner is null || isCommon))
+            throw new CompileError(Li.RoutineHeaderSyntax, annotations.First(a => a.Name == "readonly").Pos,
+                $"@readonly takes me as a view that only reads, %Me, and '{name}' takes no me: drop it");
         if (owner is not null && !isCommon)
-            parameters.Insert(0, new Param("me", receiverAt is { } meAt
-                ? new TypeRef("PointedCell", [new TypeArgType(new TypeRef("Me", [], meAt))], meAt)
+            parameters.Insert(0, new Param("me", receiverAt is { } meAt || readOnlyMe
+                ? new TypeRef("PointedCell", [new TypeArgType(new TypeRef("Me", [], receiverAt ?? first.Pos))], receiverAt ?? first.Pos) { ReadOnly = readOnlyMe }
                 : new TypeRef("Me", [], first.Pos), receiverAt ?? first.Pos) { Implicit = true });
         else if (receiverAt is { } commonAt)
             throw new CompileError(Li.RoutineHeaderSyntax, commonAt, "a common routine takes no me, so nothing is taken by its address: drop the '@'");
@@ -1360,8 +1366,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
     {
         var first = ParseOptionalAtom();
         if (!Is(TokenKind.Pipe)) return first;
-        var branches = new List<TypeArg> { new TypeArgType(first) };
-        while (Accept(TokenKind.Pipe)) branches.Add(new TypeArgType(ParseOptionalAtom()));
+        var branches = new List<TypeArg> { new TypeArgType(Inner(first)) };
+        while (Accept(TokenKind.Pipe)) branches.Add(new TypeArgType(Inner(ParseOptionalAtom())));
         return new TypeRef(TypeRef.UnionName, branches, first.Pos);
     }
 
@@ -1373,13 +1379,33 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
         while (Is(TokenKind.Question))
         {
             Next();
-            atom = new TypeRef("Optional", [new TypeArgType(atom)], atom.Pos) { Path = Compiler.SystemModule, Question = true };
+            atom = new TypeRef("Optional", [new TypeArgType(Inner(atom))], atom.Pos) { Path = Compiler.SystemModule, Question = true };
         }
         return atom;
     }
 
+    /// A type written inside another one (an Optional's, a variant's branch, a type argument): a `%T` there is a build
+    /// error, since the read-only view is followed only where a parameter, a binding, a result or a field is written as
+    /// one.
+    private static TypeRef Inner(TypeRef t) => t.ReadOnly
+        ? throw new CompileError(Li.TypeSyntax, t.Pos, $"{t} only reads where a parameter, a binding, a result or a field is written as one, "
+            + "not inside another type: write the @ form there")
+        : t;
+
     private TypeRef ParseTypeAtom()
     {
+        // `%T` and `%[T]` are the views that only read: a `@T` / `@[T]` through which nothing is written.
+        if (IsOp("%"))
+        {
+            var percent = Next().Pos;
+            if (Accept(TokenKind.LBracket))
+            {
+                var elem = ParseType();
+                Expect(TokenKind.RBracket, "']' closing %[T]");
+                return new TypeRef("PointedSlice", [new TypeArgType(Inner(elem))], percent) { ReadOnly = true };
+            }
+            return new TypeRef("PointedCell", [new TypeArgType(Inner(ParseTypeAtom()))], percent) { ReadOnly = true };
+        }
         // `@T` is `PointedCell[T]`, and `@[T]` is `PointedSlice[T]`: many Ts, viewed.
         if (Is(TokenKind.At))
         {
@@ -1579,7 +1605,12 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
     {
         var args = new List<TypeArg>();
         if (!Accept(TokenKind.LBracket)) return args;
-        do args.Add(ParseTypeArg()); while (Accept(TokenKind.Comma));
+        do
+        {
+            var arg = ParseTypeArg();
+            args.Add(arg is TypeArgType { Type: var written } ? new TypeArgType(Inner(written)) : arg);
+        }
+        while (Accept(TokenKind.Comma));
         Expect(TokenKind.RBracket, "']'");
         bool paramsSeen = false;
         for (int i = 0; i < args.Count; i++)
@@ -1675,7 +1706,7 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
     }
 
     /// Whether the current token can start a type: a name, `@` or `(`.
-    private bool StartsType() => Is(TokenKind.Ident) || Is(TokenKind.At) || Is(TokenKind.LParen);
+    private bool StartsType() => Is(TokenKind.Ident) || Is(TokenKind.At) || Is(TokenKind.LParen) || IsOp("%");
 
     // ── Blocks and bodies ───────────────────────────────────────────────────
 
@@ -2640,6 +2671,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
 
     private Expr ParseUnary()
     {
+        if (IsOp("%") && PeekTok(1).Kind is TokenKind.Ident or TokenKind.LBracket)
+            throw new CompileError(Li.RemovedSpelling, Cur.Pos, "a value is written without '%': count, not %count (a %T is a type, a view that only reads)");
         if (IsOp("-") || IsOp("~"))
         {
             var op = Next();
@@ -2847,6 +2880,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
                 }
                 return ParseNameExpr();
             default:
+                if (t is { Kind: TokenKind.Op, Text: "%" } && PeekTok(1).Kind is TokenKind.Ident or TokenKind.LBracket)
+                    throw new CompileError(Li.RemovedSpelling, t.Pos, "a value is written without '%': count, not %count (a %T is a type, a view that only reads)");
                 throw Error(Li.ExpectedExpression, $"expected an expression, found {Describe(t)}");
         }
     }

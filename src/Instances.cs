@@ -155,7 +155,7 @@ public sealed partial class Compiler
         if (r.AnnotationNamed("callconv") is { } callconv) CheckCallConv(callconv);
         bool asm = IsAsm(r);
         foreach (var a in r.Annotations)
-            if (!asm && AsmAnnotations.Contains(a.Name))
+            if (!asm && AsmAnnotations.Contains(a.Name) && !(a.Name == "readonly" && r.Owner is not null))
                 throw new CompileError(Li.AsmRoutineForm, a.Pos, $"@{a.Name} describes an assembly routine, and '{r.DisplayName}' is not @external(\"asm\")");
         foreach (var p in r.Params)
             if (p.Register is { } placed && !asm)

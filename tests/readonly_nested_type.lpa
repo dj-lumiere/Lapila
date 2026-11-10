@@ -1,0 +1,10 @@
+# A %T is followed where a parameter, a binding, a result or a field is written as one, not inside another type.
+
+### Takes an Optional of a view that only reads.
+### :param c: The value.
+routine look(c: %S64?) -> None
+    return
+
+### Calls it.
+routine start() -> None
+    return

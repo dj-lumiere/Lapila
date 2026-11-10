@@ -1,0 +1,17 @@
+# A @readonly routine takes me as %Me: changing me inside it is a build error.
+
+### A counter.
+record Counter
+    count: S64
+
+### Says it only reads, and writes.
+@readonly
+routine Counter.bump() -> None
+    me.count.poke(me.count.peek() + 1)
+    return
+
+### Calls it.
+routine start() -> None
+    c: &Counter <- (count: 0)
+    c.bump()
+    return

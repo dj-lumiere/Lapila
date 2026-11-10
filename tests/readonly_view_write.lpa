@@ -1,0 +1,17 @@
+# A write through a %T is a build error: a %T only reads.
+
+### A counter.
+record Counter
+    count: S64
+
+### Writes through a view that only reads.
+### :param c: The counter.
+routine bump(c: %Counter) -> None
+    c.count.poke(c.count.peek() + 1)
+    return
+
+### Calls it.
+routine start() -> None
+    c: &Counter <- (count: 0)
+    bump(c)
+    return

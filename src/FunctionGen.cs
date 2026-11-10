@@ -1572,6 +1572,11 @@ public sealed partial class FunctionGen
             }
             if (!_routineParams.TryAdd(p.Name, given))
                 throw Err(Li.DuplicateParameter, p.Pos, $"parameter '{p.Name}' is declared twice");
+            // A `%T` parameter, and the me of a `@readonly` routine, only read.
+            if (p.Type.ReadOnly)
+                _readOnlyWhy[p.Name] = p.Name == "me" && p.Implicit
+                    ? $"the me of the @readonly routine '{_decl.DisplayName}', which only reads"
+                    : $"a {p.Type}, a view that only reads";
             RecordValue(p.Pos, _inst.Params[i]);
         }
 
@@ -2326,6 +2331,7 @@ public sealed partial class FunctionGen
                 else BindAtoms(b.Name, b.Value, t);
                 NoteBoundViews(b, t);
                 if (b.Value is not ClaimExpr) NoteAccessBinding(b.Name, b.Value, t, b.Pos);
+                if (b.Value is not ClaimExpr) NoteReadOnlyBinding(b, t);
                 if (b.Value is not ClaimExpr) NoteStampView(b.Name, b.Value, t, b.Pos);
                 // An access bound with `<-` is the place that holds it: the access check follows it by that name.
                 bool accessPlace = b.Value is ClaimExpr { Contents: { } accessCall } && t is PtrType { Pointee: { } accessType }
@@ -4029,6 +4035,10 @@ public sealed partial class FunctionGen
     private void EmitWhen(WhenStmt w, ValueFrame? frame)
     {
         w = WithImplicitElse(w, frame);
+        // What an arm takes out of a view that only reads is read only too: a stamp peeked there fetches a %T.
+        if (w.Value is { } observed && ReadOnlyReason(observed) is { } readOnly)
+            foreach (var named in w.Arms.SelectMany(a => a.Cases ?? []).OfType<IsPattern>().Select(p => p.Binding).OfType<ValueRef>())
+                _readOnlyWhy[named.Name] = readOnly;
         Val? subjectValue = null;
         var outerNames = _values.Keys.ToHashSet();
         var join = frame?.Join ?? NewLBlock("endwhen");
@@ -7458,6 +7468,7 @@ public sealed partial class FunctionGen
         if (_decl.AnnotationNamed("noreturn") is not null)
             throw Err(Li.ReturnForm, r.Pos, $"'{_decl.DisplayName}' is @noreturn, so no line in it can return: end it with a call that never returns, or a throw, or drop the annotation");
         if (r.Value is { } handedBack) CheckViewedCopy(handedBack, InferQuiet(handedBack), handedBack.Pos);
+        if (r.Value is { } readOnlyBack && !r.IsThrow) CheckReadOnlyNarrowing(readOnlyBack, _decl.ReturnType, $"'{_decl.DisplayName}' returns it as a {_decl.ReturnType}");
         if (_inst.IsFailable)
         {
             EmitFailableReturn(r);

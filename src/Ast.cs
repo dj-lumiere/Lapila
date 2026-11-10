@@ -24,6 +24,9 @@ public sealed record TypeRef(string Name, List<TypeArg> Args, Pos Pos)
     /// `T?`, as written: the standard library's `Optional[T]`, which is named `Optional[T]` when T holds an entity.
     public bool Question { get; init; }
 
+    /// `%T` or `%[T]`: a view that only reads, the `@T` / `@[T]` through which nothing is written.
+    public bool ReadOnly { get; init; }
+
     /// A Callable parameter of a routine's recovering form (the one a `try` or `check` above the call reaches) whose
     /// value is only called: the routine is built for the value it is given, and a call through it passes the value's
     /// failure on. Never written: there is no `failable` in a type.
@@ -39,8 +42,8 @@ public sealed record TypeRef(string Name, List<TypeArg> Args, Pos Pos)
         Amp && Name == "BorrowedCell" && Args is [TypeArgType boxed] ? $"&{boxed}"
         : Amp && Name == "BorrowedSlice" && Args is [TypeArgType elems] ? $"&[{elems}]"
         : Path is null && Name == UnionName ? string.Join(" | ", Args)
-        : Path is null && Name == "PointedCell" && Args is [TypeArgType inner] ? $"@{inner}"
-        : Path is null && Name == "PointedSlice" && Args is [TypeArgType elem] ? $"@[{elem}]"
+        : Path is null && Name == "PointedCell" && Args is [TypeArgType inner] ? $"{(ReadOnly ? '%' : '@')}{inner}"
+        : Path is null && Name == "PointedSlice" && Args is [TypeArgType elem] ? $"{(ReadOnly ? '%' : '@')}[{elem}]"
         : (Path is null ? "" : Path + "/") + (Args.Count == 0 ? Name : $"{Name}[{string.Join(", ", Args)}]");
     public static TypeRef Simple(string name, Pos pos) => new(name, [], pos);
 

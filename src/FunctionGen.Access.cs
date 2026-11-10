@@ -48,15 +48,26 @@ public sealed partial class FunctionGen
     /// The names that are a `ReadAuthorized[T]` or a view made from one: what is reached through them is read only.
     private readonly HashSet<string> _readOnlyViews = [];
 
-    /// Whether `e` reaches memory through the view of a shared read access, which reads only.
-    private bool ReadOnlyView(Expr e)
+    /// The names that are a view that only reads (`v: %T`, a `%T` parameter, the me of a `@readonly` routine, a view
+    /// made from one), each with what the message says of it.
+    private readonly Dictionary<string, string> _readOnlyWhy = [];
+
+    /// Whether `e` reaches memory through a view that only reads: the view of a shared read access, a `%T` / `%[T]`, or
+    /// what a routine gives as one.
+    private bool ReadOnlyView(Expr e) => ReadOnlyReason(e) is not null;
+
+    /// What makes `e` a view that only reads, as a message says it, or null when `e` may write.
+    private string? ReadOnlyReason(Expr e)
     {
+        if (e is UnaryExpr { Op: "try" or "check" } recovered) e = recovered.Operand;
         for (var at = AsValueCall(e); at is not null;)
         {
-            if (at is ValueRef r && _readOnlyViews.Contains(r.Name)) return true;
+            if (at is ValueRef named && _readOnlyWhy.TryGetValue(named.Name, out var why)) return why;
+            if (ReadOnlyResult(at) is { } given) return given;
+            if (at is ValueRef r && _readOnlyViews.Contains(r.Name)) return "the view of a shared read access, which reads only";
             if (at is MethodCallExpr { Name: "getview", Args.Count: 0 } g && InferQuiet(g.Receiver) is { } owner && IsAccessType(owner)
                 && !IsExclusiveAccessType(owner))
-                return true;
+                return "the view of a shared read access, which reads only";
             at = at switch
             {
                 FieldExpr f => f.Base,
@@ -67,7 +78,7 @@ public sealed partial class FunctionGen
                 _ => null,
             };
         }
-        return false;
+        return null;
     }
 
     /// The views fetched through a stamp (`v: @Node = s.fetch()`), and the views made from them: a call that may remove
@@ -103,6 +114,56 @@ public sealed partial class FunctionGen
         Mem(new MemoryRules.ViewOf(name, StampedEntities, pos) { Contents = StampedEntities });
     }
 
+    /// What makes the value of a call or a field read only: a routine of the program whose result is written `%T` or
+    /// `%[T]`, or a field written so (`p.parent.peek()` of `parent: %Node`). Null for anything else.
+    private string? ReadOnlyResult(Expr e)
+    {
+        if (e is MethodCallExpr { Name: "peek", Args.Count: 0, Receiver: FieldExpr f } && ReadOnlyField(f) is { } field)
+            return $"the field '{f.Name}', a {field}, a view that only reads";
+        if (e is not (CallExpr or NsCallExpr or MethodCallExpr)) return null;
+        try
+        {
+            if (PlanCall(e, null) is { Decl: { IsLibrary: false, ReturnType.ReadOnly: true } d }) return $"what '{d.DisplayName}' gives, a {d.ReturnType}, a view that only reads";
+        }
+        catch (CompileError) { }
+        return null;
+    }
+
+    /// The written type of a field when it is a `%T` or `%[T]`, else null.
+    private TypeRef? ReadOnlyField(FieldExpr f)
+    {
+        var holder = InferQuiet(f.Base) is PtrType { Pointee: RecordType r } ? r : InferQuiet(f.Base) as RecordType;
+        return holder?.Decl.Fields.FirstOrDefault(x => x.Name == f.Name)?.Type is { ReadOnly: true } t ? t : null;
+    }
+
+    /// A view that only reads goes only where a `%T` / `%[T]` (or a library routine that doesn't write through it) takes
+    /// it: never into a `@T` / `@[T]` the program wrote, which could write through it.
+    private void CheckReadOnlyNarrowing(Expr value, TypeRef? into, string where)
+    {
+        if (_c.Prechecking || into is not { Name: "PointedCell" or "PointedSlice", Path: null, ReadOnly: false }) return;
+        if (ReadOnlyReason(value) is not { } why || why.StartsWith("the view of a shared read access", StringComparison.Ordinal)) return;
+        string spelled = Spelled(value);
+        string narrow = into.Name == "PointedCell" && into.Args is [TypeArgType held] ? $"%{held.Type}" : into.Args is [TypeArgType elems] ? $"%[{elems.Type}]" : "%T";
+        throw Err(Li.ReadOnlyViewWrite, value.Pos, $"{spelled} is {why}, and {where}, which could write through it: a {narrow} becomes no "
+            + $"{into} (write {narrow} there, or take a view that writes)");
+    }
+
+    /// A binding of a view: `v: %T = ...` only reads, a view of a read-only one is read only too, and `v: @T = ...` of
+    /// a view that only reads is a build error.
+    private void NoteReadOnlyBinding(BindStmt b, DType t)
+    {
+        if (b.Type.ReadOnly)
+        {
+            _readOnlyWhy[b.Name] = $"a {b.Type}, a view that only reads";
+            return;
+        }
+        if (b.Type.Known is null && !b.Lowered && !b.Name.StartsWith('$'))
+            CheckReadOnlyNarrowing(b.Value, b.Type, $"'{b.Name}' takes it as a {b.Type}");
+        if (ReadOnlyReason(b.Value) is { } why && (t is PtrType || Compiler.IsCoreSpan(t, out _) || WayToChange(t) is not null))
+            _readOnlyWhy[b.Name] = why;
+        else _readOnlyWhy.Remove(b.Name);
+    }
+
     /// Whether `m` is `fetch()` on a record marked `@entity_link`: a link whose `fetch()` gives the entity's view.
     private bool IsStampFetch(MethodCallExpr m) => InferQuiet(m.Receiver) is RecordType r && r.Decl.AnnotationNamed("entity_link") is not null;
 
@@ -118,18 +179,37 @@ public sealed partial class FunctionGen
             _ when UnbrokenNames.IsWrite(plan.Decl.Name) => plan.Receiver,
             _ => null,
         };
-        if (written is not null && ReadOnlyView(written))
-            throw Err(Li.SharedAccessWrite, plan.Pos, $"{Spelled(written)} is the view of a shared read access, which reads only: take exclusive access "
-                + "(get_exclusive_access, an Authorized[T], or an AuthorizedSlice[T] for a run of values) to write");
+        if (written is not null && ReadOnlyReason(written) is { } why)
+            throw why.StartsWith("the view of a shared read access", StringComparison.Ordinal)
+                ? Err(Li.SharedAccessWrite, plan.Pos, $"{Spelled(written)} is the view of a shared read access, which reads only: take exclusive access "
+                    + "(get_exclusive_access, an Authorized[T], or an AuthorizedSlice[T] for a run of values) to write")
+                : Err(Li.ReadOnlyViewWrite, plan.Pos, $"{Spelled(written)} is {why}, and '{plan.Decl.DisplayName}' writes through it: "
+                    + "take a @T (or a @[T]) to write");
+        // A view that only reads, handed where a routine of the program takes a view that writes.
+        if (!plan.Decl.IsLibrary)
+        {
+            int at = plan.Receiver is null ? 0 : 1;
+            var handed = plan.Receiver is { } receiver ? plan.Args.Prepend(receiver).ToList() : plan.Args;
+            for (int i = 0; i < handed.Count && i < plan.Decl.Params.Count; i++)
+            {
+                var param = plan.Decl.Params[i];
+                string where = i == 0 && plan.Receiver is not null
+                    ? $"'{plan.Decl.DisplayName}' takes me as a {param.Type}"
+                    : $"'{plan.Decl.DisplayName}' takes it as '{param.Name}', a {param.Type}";
+                CheckReadOnlyNarrowing(handed[i] is StealExpr st ? st.Value : handed[i], param.Type, where);
+            }
+            _ = at;
+        }
         foreach (var (name, _) in _c.ReshapesOf(sig, _inst, plan.Pos))
         {
             int index = plan.Decl.Params.FindIndex(p => p.Name == name);
             int offset = plan.Receiver is null ? 0 : 1;
             Expr? arg = index == 0 && plan.Receiver is not null ? plan.Receiver
                 : index - offset >= 0 && index - offset < plan.Args.Count ? plan.Args[index - offset] : null;
-            if (arg is not null && ReadOnlyView(arg))
-                throw Err(Li.SharedAccessWrite, plan.Pos, $"'{plan.Decl.DisplayName}' may move the memory of {Spelled(arg)} (it is @reshaping), and "
-                    + $"{Spelled(arg)} is the view of a shared read access, which reads only: take exclusive access to change it");
+            if (arg is not null && ReadOnlyReason(arg) is { } moved)
+                throw Err(moved.StartsWith("the view of a shared read access", StringComparison.Ordinal) ? Li.SharedAccessWrite : Li.ReadOnlyViewWrite,
+                    plan.Pos, $"'{plan.Decl.DisplayName}' may move the memory of {Spelled(arg)} (it is @reshaping), and "
+                    + $"{Spelled(arg)} is {moved}: take a view that writes to change it");
         }
     }
 

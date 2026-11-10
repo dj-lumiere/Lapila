@@ -1,0 +1,23 @@
+# A %T doesn't become a @T: handing one to a routine that takes a @T is a build error, even if that routine only reads.
+
+### A counter.
+record Counter
+    count: S64
+
+### Takes a view that may write.
+### :param c: The counter.
+### :returns: Its count.
+routine count_of(c: @Counter) -> S64
+    return c.count.peek()
+
+### Hands a %Counter on as a @Counter.
+### :param c: The counter.
+### :returns: Its count.
+routine look(c: %Counter) -> S64
+    return count_of(c)
+
+### Calls it.
+routine start() -> None
+    c: &Counter <- (count: 0)
+    drop look(c)
+    return

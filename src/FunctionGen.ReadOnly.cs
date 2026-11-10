@@ -177,8 +177,12 @@ public sealed partial class FunctionGen
     private void CheckViewedCopy(Expr value, DType? type, Pos pos, string? name = null)
     {
         if (_c.Prechecking || type is null or PtrType || value is not (ValueRef or FieldExpr or IndexExpr or MethodCallExpr)
-            || !ReadOnlyView(value) || WayToChange(type) is not { } way) return;
+            || ReadOnlyReason(value) is not { } why || WayToChange(type) is not { } way) return;
         string what = name ?? Spelled(value);
+        if (!why.StartsWith("the view of a shared read access", StringComparison.Ordinal))
+            throw Err(Li.ReadOnlyViewWrite, pos, $"'{what}' holds a way to change an entity ({way}) and is read through {why}: copying "
+                + "it out would hand out a way to change what that view reaches. Read the stamp where it is (peek it in the view and "
+                + "fetch() it: it gives a view that reads only), or take a view that writes to keep it");
         throw Err(Li.SharedAccessWrite, pos, $"'{what}' holds a way to change an entity ({way}) and is read through the view of a shared read access, "
             + "which reads only: copying it out would hand out a way to change what that view reaches. Read the stamp where "
             + "it is (peek it in the view and fetch() it: it gives a view that reads only), or take exclusive access "

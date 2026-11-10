@@ -1,0 +1,1 @@
+c is a %Counter, a view that only reads, and 'count_of' takes it as 'c', a @Counter, which could write through it: a %Counter becomes no @Counter

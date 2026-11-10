@@ -1,0 +1,56 @@
+# A %T is a view that only reads: a @T goes where a %T is taken, a %[T] reads a run of values, a @readonly routine
+# takes me as %Me, and a stamp read through a %T fetches a view that only reads.
+
+import Hosted
+
+### A node that keeps a value and maybe a link.
+entity Node
+    value: S64
+    next: Stamped[Node]?
+
+### Makes a node.
+### :param value: Its value.
+### :returns: The node.
+common routine Node.construct(value: S64) -> Me
+    return Me(value, next: None())
+
+### The node's value, read through a %Node.
+### :returns: The value.
+@readonly
+routine Node.get() -> S64
+    return me.value.peek()
+
+### Shows a node it only reads.
+### :param n: The node.
+routine show(n: %Node) -> None
+    Console.show("value {n.value.peek()} {n.get()}")
+    return
+
+### The first value of a run it only reads.
+### :param xs: The values.
+### :returns: The first one.
+routine first(xs: %[S64]) -> S64
+    return xs[0]
+
+### The value of the node a node links to, or -1.
+### :param n: The node.
+### :returns: The value.
+routine next_value(n: %Node) -> S64
+    when n.next.peek()
+        is Stamped[Node] as s =>
+            linked: %Node = s.fetch()
+            return linked.get()
+        is None => return -1
+
+### Shows reading through %T.
+routine start() -> None
+    pool: &StampManager <- .construct(manager: HEAP)
+    a: &Node <- Node.construct(value: 3)
+    show(a)
+    r: %Node = a.getview()
+    show(r)
+    data: &[S64] <- [5, 6]
+    b: Stamped[Node] = pool.add(Node.construct(value: 8))
+    a.next.poke(b)
+    Console.show("{first(data)} {a.get()} {next_value(a)}")
+    return

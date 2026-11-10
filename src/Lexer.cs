@@ -187,8 +187,8 @@ public sealed class Lexer(string file, string src, int line = 1, int col = 1)
                 continue;
             }
 
-            if (c == '%' && IsIdentChar(Peek(1)) && !OperandBefore())
-                throw new CompileError(Li.RemovedSpelling, pos, "a value is written without '%': count, not %count");
+            // `%T` in a type is a read-only view, and `%count` in a value is the old spelling the parser refuses: where it
+            // stands decides, so the `%` goes to the parser.
 
             if (c == '`')
             {
