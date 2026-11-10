@@ -3116,7 +3116,11 @@ public sealed partial class FunctionGen
             return _c.Count;
         if (e is CallExpr { Name: "typeid", TypeArgs.Count: 1, Args.Count: 0 } ti
             && _c.FindFree(ti.Name, _env.File, ti.Pos) is null)
-            return IntType.U(32);
+            return IntType.U(64);
+        if (e is CallExpr { Name: "open_callable", TypeArgs.Count: 1, Args.Count: 2 } oc
+            && _c.FindFree(oc.Name, _env.File, oc.Pos) is null)
+            return Resolve(oc.TypeArgs[0]);
+        if (ErasedCallableOf(e) is { } erasedType) return erasedType;
         if (e is CallExpr { Name: "caller_location", TypeArgs.Count: 0, Args.Count: 0 } cl
             && _c.FindFree(cl.Name, _env.File, cl.Pos) is null)
             return SourceLocationPtr(cl.Pos);
@@ -3343,6 +3347,97 @@ public sealed partial class FunctionGen
         // A routine value that is not open goes into a place open to any failure with its kind beside its address.
         if (expected is CallableType { IsOpen: true } && v.Type is CallableType { IsOpen: false } given) return PackOpen(v, given, expected);
         return v;
+    }
+
+    /// The `ErasedCallable` type when `e` is `f.to[ErasedCallable]()` on a routine value or a routine's name, else null.
+    private DType? ErasedCallableOf(Expr e)
+    {
+        if (ErasingParts(e) is not var (receiver, target)) return null;
+        if (_c.ResolveType(target, _env) is not RecordType { Decl: { Name: "ErasedCallable", Module: Compiler.SystemModule } } erased)
+            return null;
+        return ErasedSource(receiver) is null ? null : erased;
+    }
+
+    /// The receiver and the written target of `f.to[T]()`, whether `f` was read as a value or as a namespace.
+    private static (Expr Receiver, TypeRef Target)? ErasingParts(Expr e) => e switch
+    {
+        MethodCallExpr { Name: "to", TypeArgs: [{ Name: "ErasedCallable", Args.Count: 0 } t], Args.Count: 0 } m => (m.Receiver, t),
+        NsCallExpr { Name: "to", TypeArgs: [{ Name: "ErasedCallable", Args.Count: 0 } t], Args.Count: 0, Owner: { Args.Count: 0, Path: null } owner } n =>
+            (new ValueRef(owner.Name, owner.Pos), t),
+        _ => null,
+    };
+
+    /// What `f` in `f.to[ErasedCallable]()` is as a routine value: a Callable value, or a routine named by `f`.
+    private Expr? ErasedSource(Expr receiver)
+    {
+        if (InferQuiet(receiver) is CallableType) return receiver;
+        string? name = receiver switch { ValueRef v => v.Name, PresetRef { Owner: null } p => p.Name, _ => null };
+        return name is not null && _c.FreeCandidates(name, _env.File, receiver.Pos, null).Count > 0
+            ? new RoutineRef(name, null, receiver.Pos)
+            : null;
+    }
+
+    /// `f.to[ErasedCallable]()`: the routine's address, its kind and its signature hash (the routine type's type id,
+    /// which leaves its failures out). An open Callable already holds its address and kind.
+    private Val EraseCallable(Expr m, RecordType erased)
+    {
+        var source = ErasedSource(ErasingParts(m)!.Value.Receiver)!;
+        var v = source is RoutineRef routine ? ErasedRoutineValue(routine) : EvalAny(source);
+        if (v.Type is not CallableType callable)
+            throw Err(Li.TypeMismatch, m.Pos, $"to[ErasedCallable]() takes a routine value, not {v.Type}");
+        string entry, kind;
+        if (callable.IsOpen)
+        {
+            entry = EmitTmp($"extractvalue {CallableType.OpenLlvm} {v.Op}, 0");
+            kind = EmitTmp($"extractvalue {CallableType.OpenLlvm} {v.Op}, 1");
+        }
+        else
+        {
+            entry = v.Op;
+            kind = (callable.Failable ? CallableType.KindFailing : CallableType.KindPlain).ToString(CultureInfo.InvariantCulture);
+        }
+        string signature = _c.TypeId(callable, m.Pos).ToString(CultureInfo.InvariantCulture);
+        var fields = _c.Fields(erased);
+        _c.EnsureTypeDefined(erased);
+        var shape = _c.Shape(erased);
+        string acc = "poison";
+        for (int i = 0; i < fields.Count; i++)
+        {
+            string op = fields[i].Name switch
+            {
+                "entry" => entry,
+                "kind" => kind,
+                "signature" => signature,
+                _ => throw new InvalidOperationException($"ErasedCallable has no field {fields[i].Name}")
+            };
+            acc = EmitTmp($"insertvalue {erased.Llvm} {acc}, {fields[i].Type.Llvm} {op}, {shape.ValuePath(i)}");
+        }
+        return new Val(acc, erased);
+    }
+
+    /// A routine named for `to[ErasedCallable]()` as a value: a routine that throws is taken in its recovering form, whose
+    /// failure a call through the restored value passes on.
+    private Val ErasedRoutineValue(RoutineRef routine)
+    {
+        var plain = RoutineValue(routine, null);
+        return plain.Type is CallableType own && RoutineValueFailing(routine, own) is { } failing
+            ? RoutineValue(routine, failing)
+            : plain;
+    }
+
+    /// `open_callable[T](entry: a, kind: k)` (the standard library's `ErasedCallable.to`): the routine value of type `T`
+    /// at address `a`. An open `T` holds the kind beside the address, a plain one is the address.
+    private Val OpenCallableValue(CallExpr c)
+    {
+        if (_c.UserFile(_env.File))
+            throw Err(Li.RoutineValue, c.Pos, "open_callable is the standard library's: e.to[Callable[...]]() gives a routine value back");
+        if (Resolve(c.TypeArgs[0]) is not CallableType callable)
+            throw Err(Li.TypeMismatch, c.Pos, $"open_callable makes a routine value, and {Resolve(c.TypeArgs[0])} isn't a Callable");
+        var entry = Eval(c.Args[0], new PtrType(null));
+        var kind = Eval(c.Args[1], IntType.U(8));
+        if (!callable.IsOpen) return new Val(entry.Op, callable);
+        string withAddress = EmitTmp($"insertvalue {CallableType.OpenLlvm} zeroinitializer, ptr {entry.Op}, 0");
+        return new Val(EmitTmp($"insertvalue {CallableType.OpenLlvm} {withAddress}, i8 {kind.Op}, 1"), callable);
     }
 
     /// A Callable that is not open as the pair an open one holds: its address and its kind, plain or failing.
@@ -6591,8 +6686,15 @@ public sealed partial class FunctionGen
 
     /// One type argument a call writes: a type for a type parameter, and for a value parameter a value (a number, a value
     /// parameter in scope, a preset, a choice member) the parameter's type holds.
-    private DType ExplicitTypeArg(RoutineDecl r, string param, TypeRef written) =>
-        _c.ArgFor(new TypeArgType(written), param, r.Clauses, r.File, _env, r.DisplayName, written.Pos);
+    private DType ExplicitTypeArg(RoutineDecl r, string param, TypeRef written)
+    {
+        var arg = _c.ArgFor(new TypeArgType(written), param, r.Clauses, r.File, _env, r.DisplayName, written.Pos);
+        // The routine value `ErasedCallable.to` gives back may be any routine of that signature, one that fails too, so
+        // the Callable written for it is open to any failure, as one kept in a field is.
+        return r is { IsLibrary: true, Name: "to", Owner.Name: "ErasedCallable", Module: Compiler.SystemModule }
+            ? _c.OpenCallable(arg, false)
+            : arg;
+    }
 
     /// A call's type argument written as a number or an expression (`f[4](x)`, `f[N + 1](x)`), as the value it folds to.
     private TypeRef ValueTypeArg(TypeArg a, Pos pos) => a switch
@@ -6708,6 +6810,9 @@ public sealed partial class FunctionGen
 
     private Val EvalCall(Expr e, DType? expected)
     {
+        // `f.to[ErasedCallable]()` reads `f` as a routine value, also when `f` names a routine.
+        if (ErasedCallableOf(e) is RecordType erased)
+            return EraseCallable(e, erased);
         if (e is MethodCallExpr reached && ReachedThroughOptional(reached) is { } through) e = through;
         if (e is MethodCallExpr onPlace && StackPlaceCall(onPlace) is { } placeCall)
             return placeCall is MethodCallExpr ? EvalCall(placeCall, expected) : Eval(placeCall, expected ?? Infer(placeCall)!);
@@ -6718,7 +6823,10 @@ public sealed partial class FunctionGen
             return SizeOrAlign(sz);
         if (e is CallExpr { Name: "typeid", TypeArgs.Count: 1, Args.Count: 0 } ti
             && _c.FindFree(ti.Name, _env.File, ti.Pos) is null)
-            return new Val(_c.TypeId(Resolve(ti.TypeArgs[0]), ti.Pos).ToString(), IntType.U(32));
+            return new Val(_c.TypeId(Resolve(ti.TypeArgs[0]), ti.Pos).ToString(CultureInfo.InvariantCulture), IntType.U(64));
+        if (e is CallExpr { Name: "open_callable", TypeArgs.Count: 1, Args.Count: 2 } oc
+            && _c.FindFree(oc.Name, _env.File, oc.Pos) is null)
+            return OpenCallableValue(oc);
         if (e is CallExpr { Name: "caller_location", TypeArgs.Count: 0, Args.Count: 0 } cl
             && _c.FindFree(cl.Name, _env.File, cl.Pos) is null)
             return CallerLocation(cl.Pos);

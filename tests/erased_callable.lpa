@@ -1,0 +1,89 @@
+# An ErasedCallable keeps a routine value whose signature is known only at run time: f.to[ErasedCallable]() makes one of a
+# routine or a Callable value, e.to[Callable[...]]() gives it back when the signature matches (try gives None when it
+# doesn't), and fits asks first. A routine that throws comes back open to any failure, so try receives its failure. A
+# list of them holds routine values of different signatures, used here as an event bus.
+
+import Collections
+import Hosted
+
+crashable BadInputError
+    value: S64
+
+### Writes the message.
+### :typeparam TWriter: The Writer.
+### :param out: Where it goes.
+routine BadInputError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("bad input {me.value}")
+    return
+
+### n, failing for a negative n.
+### :param n: The number.
+### :returns: It.
+routine checked(n: S64) -> S64
+    if n < 0
+        throw BadInputError(value: n)
+    return n
+
+### Twice n.
+### :param n: The number.
+### :returns: Twice n.
+infallible routine twice(n: S64) -> S64
+    return n * 2
+
+### Says hello with a code.
+### :param code: The code.
+routine greet(code: S64) -> None
+    Console.show("hello {code}")
+    return
+
+### Erases a routine and gives it back.
+routine round_trip() -> None
+    e: ErasedCallable = twice.to[ErasedCallable]()
+    back: Callable[(S64,), S64] = e.to[Callable[(S64,), S64]]()
+    Console.show("back {back.call(21)}")
+    Console.show("fits {e.fits[Callable[(S64,), S64]]()} {e.fits[Callable[(S64,), None]]()}")
+    when try e.to[Callable[(S64,), None]]()
+        is None => Console.show("try wrong: none")
+        else => Console.show("try wrong: a routine value")
+    when check e.to[Callable[(), S64]]()
+        is Callable[(), S64] as given => Console.show("check wrong: {given.call()}")
+        is RoutineSignatureError as wrong => Console.show("check wrong: {wrong.asked}")
+    return
+
+### Erases a routine that throws, from a Callable value and from its name.
+routine throwing() -> None
+    f: Callable[(S64,), S64] = checked.to[Callable]()
+    from_value: ErasedCallable = f.to[ErasedCallable]()
+    restored: Callable[(S64,), S64] = from_value.to[Callable[(S64,), S64]]()
+    Console.show("restored {restored.call(5)} {try restored.call(-2)}")
+    from_name: ErasedCallable = checked.to[ErasedCallable]()
+    named: Callable[(S64,), S64] = from_name.to[Callable[(S64,), S64]]()
+    when check named.call(-4)
+        is S64 as v => Console.show("got {v}")
+        is BadInputError as bad => Console.show("bad input {bad.value}")
+        else => Console.show("another failure")
+    return
+
+### Calls each handler that fits a signature.
+routine event_bus() -> None
+    bus: &List[ErasedCallable] <- .construct(manager: HEAP)
+    bus.add_last(greet.to[ErasedCallable]())
+    bus.add_last(twice.to[ErasedCallable]())
+    bus.add_last(checked.to[ErasedCallable]())
+    for i in 0 til bus.count().to[S64]()
+        handler: ErasedCallable = bus[i.to[U64]()]
+        if handler.fits[Callable[(S64,), None]]()
+            say: Callable[(S64,), None] = handler.to[Callable[(S64,), None]]()
+            say.call(i)
+        if handler.fits[Callable[(S64,), S64]]()
+            step: Callable[(S64,), S64] = handler.to[Callable[(S64,), S64]]()
+            Console.show("step {i}: {try step.call(-1)} {try step.call(7)}")
+    return
+
+### Runs the examples.
+routine start() -> None
+    round_trip()
+    throwing()
+    event_bus()
+    return

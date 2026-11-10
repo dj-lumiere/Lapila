@@ -181,6 +181,12 @@ routine start() -> None
   the routine around it (a build error: pass it as a parameter). It is a plain routine address.
 - A `Callable` value is called with `.call(args)`. One stored in a field is loaded first:
   `handler: Callable[…] = me.handler.peek()`, then `handler.call(x)`. `me.handler(...)` is an error.
+- **`ErasedCallable`** (System) holds a routine value whose signature is known only at run time: its address, its kind
+  (plain or failing) and a signature hash (`typeid` of its Callable type). `f.to[ErasedCallable]()` makes one of a routine
+  name or a Callable value (a routine that throws is taken in its recovering form), `e.to[Callable[(S64,), S64]]()` gives
+  it back as an OPEN Callable (any failure, like one in a field) and throws `RoutineSignatureError` on another signature
+  (`try` gives `None`), `e.fits[Callable[...]]()` asks without failing. `List[ErasedCallable]` holds routine values of
+  different signatures. There is no call through an `Addr`.
 - A field of a record value is read with plain `=`: `key: K = pair.key`.
 - **Places: `<-` borrows.** `x: &T <- v` borrows a place for a `T` from a memory manager and puts `v` in it: three
   steps in one line (the manager's borrow, the `BorrowedCell[T]` made over the place, the store), which `from m` makes
@@ -414,7 +420,7 @@ routine start() -> None
     into a global or an existing entity's field is the error above. A BorrowedCell's and a BorrowedSlice's own address and manager
     fields, a `@MemoryManager` (the link to where memory goes back, which the manager check below follows), and a
     `SourceLocation` (the builder's read-only text) don't count as views here.
-  - **`typeid[T]()`** (a builder query like `sizeof`, also in presets): a `U32` that is a hash of the type's name (FNV-1a, never 0), the
+  - **`typeid[T]()`** (a builder query like `sizeof`, also in presets): a `U64` that is a hash of the type's name with its module (`System.S64`, `Game.Point`, a routine type `Callable[(System.S64,), System.S64]` without its failures; FNV-1a 64, never 0, the number Revare and Mielia give the same name), the
     same in every module of one program including the library base, and a build error when two types of one build share it.
   - **`StampManager[T]` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
     A pool is an entity the program holds, as a local or in a field: `pool: &StampManager[Node] <- .construct(manager: HEAP)` (the

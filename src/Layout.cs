@@ -120,23 +120,72 @@ public sealed partial class Compiler
 
     private DataLayout Layout(Pos pos) => _dataLayout ??= DataLayout.For(Target, pos);
 
-    private readonly Dictionary<uint, (string Name, string Llvm)> _typeIds = [];
+    private readonly Dictionary<ulong, string> _typeIds = [];
 
-    /// `typeid[T]()`: a number for a type that is the same in every module of one program, because it is a hash of the
-    /// type's name (FNV-1a over its UTF-8 bytes, 32 bits, never 0). Two different types of one build with the same number
+    /// `typeid[T]()`: a number for a type that is the same in every module of one program and in every build, because
+    /// it is a hash of the type's canonical name (FNV-1a 64 over its UTF-8 bytes, never 0, see `CanonicalName`). Revare
+    /// and Mielia give a type of the same name the same number. Two different types of one build with the same number
     /// are a build error. A type parameter (the generic body checked before an instance) takes no number yet.
-    public uint TypeId(DType t, Pos pos)
+    public ulong TypeId(DType t, Pos pos)
     {
-        uint hash = 2166136261;
-        foreach (byte b in System.Text.Encoding.UTF8.GetBytes(t.Name))
-            hash = (hash ^ b) * 16777619;
-        if (hash == 0) hash = 1;
+        string canonical = CanonicalName(t);
+        ulong hash = TypeIdOf(canonical);
         if (t is ArchetypeType) return hash;
         EnsureTypeDefined(t);
-        if (_typeIds.TryGetValue(hash, out var seen) && (seen.Name != t.Name || seen.Llvm != t.Llvm))
-            throw new CompileError(Li.LayoutProblem, pos, $"typeid[{t.Name}]() and typeid[{seen.Name}]() are both {hash}: two types of one build can't share a type id, so rename one of them");
-        _typeIds[hash] = (t.Name, t.Llvm);
+        if (_typeIds.TryGetValue(hash, out var seen) && seen != canonical)
+            throw new CompileError(Li.LayoutProblem, pos, $"typeid[{t.Name}]() and the type id of {seen} are both {hash}: two types of one build can't share a type id, so rename one of them");
+        _typeIds[hash] = canonical;
         return hash;
+    }
+
+    /// FNV-1a 64 of a canonical name, 1 in place of 0.
+    public static ulong TypeIdOf(string canonical)
+    {
+        ulong hash = 14695981039346656037UL;
+        foreach (byte b in System.Text.Encoding.UTF8.GetBytes(canonical))
+            hash = (hash ^ b) * 1099511628211UL;
+        return hash == 0 ? 1 : hash;
+    }
+
+    /// A type's name with each declared type's module (`System.S64`, `Game/Units.Point`, `System.List[System.S64]`),
+    /// written the way Revare and Mielia write a type's full name, so the three languages hash a type of the same name
+    /// to the same type id. A routine type is `Callable[(params), result]` with a one-parameter list written `(A,)`
+    /// and no result written `None`. Its failures are not part of it: a routine value's signature is its parameter
+    /// and result types.
+    public static string CanonicalName(DType t) => t switch
+    {
+        IntType or BoolType or FloatType => $"{SystemModule}.{t.Name}",
+        VoidType => "None",
+        CallableType c => SignatureName(c),
+        RecordType r => DeclCanonical(r.Decl, r.Decl.Name, r.Args),
+        VariantType v => DeclCanonical(v.Decl, v.Decl.Name, v.Args),
+        ChoiceType e => DeclCanonical(e.Decl, e.Decl.Name, []),
+        PtrType { Pointee: null } => $"{SystemModule}.Addr",
+        PtrType p => $"{SystemModule}.PointedCell[{CanonicalName(p.Pointee!)}]",
+        ArrayType a => $"{SystemModule}.{a.Kind}[{CanonicalName(a.Elem)}, {a.Count.ToString(CultureInfo.InvariantCulture)}]",
+        VectorType v => $"{SystemModule}.Vector[{CanonicalName(v.Elem)}, {v.Count.ToString(CultureInfo.InvariantCulture)}]",
+        _ => t.Key
+    };
+
+    /// A routine type's canonical name: `Callable[(System.S64,), System.S64]`, a calling convention other than the
+    /// default written first.
+    public static string SignatureName(CallableType c)
+    {
+        string list = c.Params.Count switch
+        {
+            0 => "()",
+            1 => $"({CanonicalName(c.Params[0])},)",
+            _ => $"({string.Join(", ", c.Params.Select(CanonicalName))})"
+        };
+        string conv = c.CallConv == "default" ? "" : $"@callconv(\"{c.CallConv}\"), ";
+        return $"Callable[{conv}{list}, {CanonicalName(c.Ret)}]";
+    }
+
+    private static string DeclCanonical(Decl d, string name, List<DType> args)
+    {
+        string head = d.Module == "" ? name : $"{d.Module}.{name}";
+        if (d.IsPrivate) head += "@" + new string(d.File.Select(ch => char.IsAsciiLetterOrDigit(ch) ? ch : '_').ToArray());
+        return args.Count == 0 ? head : $"{head}[{string.Join(", ", args.Select(CanonicalName))}]";
     }
 
     /// The size and alignment LLVM gives a type on the target, as `sizeof[T]()` / `alignof[T]()` report at run time.

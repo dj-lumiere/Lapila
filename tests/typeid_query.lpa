@@ -1,10 +1,10 @@
-# typeid[T]() is a U32 the builder computes from the type's name: the same each time, different for different types,
+# typeid[T]() is a U64 the builder computes from the type's name: the same each time, different for different types,
 # never 0, usable in a preset and from a generic routine.
 
 import Collections
 import Hosted
 
-preset POINT_ID: U32 = typeid[Point]()
+preset POINT_ID: U64 = typeid[Point]()
 
 ### A record to ask about.
 record Point
@@ -13,7 +13,7 @@ record Point
 ### The type id of a type parameter's instance.
 ### :typeparam T: The type.
 ### :returns: Its type id.
-routine id_of[T]() -> U32
+routine id_of[T]() -> U64
 needs AnyType T
     return typeid[T]()
 

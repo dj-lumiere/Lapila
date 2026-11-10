@@ -1,0 +1,18 @@
+# Asking an ErasedCallable for another signature than its routine value has, with no try above, stops the program there.
+
+import Hosted
+
+### Twice n.
+### :param n: The number.
+### :returns: Twice n.
+infallible routine twice(n: S64) -> S64
+    return n * 2
+
+### Asks for the wrong signature.
+routine start() -> None
+    e: ErasedCallable = twice.to[ErasedCallable]()
+    Console.show("asking for the wrong signature")
+    wrong: Callable[(S64,), None] = e.to[Callable[(S64,), None]]()
+    wrong.call(1)
+    Console.show("not reached")
+    return

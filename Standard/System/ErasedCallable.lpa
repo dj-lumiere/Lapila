@@ -1,0 +1,48 @@
+# Lapila stdlib: ErasedCallable, a routine value whose signature is known only at run time
+
+module System
+
+### A routine value whose signature is known only at run time: the routine's address, its kind (a routine that gives
+### its value directly, or one that gives the carrier of a failable call) and a hash of its signature (its parameter
+### and result types, each with its module, the same number `typeid` gives the Callable type). Routine values of
+### different signatures fit in one place (`List[ErasedCallable]`). `f.to[ErasedCallable]()` makes one of a routine
+### or a Callable value, and `e.to[Callable[(S64,), S64]]()` gives the routine value back when the signatures match.
+### The value it gives back may give any failure the program throws, as a Callable kept in a field does.
+record ErasedCallable
+    ### The routine's address.
+    secret entry: Addr
+    ### 0 for a routine that gives its value directly, 1 for one that gives the carrier of a failable call.
+    secret kind: U8
+    ### The signature hash.
+    secret signature: U64
+
+### A routine value that an `ErasedCallable` was asked for as another routine type than its own.
+crashable RoutineSignatureError
+    ### The routine type that was asked for.
+    asked: @[Byte]
+
+### Writes `The erased routine value is not a Callable[(S64,), S64].`
+### :typeparam TWriter: The type of the Writer.
+### :param out: The Writer the message goes to.
+routine RoutineSignatureError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("The erased routine value is not a {me.asked}.")
+    return
+
+### Gives the routine value back as the routine type `T` it was made from. A call through it may give any failure the
+### program throws.
+### :typeparam T: The routine type, `Callable[(S64,), S64]`.
+### :returns: The routine value.
+### :throws: {RoutineSignatureError} when the routine value has another signature than `T`.
+routine ErasedCallable.to[T]() -> T
+needs AnyType T
+    if me.signature != typeid[T]()
+        throw RoutineSignatureError(asked: type_name[T]())
+    return open_callable[T](entry: me.entry, kind: me.kind)
+
+### Whether the routine value has the signature of the routine type `T`.
+### :typeparam T: The routine type, `Callable[(S64,), S64]`.
+### :returns: `true` when `to[T]()` gives it back.
+routine ErasedCallable.fits[T]() -> Bool
+needs AnyType T
+    return me.signature == typeid[T]()

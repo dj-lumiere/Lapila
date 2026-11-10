@@ -294,7 +294,7 @@ public sealed partial class Compiler
                 return new ConstVal(null, c.Name == "sizeof" ? size : align);
             }
             case CallExpr { Name: "typeid", TypeArgs.Count: 1, Args.Count: 0 } c:
-                return new ConstVal(IntType.U(32), TypeId(ResolveType(c.TypeArgs[0], env), c.Pos));
+                return new ConstVal(IntType.U(64), TypeId(ResolveType(c.TypeArgs[0], env), c.Pos));
             case CallExpr c:
                 throw new CompileError(Li.BuildtimeFold, c.Pos, $"'{c.Name}' can't run at build time; {NotBuildtimeTail()}");
             default:
