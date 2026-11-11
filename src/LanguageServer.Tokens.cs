@@ -274,6 +274,42 @@ public static partial class LanguageServer
         /// Where each value of the routine is bound (a parameter, a block parameter, a statement's binding).
         private Dictionary<string, Pos> _definedAt = [];
 
+        /// The type arguments the builder inferred where a call or a creator left them out: the place right after the
+        /// name, and the bracket to show there.
+        public List<(int Line, int Col, string Label)> Hints { get; } = [];
+
+        /// Hints `[A, B]` after the name at `pos` when the builder bound `parameters` there and the source wrote none.
+        /// A generic routine's body is checked per instance and records nothing, so a parameter still standing for
+        /// itself never gets here.
+        private void HintInferred(Pos pos, string name, List<string> parameters, Func<string, DType?> binding, bool written)
+        {
+            if (written || parameters.Count == 0 || NameAt(pos, name) is not { } at) return;
+            var args = new List<string>();
+            foreach (string parameter in parameters)
+            {
+                if (binding(parameter) is not { } type) return;
+                args.Add(type.ToString());
+            }
+            Hints.Add((at.Pos.Line, at.Pos.Col + at.Text.Length, $"[{string.Join(", ", args)}]"));
+        }
+
+        /// The routine's own type arguments, as the builder bound them at the call.
+        private void HintRoutine(Pos pos, string name, bool written)
+        {
+            if (analysis.Compiler.CallUses.GetValueOrDefault((pos, name)) is not { } use) return;
+            HintInferred(pos, name, use.Decl.TypeParams, p => use.Bindings.FirstOrDefault(b => b.Name == p).Type, written);
+        }
+
+        /// The type arguments of a generic type named bare, taken from the type a creator made.
+        private void HintType(TypeRef named, DType? made)
+        {
+            var args = made switch { RecordType r => r.Args, VariantType v => v.Args, _ => null };
+            if (args is null || named.Args.Count > 0 || analysis.Compiler.TypeDeclQuiet(named.Name, analysis.Shown, named.Path) is not { } decl) return;
+            var parameters = TypeParamsOf(decl);
+            if (parameters.Count != args.Count) return;
+            HintInferred(named.Pos, named.Name, parameters, p => args[parameters.IndexOf(p)], false);
+        }
+
         public Dictionary<(int, int), string> Run()
         {
             foreach (var d in analysis.Decls.Where(d => d.File == analysis.Shown)) Decl(d);
@@ -1072,11 +1108,13 @@ public static partial class LanguageServer
                     if (!IsFreeRoutine(call) && TypeKind(built) is "recordType" or "entityType")
                     {
                         Mark(call.Pos, call.Name, TypeKind(built)!, TypeHover(built));
+                        HintType(built, analysis.Compiler.ValueTypes.GetValueOrDefault(call.Pos));
                         Labels(call.Pos, call.Name, call.ArgNames, "property");
                     }
                     else
                     {
                         Mark(call.Pos, call.Name, "function", CallHover(call.Pos, call.Name, FreeRoutine(call)));
+                        HintRoutine(call.Pos, call.Name, call.TypeArgs.Count > 0);
                         Labels(call.Pos, call.Name, call.ArgNames, "parameter");
                     }
                     foreach (var t in call.TypeArgs) Type(t);
@@ -1101,6 +1139,15 @@ public static partial class LanguageServer
                         : ns.Name is "show" or "alert" && ns.Args is [StrLit shown, ..] ? shown
                         : null;
                     if (nsTemplate is not null) TemplateHoles(nsTemplate);
+                    if (analysis.Compiler.CallUses.GetValueOrDefault((ns.Pos, ns.Name)) is { } nsUse
+                        && ns.Owner.Args.Count == 0 && analysis.Compiler.TypeDeclQuiet(ns.Owner.Name, analysis.Shown, ns.Owner.Path) is { } ownerDecl)
+                    {
+                        // `Pair.make(...)`: the type's own arguments are what the call bound for its parameters.
+                        var ownerParams = TypeParamsOf(ownerDecl);
+                        HintInferred(ns.Owner.Pos, ns.Owner.Name, ownerParams,
+                            p => nsUse.Bindings.FirstOrDefault(b => b.Name == p).Type, false);
+                    }
+                    if (!IsCase(ns.Owner, ns.Name)) HintRoutine(ns.Pos, ns.Name, ns.TypeArgs.Count > 0);
                     Labels(ns.Owner.Pos, ns.Name, ns.ArgNames, "parameter");
                     foreach (var t in ns.TypeArgs) Type(t);
                     foreach (var a in ns.Args) Expr(a);
@@ -1145,6 +1192,7 @@ public static partial class LanguageServer
                         ?? StrideHover(method)
                         ?? (method.Name == "write" && method.Args is [StrLit] ? TemplateHover() : null));
                     if (method.Name == "write" && method.Args is [StrLit methodTemplate]) TemplateHoles(methodTemplate);
+                    HintRoutine(method.Pos, method.Name, method.TypeArgs.Count > 0);
                     Labels(method.Pos, method.Name, method.ArgNames, "parameter");
                     foreach (var t in method.TypeArgs) Type(t);
                     foreach (var a in method.Args) Expr(a);

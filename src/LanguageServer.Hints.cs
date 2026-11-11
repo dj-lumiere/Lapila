@@ -27,7 +27,32 @@ public static partial class LanguageServer
             return hints;
         }
 
+        foreach (var (line, col, label) in InferredArguments(tokens, analysis))
+            hints.Add(new JsonObject
+            {
+                ["position"] = new JsonObject { ["line"] = line - 1, ["character"] = col - 1 },
+                ["label"] = label,
+                ["kind"] = 1,
+                ["paddingLeft"] = false,
+            });
         return hints;
+    }
+
+    /// The type arguments the builder inferred where the source wrote none, as `[Bool]` right after the routine's or the
+    /// type's name: what a generic call or creator stands for here (1-based place, label).
+    private static List<(int Line, int Col, string Label)> InferredArguments(List<Token> tokens, Analysis analysis)
+    {
+        var classifier = new Classifier(tokens, analysis);
+        classifier.Run();
+        return classifier.Hints;
+    }
+
+    /// The inferred type-argument hints of a checked text, as the server sends them. For the tests.
+    internal static List<(int Line, int Col, string Label)> InferredArgumentHints(string path, string text, string stdlib)
+    {
+        var (_, analysis) = Check(new Uri(Path.GetFullPath(path)).AbsoluteUri, text, () => stdlib);
+        if (analysis is null || Lex(analysis.Shown, text) is not { } tokens) return [];
+        return InferredArguments(tokens, analysis);
     }
 
     /// Marks the positions of the calls under a `try` or `check`, and of the operators.
