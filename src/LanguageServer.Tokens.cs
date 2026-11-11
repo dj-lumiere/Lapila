@@ -300,14 +300,17 @@ public static partial class LanguageServer
             HintInferred(pos, name, use.Decl.TypeParams, p => use.Bindings.FirstOrDefault(b => b.Name == p).Type, written);
         }
 
-        /// The type arguments of a generic type named bare, taken from the type a creator made.
-        private void HintType(TypeRef named, DType? made)
+        /// Hints the type a leading-dot call resolved to, right before its `.`: `.construct(value: 5)` where a `Box[S64]` goes
+        /// is shown as `Box[S64].construct(value: 5)`. A generic routine's body is checked per instance and records no
+        /// call, so a type still made of parameters is never shown.
+        private void HintImplicitOwner(ImplicitCallExpr call, TypeRef? owner)
         {
-            var args = made switch { RecordType r => r.Args, VariantType v => v.Args, _ => null };
-            if (args is null || named.Args.Count > 0 || analysis.Compiler.TypeDeclQuiet(named.Name, analysis.Shown, named.Path) is not { } decl) return;
-            var parameters = TypeParamsOf(decl);
-            if (parameters.Count != args.Count) return;
-            HintInferred(named.Pos, named.Name, parameters, p => args[parameters.IndexOf(p)], false);
+            if (owner is null || !analysis.Compiler.CallUses.ContainsKey((call.Pos, call.Name)) || NameAt(call.Pos, call.Name) is not { } name) return;
+            int index = tokens.IndexOf(name);
+            if (index <= 0 || tokens[index - 1].Kind != TokenKind.Dot) return;
+            var dot = tokens[index - 1];
+            // A `&T` or `@T` place holds a `T`: the routine is one of `T`'s.
+            Hints.Add((dot.Pos.Line, dot.Pos.Col, owner.ToString().TrimStart('&', '@')));
         }
 
         public Dictionary<(int, int), string> Run()
@@ -1108,7 +1111,6 @@ public static partial class LanguageServer
                     if (!IsFreeRoutine(call) && TypeKind(built) is "recordType" or "entityType")
                     {
                         Mark(call.Pos, call.Name, TypeKind(built)!, TypeHover(built));
-                        HintType(built, analysis.Compiler.ValueTypes.GetValueOrDefault(call.Pos));
                         Labels(call.Pos, call.Name, call.ArgNames, "property");
                     }
                     else
@@ -1118,7 +1120,17 @@ public static partial class LanguageServer
                         Labels(call.Pos, call.Name, call.ArgNames, "parameter");
                     }
                     foreach (var t in call.TypeArgs) Type(t);
-                    foreach (var a in call.Args) Expr(a);
+                    {
+                        var callee = analysis.Compiler.CallUses.GetValueOrDefault((call.Pos, call.Name))?.Decl ?? FreeRoutine(call);
+                        for (int i = 0; i < call.Args.Count; i++)
+                        {
+                            string? label = call.ArgNames is { } names && i < names.Count ? names[i] : null;
+                            var param = callee is null ? null
+                                : label is not null ? callee.Params.FirstOrDefault(q => q.Name == label)
+                                : i < callee.Params.Count ? callee.Params[i] : null;
+                            Expr(call.Args[i], param is null || callee!.TypeParams.Count > 0 ? null : param.Type);
+                        }
+                    }
                     break;
                 case NsCallExpr ns:
                     // `Option[U64].Present(mid)` makes a case; `SORTED.to[@S64]()` calls a routine on a preset the
@@ -1139,14 +1151,6 @@ public static partial class LanguageServer
                         : ns.Name is "show" or "alert" && ns.Args is [StrLit shown, ..] ? shown
                         : null;
                     if (nsTemplate is not null) TemplateHoles(nsTemplate);
-                    if (analysis.Compiler.CallUses.GetValueOrDefault((ns.Pos, ns.Name)) is { } nsUse
-                        && ns.Owner.Args.Count == 0 && analysis.Compiler.TypeDeclQuiet(ns.Owner.Name, analysis.Shown, ns.Owner.Path) is { } ownerDecl)
-                    {
-                        // `Pair.make(...)`: the type's own arguments are what the call bound for its parameters.
-                        var ownerParams = TypeParamsOf(ownerDecl);
-                        HintInferred(ns.Owner.Pos, ns.Owner.Name, ownerParams,
-                            p => nsUse.Bindings.FirstOrDefault(b => b.Name == p).Type, false);
-                    }
                     if (!IsCase(ns.Owner, ns.Name)) HintRoutine(ns.Pos, ns.Name, ns.TypeArgs.Count > 0);
                     Labels(ns.Owner.Pos, ns.Name, ns.ArgNames, "parameter");
                     foreach (var t in ns.TypeArgs) Type(t);
@@ -1160,7 +1164,11 @@ public static partial class LanguageServer
                     if (analysis.Compiler.CaseUses.Contains(call.Pos) || owner is not null && IsCase(owner, call.Name))
                         Mark(call.Pos, call.Name, "constant", owner is null ? null : CaseHover(owner, call.Name));
                     else
+                    {
                         Mark(call.Pos, call.Name, "function", CallHover(call.Pos, call.Name, MethodOn(owner, call.Name)));
+                        HintImplicitOwner(call, owner);
+                        HintRoutine(call.Pos, call.Name, call.TypeArgs.Count > 0);
+                    }
                     Labels(call.Pos, call.Name, call.ArgNames, "parameter");
                     foreach (var t in call.TypeArgs) Type(t);
                     foreach (var a in call.Args) Expr(a);
