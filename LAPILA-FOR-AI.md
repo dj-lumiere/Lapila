@@ -1251,6 +1251,29 @@ routine start() -> None
   declared routines' signatures. Conditional conformance: `obeys Equatable[BorrowedCell[T]] when T obeys Equatable`.
   `Reversed[T]` (Core) is a `T` whose `compare` is flipped (`Reversed[S64].construct(5)`): Comparable, Equatable,
   Hashable, Representable, and Diagnosable when `T` is.
+- **Stored values of a protocol.** A protocol written as a type, its own first argument dropped as in `needs T obeys`
+  (`Enemy` for `protocol Enemy[T]`, `Source[S64]` for `protocol Source[T, TItem]`), is a place for a value whose type
+  is known only at run time: `x: &Enemy`, `List[Enemy]`, an entity's member variable `boss: Enemy`, `&(Enemy?)`, `-> Enemy`,
+  and the parameters `e: @Enemy` / `e: %Enemy` (a view) and `e: Enemy` (taken over). The builder declares an entity of the
+  protocol's name holding the type id (`typeid[T]()`), the address of a `&T` and its manager (none for STACK). A value goes
+  in only as a `&T` handed over with `steal`: `s: &Slime <- .construct(hp: 3) from HEAP` (or STACK without `from`), then
+  `enemies.add_last(steal s)`, records alike (`b: &Bat <- bat`, then `steal b`). A `&T` gives its own memory back, so a copy
+  would leave two places giving the same memory back: a stored value is never copied (`y: &Enemy <- x` is `LP-S413`, hand it
+  over with `steal x` or take a view `v: @Enemy = x`), a record goes in as one original (copy the record value first to keep
+  several), and many names that live on their own use `Stamped[T]` (copied freely, the pool gives the memory back). A
+  value or a plain view where a stored value goes is `LP-S1187` naming the `&T` form. `x.update()` calls a routine the
+  builder writes for each routine of the protocol (and of the protocols it obeys): a branch on the type id over every type
+  this build puts into places of the protocol (a type id shared by two of them is the `typeid` build error). The place's
+  end branches the same way: the type's `destruct`, then the memory back to its manager. A protocol routine that takes `Me`
+  as a value (`routine Me.area()`) is called through `%Enemy` too, and one that takes or gives `Me` elsewhere can't be
+  called on a stored value (`LP-S715`). `when x` with `is Slime as s` names an entity as a view where it is (`@Slime`) and a
+  record as a copy, needs `else` (`LP-S356`), and an `is T` whose T doesn't obey the protocol is `LP-S357`; it is a
+  statement, not a value `when`. Views of a stored value and what an arm names follow the view rules (`LP-S1118` after the
+  place ends, and a call through a stored value ends the views of every type a routine it may reach removes). A STACK
+  original keeps its holder in the routine: returning it, a global, or anything outliving the frame is `LP-S600` /
+  `LP-S601`, and a STACK place of a loop body doesn't go into a stored value (`LP-S1102`). A stored value given to `x: @T`
+  under `needs T obeys Enemy` builds that routine for the stored value (its calls branch), which works when every routine
+  of the protocol takes `@Me`. The standard library's protocols have no stored form yet.
 - A bare literal doesn't bind a type parameter: bind it first (`n: S64 = 42`), then pass `n`.
 - **Overloads.** Routines of one name under one parent (a module's free routines, one type's routines) may differ in
   their parameter types (`me` included); a call picks the one whose parameter types are its arguments' types
@@ -2825,6 +2848,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S353`: A type that is not a branch of the variant.
 - `LP-S355`: A name that is not a member of the choice.
 - `LP-S356`: A when that does not cover every case.
+- `LP-S357`: A when arm over a stored protocol value that names a type not obeying the protocol.
 - `LP-S358`: Two arms or cases of a when that match the same thing.
 - `LP-S403`: A field that is secret to its module, used from outside.
 - `LP-S406`: Two routines with the same signature, or one symbol defined twice.
@@ -2853,6 +2877,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S703`: A routine that does not have the shape the protocol wants.
 - `LP-S712`: A @throws list that leaves out a crashable the routine can throw.
 - `LP-S713`: A @throws list on a routine that cannot fail, or naming a type that is not a crashable.
+- `LP-S715`: A routine of a protocol that takes or gives Me, called on a stored value of the protocol.
 - `LP-S786`: A line that can never run.
 - `LP-S811`: Two declarations of one C symbol that disagree.
 - `LP-S960`: A type that contains itself by value.
