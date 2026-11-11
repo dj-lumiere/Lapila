@@ -14,7 +14,7 @@ entity Node
 ### :param value: Its value.
 ### :returns: The node.
 common routine Node.construct(value: S64) -> Me
-    return Me(value, left: None(), right: None())
+    return Me(value, left: none, right: none)
 
 ### Moves the left child's right child to the node's left, then hands the old left child on.
 ### :param p: The node.

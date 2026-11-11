@@ -18,7 +18,7 @@ common routine Box.construct(n: U64) -> Me
 ### :param slots: The list of slots.
 ### :param at: The slot's index.
 routine empty_slot(slots: @List[Box?], at: U64) -> None
-    steal slots.getslot(at) as kid inject None()
+    steal slots.getslot(at) as kid inject none
     when kid
         is None =>
             Console.show("slot {at}: none")
@@ -31,14 +31,14 @@ routine empty_slot(slots: @List[Box?], at: U64) -> None
 ### :param slots: The list of slots.
 ### :param at: The slot's index.
 routine move_to_end(slots: @List[Box?], at: U64) -> None
-    steal slots.getslot(at) as kid inject None()
+    steal slots.getslot(at) as kid inject none
     slots.add_last(steal kid)
     return
 
 ### Runs the steals.
 routine start() -> None
     slots: &List[Box?] <- .construct(HEAP)
-    slots.add_last(None())
+    slots.add_last(none)
     fresh: &Box <- Box.construct(n: 7) from HEAP
     slots.add_last(steal fresh)
     empty_slot(slots, 0)

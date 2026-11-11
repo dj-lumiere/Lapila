@@ -17,9 +17,9 @@ common routine Box.construct(n: U64) -> Me
 ### Moves the empty slot into a list of boxes and reads it.
 routine start() -> None
     slots: &List[Box?] <- .construct(HEAP)
-    slots.add_last(None())
+    slots.add_last(none)
     packed: &List[Box] <- .construct(HEAP)
-    steal slots.getslot(0) as taken inject None()
+    steal slots.getslot(0) as taken inject none
     packed.add_last(steal taken)
     Console.show("count {packed.count()}")
     Console.show("n = {packed.getslot(0).n.peek()}")

@@ -86,8 +86,8 @@ routine start() -> None
     some: Optional[@[Byte]] = "hi"
     some.diagnose_into(out)
     write_str(out, text: " ")
-    none: Optional[S32] = None()
-    none.diagnose_into(out)
+    missing: Optional[S32] = none
+    missing.diagnose_into(out)
     write_line(out)
     ok: S32 | @[Byte] = 7
     ok.diagnose_into(out)
@@ -95,7 +95,7 @@ routine start() -> None
     err: S32 | @[Byte] = "no"
     err.diagnose_into(out)
     write_line(out)
-    out.write("{some} {none} {ok} {err}\n")
+    out.write("{some} {missing} {ok} {err}\n")
     p: Point = Point(x: 1, y: -2)
     p.diagnose_into(out)
     write_line(out)

@@ -566,14 +566,14 @@ secret routine cm_b64_tgamma_special(x: B64) -> B64
 ### :returns: The fast-phase result, with status 1 for the cases it leaves to the caller.
 secret routine cm_b64_tgamma_dd(x: B64) -> CmF64TgammaFast
     ax: U64 = x.bits() << 1
-    none: CmF64TgammaFast = CmF64TgammaFast(status: 1, hi: 0.0, lo: 0.0, eps: 0.0, sc: 0)
+    no_fast_path: CmF64TgammaFast = CmF64TgammaFast(status: 1, hi: 0.0, lo: 0.0, eps: 0.0, sc: 0)
     if ax >= 0xFFE0000000000000 or ax < 0x71E0000000000000
-        return none
+        return no_fast_path
     if x.abs() < 0.25
         return cm_b64_tgamma_small(x)
     huge_or_whole: Bool = x >= 0x1.573fae561f648p+7 or x.floor() == x
     when
-        huge_or_whole or x <= -184.0 => return none
+        huge_or_whole or x <= -184.0 => return no_fast_path
         x < -3.0 => return cm_b64_tgamma_reflect(x)
         x > 4.0 => return cm_b64_tgamma_stirling(x)
         else => return cm_b64_tgamma_mid(x)

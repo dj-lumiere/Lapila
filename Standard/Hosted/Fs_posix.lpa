@@ -696,7 +696,7 @@ secret routine Statx.to[Metadata]() -> Metadata
     born: Bool = me.mask & STATX_BTIME != 0
     created: Optional[S64] = when
         born => ns_of(sec: me.btime.sec, nsec: me.btime.nsec.to[S64]())
-        else => None()
+        else => none
     return Metadata(kind: mode_kind(mode), size: me.size, modified_ns: modified,
         created_ns: created, readonly: mode & 128 == 0)
 
@@ -760,7 +760,7 @@ secret routine path_mode(cpath: @Byte) -> Optional[U32]
 
     if stat_raw(dir: AT_FDCWD, cpath, flags: 0, out: st)
         return st.mode.peek().to[U32]()
-    return None()
+    return none
 
 ### Binds the C `stat$INODE64` function: reads a file's metadata, a link followed.
 ### :param path: The NUL-terminated path.
@@ -877,7 +877,7 @@ secret routine path_mode(cpath: @Byte) -> Optional[U32]
 
     if c_stat(cpath, st) == 0
         return st.mode.peek().to[U32]()
-    return None()
+    return none
 
 ### path's metadata, a link followed to what it points at.
 ### :param path: The path to look at.
@@ -1328,7 +1328,7 @@ secret routine @DirEmitter.open_path(path: @[Byte]) -> None
     if not c_path(path, out: me.path.getview().to[@Byte]())
         throw path_error(path)
     me.count.poke(path.count())
-    me.name.poke(None())
+    me.name.poke(none)
     dir: Addr = c_opendir(me.path.getview().to[@Byte]())
     if dir.is_hollow()
         throw last_error()
@@ -1438,10 +1438,10 @@ secret routine copied_text(p: @Byte, n: U64, manager: @MemoryManager) -> Borrowe
 secret routine nonempty_env(name: CStrView) -> Optional[@Byte]
     value_or_none: @Byte? = c_getenv(name)
     if value_or_none.is_absent()
-        return None()
+        return none
     value: @Byte = value_or_none.unwrap()
     if value.peek() == 0x00
-        return None()
+        return none
     return value
 
 ### The working directory, in memory from manager.

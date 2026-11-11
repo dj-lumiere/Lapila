@@ -6,4 +6,4 @@ import Hosted
 routine take(u: Unit) -> None
     return
 
-take(None())
+take(none)

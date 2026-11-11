@@ -2,5 +2,5 @@ a + b = 5
 x = 3.5
 abc as S32: InvalidValueError
 sum of the rest: 123460876
-after the end: None()
+after the end: none
 read after the end: EndOfInputError

@@ -107,7 +107,7 @@ common routine ProcessOutput.construct(status: ExitStatus, stdout: BorrowedSlice
 ### No directory and no overrides, the null device as input, and both output streams captured.
 ### :returns: The default options.
 common routine ProcessOptions.default() -> Me
-    return Me(directory: None(), env: dangling[EnvVar](), env_count: 0, stdin: InputMode.NULL,
+    return Me(directory: none, env: dangling[EnvVar](), env_count: 0, stdin: InputMode.NULL,
         stdout: OutputMode.CAPTURE, stderr: OutputMode.CAPTURE)
 
 ### The exit code, or for a program a signal stopped, 128 plus the signal (as a POSIX shell reports it).

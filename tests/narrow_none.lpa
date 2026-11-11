@@ -32,6 +32,6 @@ routine triple(x: S64?) -> S64
     n: S64 = x * 3
     return n
 
-Console.show("{twice(4)} {twice(None())}")
-Console.show("{total(Pair(first: 1, second: 2))} {total(Pair(first: 5, second: None()))}")
-Console.show("{triple(5)} {triple(None())}")
+Console.show("{twice(4)} {twice(none)}")
+Console.show("{total(Pair(first: 1, second: 2))} {total(Pair(first: 5, second: none))}")
+Console.show("{triple(5)} {triple(none)}")

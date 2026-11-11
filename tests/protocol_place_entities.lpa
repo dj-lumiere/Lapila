@@ -74,7 +74,7 @@ routine @Goblin.destruct() -> None
 ### :param boss: The boss, taken over.
 ### :returns: The arena.
 common routine Arena.construct(boss: Enemy) -> Me
-    return Me(boss: steal boss, spare: None())
+    return Me(boss: steal boss, spare: none)
 
 ### A goblin from the heap, as a stored Enemy.
 ### :returns: The enemy.

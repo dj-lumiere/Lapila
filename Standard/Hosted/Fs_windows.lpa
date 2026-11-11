@@ -462,14 +462,14 @@ secret routine encode_utf16(text: @[Byte], out: @U16, capacity: U64) -> Optional
             is Char as char =>
                 cp: U32 = char.to[U32]()
                 if cp == 0
-                    return None()
+                    return none
                 if cp < 0x10000
                     if n + 1 >= capacity
-                        return None()
+                        return none
                     out.stride(n).poke(cp.to[U16]())
                     continue with n: n + 1
                 if n + 2 >= capacity
-                    return None()
+                    return none
                 v: U32 = cp - 0x10000
                 high_surrogate: U32 = (v >> 10) + 0xD800
                 out.stride(n).poke(high_surrogate.to[U16]())
@@ -1180,7 +1180,7 @@ routine @DirEmitter.close() -> None
 ### :throws: Throws the reason when the OS can't report it, `OutOfMemoryError` when `manager` fails.
 @target(os: "windows")
 secret routine current_dir(manager: @MemoryManager) -> BorrowedSlice[Byte]
-    need: U32 = c_get_current_directory(0, None())
+    need: U32 = c_get_current_directory(0, none)
     if need == 0
         throw last_error()
     when check BorrowedSlice[U16].construct(count: need.to[U64](), manager: manager)
@@ -1238,10 +1238,10 @@ secret routine env_dir(name: CWStrView, manager: @MemoryManager) -> Optional[Bor
     got: U32 = c_get_environment_variable(name.to[@CWChar](), units.getview().to[@U16](),
         PATH_CAPACITY.to[U32]())
     if got == 0 or got.to[U64]() >= PATH_CAPACITY
-        return None()
+        return none
     when check copied_wide(units: units.getview().to[@U16](), count: got.to[U64](), manager)
         is BorrowedSlice[Byte] as t => return t
-        is FsError => return None()
+        is FsError => return none
 
 ### USERPROFILE, or HOMEDRIVE and HOMEPATH, in memory from manager. NotFound when neither is set.
 ### :param manager: The memory manager for the text.

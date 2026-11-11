@@ -24,7 +24,7 @@ routine binary_search(data: @[S64], target: S64) -> Optional[U64]
             value < target => continue with lo: mid + 1, hi: hi
             else => continue with lo: lo, hi: mid
     then
-        return None()
+        return none
 
 ### Writes `target` and where `binary_search` finds it in `SORTED`, or that it is not there.
 ### :param out: Where the line goes.

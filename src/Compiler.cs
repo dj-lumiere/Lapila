@@ -1148,6 +1148,12 @@ public sealed partial class Compiler
     /// element). A call that returns nothing gives it where it is expected.
     public static bool IsNoneRecord(DType? t) => t is RecordType { Decl.Name: "None" } none && none.Decl.Module == SystemModule;
 
+    /// The literal `none`: the one value of the type None, built like a call of the record with no fields.
+    public static CallExpr NoneValue(Pos pos) => new("None", [], [], pos);
+
+    /// Whether `e` is the literal `none`. Where a flags value goes it is the flags value with no member on.
+    public static bool IsNoneValue(Expr e) => e is CallExpr { Name: "None", Args.Count: 0, TypeArgs.Count: 0, Path: null };
+
     /// The memory managers, `BorrowedSlice[T]`'s regions, and unbroken values.
     public const string MemoryModule = SystemModule + "/Memory";
 
@@ -1351,7 +1357,7 @@ public sealed partial class Compiler
         var args = c.WrittenTypeArgs ?? c.TypeArgs.Select(t => (TypeArg)new TypeArgType(t)).ToList();
         var type = new TypeRef(c.Name, args, c.Pos) { Path = c.Path };
         DType? resolved;
-        // A value is being built: `None()` is the record with the one value, never the return of nothing.
+        // A value is being built: `none` is the record with the one value, never the return of nothing.
         try { resolved = ResolveType(type, env); }
         catch (CompileError err) when (!err.Final) { return e; }
         if (resolved is not RecordType) return e;
@@ -1541,7 +1547,7 @@ public sealed partial class Compiler
     public DType ResolveType(TypeRef t, TypeEnv env, bool allowVoid = false)
     {
         var r = ResolveTypeInner(t, env, allowVoid);
-        if (r is VoidType && !allowVoid) throw new CompileError(Li.TypeSpelling, t.Pos, "None as a value is the one value None(); as a type it is the return of nothing");
+        if (r is VoidType && !allowVoid) throw new CompileError(Li.TypeSpelling, t.Pos, "None as a value is the one value none; as a type it is the return of nothing");
         if (r is ConstArg ca)
             throw new CompileError(Li.TypeArgument, t.Pos, ca.Kind is ChoiceType ct ? $"'{t}' is a member of {ct.Name}, a value, not a type" : $"'{t.Name}' is a number, not a type");
         return r;
@@ -1582,7 +1588,7 @@ public sealed partial class Compiler
             case "B64": NoArgs(); return FloatType.B64;
             case "Bool": NoArgs(); return BoolType.Instance;
             // `None` is the one type for nothing: as a return type (and a Callable's), nothing comes back, elsewhere it
-            // is the record with the one value `None()`.
+            // is the record with the one value `none`.
             case "None" when allowVoid: NoArgs(); return VoidType.Instance;
             // A program may declare a type of either name (`choice Unit`), and then the name is that type.
             case "Void" when !DeclaresType(t, env): throw new CompileError(Li.TypeSpelling, t.Pos, "nothing is written None, not Void");
@@ -2066,7 +2072,7 @@ public sealed partial class Compiler
                     + $"and {choice.Name} has no member {unknown.Name}: pass one of those");
             }
         }
-        if (arg is VoidType) throw new CompileError(Li.TypeSpelling, pos, "None as a value is the one value None(); as a type it is the return of nothing");
+        if (arg is VoidType) throw new CompileError(Li.TypeSpelling, pos, "None as a value is the one value none; as a type it is the return of nothing");
         Pos at = written is TypeArgType { Type.Pos: var wp } ? wp : pos;
         // A parameter being checked (an archetype) or a slot two signatures are compared by stands for any argument.
         if (isValue && arg is not (ConstArg or ArchetypeType or SlotType))
@@ -2165,7 +2171,7 @@ public sealed partial class Compiler
     public DType ResolveTypeOrValue(TypeRef t, TypeEnv env)
     {
         var r = ResolveTypeInner(t, env);
-        if (r is VoidType) throw new CompileError(Li.TypeSpelling, t.Pos, "None as a value is the one value None(); as a type it is the return of nothing");
+        if (r is VoidType) throw new CompileError(Li.TypeSpelling, t.Pos, "None as a value is the one value none; as a type it is the return of nothing");
         return r;
     }
 
@@ -2553,7 +2559,7 @@ public sealed partial class Compiler
         if (c.Value is null && !c.Late && NoZeroValueWhere(t, t.Name) is { } noZero)
             throw new CompileError(Li.GlobalInitializer, c.Pos, $"global {c.Name} has no value, and {t} has no all-zero value: it holds a pointer, "
                 + $"memory or a routine that is never empty ({noZero}). Give it one: global {c.Name}: &{t} <- value, "
-                + "or make what may be missing optional (@T? or Callable?, None() when absent), or write lateinit global when the program fills it before it reads it");
+                + "or make what may be missing optional (@T? or Callable?, none when absent), or write lateinit global when the program fills it before it reads it");
         string init = c.Value is null ? "zeroinitializer" : GlobalInitializer(c.Value, t, env);
         // An exported global keeps its C name and is visible outside the module.
         string linkage = ExposeDefinitions || exported is not null ? "" : "internal ";
@@ -2635,11 +2641,12 @@ public sealed partial class Compiler
     {
         // `.hollow()` (or `T.hollow()`) is the all-zero value, which every type has.
         if (IsHollowCall(e)) return "zeroinitializer";
-        // `@T?` / `Callable?`: `None()` is null, anything else is the address.
+        // `@T?` / `Callable?`: `none` is null, anything else is the address.
         if (t is VariantType { IsZeroNone: true } && e is CallExpr { Name: "None", Args.Count: 0 }) return "zeroinitializer";
         if (t is VariantType { IsNullable: true } nullable)
             return e is CallExpr { Name: "None", Args.Count: 0 } ? "null" : PointerInitializer(e, nullable.Leaves[0], env);
-        e = AsRecordLit(e, env);
+        // `none` where a flags value goes is folded as the value with no member on, not built as the None record.
+        if (!(t is ChoiceType { Decl.IsFlags: true } && IsNoneValue(e))) e = AsRecordLit(e, env);
         if (t is ArrayType { Elem: IntType { Kind: IntKind.Byte or IntKind.Char } } text && e is StrLit s)
             return TextInitializer(s, text);
         if (t is ArrayType a)

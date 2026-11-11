@@ -98,7 +98,7 @@ secret routine argument_text(raw_or_none: @Byte?, manager: @MemoryManager) -> @[
     if raw_or_none.is_absent()
         return ""
     raw: @Byte = raw_or_none.unwrap()
-    need: CInt = c_multi_byte_to_wide_char(0, 0, raw, -1, None(), 0)
+    need: CInt = c_multi_byte_to_wide_char(0, 0, raw, -1, none, 0)
     if need <= 0
         return ""
     units_at: Addr = allocate[U16](count: need.to[U64](), manager)

@@ -245,14 +245,14 @@ secret routine close_if_open(h: Addr) -> None
 secret routine utf16(text: @[Byte], manager: @MemoryManager) -> (@U16?, U64)
     units_at: Addr = allocate[U16](count: text.count() + 1, manager)
     if units_at.is_hollow()
-        return (None(), 0)
+        return (none, 0)
     units: @U16 = units_at.to[@U16]()
     n: Optional[U64] = encode_utf16(text, out: units, capacity: text.count() + 1)
     when n
         is U64 as count => return (units, count)
         is None =>
             deallocate(data: units, manager)
-            return (None(), 0)
+            return (none, 0)
 
 # -- the command line --------------------------------------------------------------------
 
@@ -342,7 +342,7 @@ secret routine command_line(program: @[Byte], args: @[@[Byte]], manager: @Memory
     then
         line_at: Addr = allocate[U16](count: capacity + 1, manager)
         if line_at.is_hollow()
-            return None()
+            return none
         line: @U16 = line_at.to[@U16]()
         at: &@U16 <- line
         # 0 is the program, i the argument i - 1.
@@ -353,7 +353,7 @@ secret routine command_line(program: @[Byte], args: @[@[Byte]], manager: @Memory
             units_or_none, n = utf16(text: arg, manager)
             if units_or_none.is_absent()
                 deallocate(data: line, manager)
-                return None()
+                return none
             units: @U16 = units_or_none.unwrap()
             if not (i2 == 0)
                 at.load().poke(32)
@@ -438,7 +438,7 @@ secret routine env_entry_utf16(v: EnvVar, manager: @MemoryManager) -> @U16?
     room: U64 = v.name.count() + v.value.count() + 2
     units_at: Addr = allocate[U16](count: room, manager)
     if units_at.is_hollow()
-        return None()
+        return none
     units: @U16 = units_at.to[@U16]()
     name_units: Optional[U64] = encode_utf16(text: v.name, out: units, capacity: room)
     when name_units
@@ -453,7 +453,7 @@ secret routine env_entry_utf16(v: EnvVar, manager: @MemoryManager) -> @U16?
 
     # Not reached after the NUL check, which leaves the texts encodable in the room counted for them.
     deallocate(data: units, manager)
-    return None()
+    return none
 
 ### The overrides as "NAME=VALUE" UTF-16 strings, in memory from `manager`.
 ### :param options: The environment overrides.
@@ -487,17 +487,17 @@ secret routine wide_overrides(options: ProcessOptions, out: @@U16, manager: @Mem
 secret routine env_block(options: ProcessOptions, manager: @MemoryManager) -> @U16?
     own_at: Addr = allocate[@U16](count: options.env_count.max(1), manager)
     if own_at.is_hollow()
-        return None()
+        return none
     own: @@U16 = own_at.to[@@U16]()
     if not wide_overrides(options, out: own, manager)
         # A failure has freed the strings made so far, so only the array is left.
         deallocate(data: own, manager)
-        return None()
+        return none
     parent: @U16 = c_get_environment_strings().unwrap()
     n: U64 = count_block_entries(parent)
     all_at: Addr = allocate[@U16](count: (n + options.env_count).max(1), manager)
     result: @U16? = when
-        all_at.is_hollow() => None()
+        all_at.is_hollow() => none
         else =>
             all: @@U16 = all_at.to[@@U16]()
             # The parent's entries no override names, then the overrides.
@@ -575,7 +575,7 @@ secret routine join_entries(all: @@U16, total: U64, manager: @MemoryManager) -> 
     then
         block_units_at: Addr = allocate[U16](count: units, manager)
         if block_units_at.is_hollow()
-            return None()
+            return none
         block_units: @U16 = block_units_at.to[@U16]()
         for i2 in 0 til total with at: @U16 = block_units
             entry: @U16 = all.stride(i2).peek()
@@ -789,16 +789,16 @@ common routine ProcessManager.create_process(program: @[Byte], args: @[@[Byte]],
             units: @U16 = directory.getview().to[@U16]()
             n: Optional[U64] = encode_utf16(text: d, out: units, capacity: PATH_CAPACITY)
             if not n.is_present()
-                free_texts(line, env: None(), manager)
+                free_texts(line, env: none, manager)
                 throw InvalidArgumentError()
             becomes units
-        is None => None()
+        is None => none
     env: @U16? = when
-        options.env_count == 0 => None()
+        options.env_count == 0 => none
         else =>
             block_units: @U16? = env_block(options, manager)
             if block_units.is_absent()
-                free_texts(line, env: None(), manager)
+                free_texts(line, env: none, manager)
                 throw OutOfMemoryError()
             becomes block_units
 
@@ -969,12 +969,12 @@ secret routine moved(b: @CaptureBuffer, manager: @MemoryManager) -> CaptureBuffe
 @target(os: "windows")
 @expensive("allocates a copy of the variable")
 secret routine env_var(name: @[Byte], manager: @MemoryManager) -> Optional[BorrowedSlice[Byte]]
-    units: &(@U16?) <- None()
+    units: &(@U16?) <- none
     key: &Items[U16, 256]
 
     n: Optional[U64] = encode_utf16(text: name, out: key.getview().to[@U16](), capacity: 256)
     if not n.is_present()
-        return None()
+        return none
     value: &Optional[BorrowedSlice[Byte]] <- env_value(key: key.getview().to[@U16](), units,
         manager)
 
@@ -995,20 +995,20 @@ secret routine env_var(name: @[Byte], manager: @MemoryManager) -> Optional[Borro
 secret routine env_value(key: @U16, units: @(@U16?),
     manager: @MemoryManager) -> Optional[BorrowedSlice[Byte]]
     c_set_last_error(0)
-    need: U32 = c_get_environment_variable(key, None(), 0)
+    need: U32 = c_get_environment_variable(key, none, 0)
     # ERROR_ENVVAR_NOT_FOUND
     if need == 0 and c_get_last_error() == 203
-        return None()
+        return none
     if need == 0
         return BorrowedSlice[Byte].construct(count: 0, manager: manager)
     made_at: Addr = allocate[U16](count: need.to[U64](), manager)
     if made_at.is_hollow()
-        return None()
+        return none
     made: @U16 = made_at.to[@U16]()
     units.poke(made)
     got: U32 = c_get_environment_variable(key, made, need)
     if got == 0 or got >= need
-        return None()
+        return none
     when check copied_wide(units: made, count: got.to[U64](), manager)
         is BorrowedSlice[Byte] as t => return t
-        is FsError => return None()
+        is FsError => return none

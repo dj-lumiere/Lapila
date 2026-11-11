@@ -226,12 +226,12 @@ needs T obeys Writer
     me.represent_into(out)
     return
 
-### Writes the unit value as Lapila source, `Unit()`.
+### Writes the unit value as Lapila source, `none`.
 ### :typeparam T: The type of the Writer that receives the text.
 ### :param out: The Writer the text is written to.
 routine None.diagnose_into[T](out: @T) -> None
 needs T obeys Writer
-    write_str(out, text: "None()")
+    write_str(out, text: "none")
     return
 
 ### Writes the address like `represent_into`: `0x` and uppercase hex, padded and grouped the same way.

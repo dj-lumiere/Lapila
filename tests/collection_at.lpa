@@ -50,8 +50,8 @@ routine start() -> None
     sorted[2] = 20
     two: @S64 = sorted.getslot(2)
     two.poke(two.peek() * 2)
-    none: Optional[@S64] = try sorted.getslot(4)
-    Console.show("SortedDict {sorted.getitem(2)} {none.is_absent()}")
+    no_slot: Optional[@S64] = try sorted.getslot(4)
+    Console.show("SortedDict {sorted.getitem(2)} {no_slot.is_absent()}")
 
     drop ring
     drop dict

@@ -205,11 +205,11 @@ routine B128Extended.to[B128]() -> B128
 ### :param n: The shift, at least 0.
 ### :returns: The shifted mantissa.
 secret routine wide_shift_right(hi: U128, lo: U64, n: S64) -> B128Extended
-    none: Bool = n == 0
+    unshifted: Bool = n == 0
     small: Bool = n < 64
     mid: Bool = n < 192
     values2: (U128, U64) = when
-        none => (hi, lo)
+        unshifted => (hi, lo)
         small =>
             new_lo: U64 = (lo >> n.to[U64]()) | (hi.to_wrap[U64]() << (64 - n).to[U64]())
             becomes (hi >> n.to[U128](), new_lo)

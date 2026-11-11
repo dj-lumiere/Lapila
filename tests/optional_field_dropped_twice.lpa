@@ -10,7 +10,7 @@ entity Node
 ### :param value: Its value.
 ### :returns: The node.
 common routine Node.construct(value: S64) -> Me
-    return Me(value, next: None())
+    return Me(value, next: none)
 
 ### Ends the rest of the list, twice.
 routine @Node.destruct() -> None

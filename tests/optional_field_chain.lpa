@@ -14,7 +14,7 @@ entity Chain
 ### :param value: Its value.
 ### :returns: The node.
 common routine Node.construct(value: S64) -> Me
-    return Me(value, next: None())
+    return Me(value, next: none)
 
 ### Says which node ends, then ends the rest of the list.
 routine @Node.destruct() -> None
@@ -25,7 +25,7 @@ routine @Node.destruct() -> None
 ### An empty list.
 ### :returns: The list.
 common routine Chain.construct() -> Me
-    return Me(head: None())
+    return Me(head: none)
 
 ### Puts a value in front.
 ### :param value: The value.

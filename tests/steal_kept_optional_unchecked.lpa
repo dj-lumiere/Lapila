@@ -17,8 +17,8 @@ common routine Box.construct(n: U64) -> Me
 ### Takes the box out of the first slot and reads it.
 routine start() -> None
     slots: &List[Box?] <- .construct(HEAP)
-    slots.add_last(None())
-    steal slots.getslot(0) as kid inject None()
+    slots.add_last(none)
+    steal slots.getslot(0) as kid inject none
     Console.show("n = {kid.n.peek()}")
     drop kid
     drop slots

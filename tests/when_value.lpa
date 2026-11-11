@@ -34,5 +34,5 @@ routine describe(found: Optional[S64]) -> S64
 routine start() -> None
     out: @ConsoleOutput = Console.output()
     out.write("{name_of(classify(5))} {name_of(classify(50))} {name_of(classify(80))} {name_of(classify(500))}\n")
-    out.write("{describe(7)} {describe(None())}\n")
+    out.write("{describe(7)} {describe(none)}\n")
     return

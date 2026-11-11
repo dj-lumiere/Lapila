@@ -13,7 +13,7 @@ blank line: []
 position: 60
 read_all: [last line with no end{braces}{{]
 read_line at the end: [EndOfInputError]
-try read at the end: None()
+try read at the end: none
 read_word at the end: EndOfInputError
 read_all, read_bytes at the end: 0 0
 after the first word: 5

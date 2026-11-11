@@ -102,7 +102,7 @@ routine start() -> None
     quote_line("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80")
     quote_line("stray \x80 byte")
     empty: &Items[U32, 1] <- [0]
-    none: @[U32] = empty.getview().getslice(start: 0, count: 0)
-    Console.show("empty count: {none.json_quoted_count()}")
+    empty_view: @[U32] = empty.getview().getslice(start: 0, count: 0)
+    Console.show("empty count: {empty_view.json_quoted_count()}")
     agree()
     return

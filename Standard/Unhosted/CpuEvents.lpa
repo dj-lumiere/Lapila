@@ -87,7 +87,7 @@ secret routine handler_address(holder: Callable[(CpuEvent,), None]?) -> Addr
 @target(os: "none")
 secret routine handler_at(at: Addr) -> Callable[(CpuEvent,), None]?
     if at.is_hollow()
-        return None()
+        return none
     held: Callable[(CpuEvent,), None] = bitcast(at)
     return held
 

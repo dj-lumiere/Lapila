@@ -2,7 +2,7 @@
 #
 # Maps to the empty LLVM struct {} (zero size). Unlike None, None values
 # exist: they can be bound, passed, stored in fields, and used as a generic
-# argument. Its value is written None(). It is the branch of Optional[T] that
+# argument. Its value is written none. It is the branch of Optional[T] that
 # holds nothing, and Check[None] is what `check` gives for a failable routine
 # that returns nothing.
 

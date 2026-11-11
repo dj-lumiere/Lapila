@@ -207,7 +207,7 @@ public sealed partial class Compiler
         {
             switch (e)
             {
-                case PresetRef { Owner: null, Path: null, Name: "none" }:
+                case CallExpr none when Compiler.IsNoneValue(none):
                     return new ConstVal(flags, 0);
                 case PresetRef { Owner: null, Path: null } bare when flags.Decl.Members.FirstOrDefault(m => m.Name == bare.Name) is { Name: not null, Value: IntLit bit }:
                     return new ConstVal(flags, bit.Value);

@@ -466,7 +466,7 @@ routine @[T].end_handed_access() -> None
 @target(os: not "none")
 secret routine find_handed(subtree: @AccessNode?, start: U64) -> @AccessNode?
     if subtree.is_absent()
-        return None()
+        return none
     node: @AccessNode = subtree.unwrap()
     here: U64 = node.start.peek()
     if start < here
@@ -492,7 +492,7 @@ secret routine hand_range(at: Addr) -> None
     if held.is_absent()
         unlock_table()
         throw AccessNotHeldError(description: "This hands over an access that this thread or fiber doesn't hold.")
-    held.unwrap().holder.poke(None())
+    held.unwrap().holder.poke(none)
     unlock_table()
     note_released(flow, access: at)
     return
@@ -660,7 +660,7 @@ common routine AccessManager.end_flow(slot: @(@AccessFlow?)) -> None
     when slot.peek()
         is @AccessFlow as flow => deallocate(data: flow, manager: C_HEAP)
         is None => return
-    slot.poke(None())
+    slot.poke(none)
     return
 
 ### The id of the flow running here, the one an access keeps while this flow holds it.
@@ -883,7 +883,7 @@ secret routine remove_first(root: @AccessNode) -> @AccessNode?
 ### :returns: The new root, or None for an empty subtree.
 secret routine remove_node(root_or_none: @AccessNode?, node: @AccessNode) -> @AccessNode?
     if root_or_none.is_absent()
-        return None()
+        return none
     root: @AccessNode = root_or_none.unwrap()
     if root === node
         left: @AccessNode? = root.left.peek()
@@ -929,15 +929,15 @@ secret routine held_by(node: @AccessNode, flow: @AccessFlow) -> Bool
 secret routine find_own(subtree: @AccessNode?, start: U64, end: U64,
     flow: @AccessFlow) -> @AccessNode?
     if subtree.is_absent()
-        return None()
+        return none
     node: @AccessNode = subtree.unwrap()
     if node.max_end.peek() <= start
-        return None()
+        return none
     found: @AccessNode? = find_own(subtree: node.left.peek(), start, end, flow)
     if found.is_present()
         return found
     if node.start.peek() >= end
-        return None()
+        return none
     if node.end.peek() > start and held_by(node, flow)
         return node
     return find_own(subtree: node.right.peek(), start, end, flow)
@@ -950,15 +950,15 @@ secret routine find_own(subtree: @AccessNode?, start: U64, end: U64,
 secret routine find_blocker(subtree: @AccessNode?, span: AccessSpan,
     flow: @AccessFlow) -> @AccessNode?
     if subtree.is_absent()
-        return None()
+        return none
     node: @AccessNode = subtree.unwrap()
     if node.max_end.peek() <= span.start
-        return None()
+        return none
     found: @AccessNode? = find_blocker(subtree: node.left.peek(), span, flow)
     if found.is_present()
         return found
     if node.start.peek() >= span.end
-        return None()
+        return none
     if node.end.peek() > span.start and not held_by(node, flow) and keeps_out(node, mode: span.mode)
         return node
     return find_blocker(subtree: node.right.peek(), span, flow)
@@ -970,7 +970,7 @@ secret routine find_blocker(subtree: @AccessNode?, span: AccessSpan,
 ### :returns: The node, or None.
 secret routine find_held(subtree: @AccessNode?, start: U64, flow: @AccessFlow) -> @AccessNode?
     if subtree.is_absent()
-        return None()
+        return none
     node: @AccessNode = subtree.unwrap()
     here: U64 = node.start.peek()
     if start < here
@@ -1023,8 +1023,8 @@ secret routine take_range(ask: AccessAsk) -> Bool
             node.writer_waits.poke(0)
             node.holder.poke(flow)
             node.place.poke(ask.place.peek())
-            node.left.poke(None())
-            node.right.poke(None())
+            node.left.poke(none)
+            node.right.poke(none)
             TABLE_ROOT.store(insert_node(root_or_none: TABLE_ROOT.load(), node))
             HELD_TOTAL.poke_unbroken(HELD_TOTAL.load() + 1)
             unlock_table()
@@ -1057,7 +1057,7 @@ secret routine wait_for_node(flow: @AccessFlow, blocker: @AccessNode, ask: Acces
     word: @U32 = blocker.word
     seen: U32 = word.peek()
     span: AccessSpan = span_of(ask.request)
-    wait: AccessWait = AccessWait(access: ask.request.at, holder: None(), word, expected: seen,
+    wait: AccessWait = AccessWait(access: ask.request.at, holder: none, word, expected: seen,
         hooked: ask.hooked)
 
     blocker.waiters.poke(blocker.waiters.peek() + 1)
@@ -1105,7 +1105,7 @@ secret routine release_node(at: Addr) -> None
     node.word.fetch_add_unbroken(1)
     node.waiters.poke(0)
     node.writer_waits.poke(0)
-    node.holder.poke(None())
+    node.holder.poke(none)
     node.left.poke(FREE_NODES.load())
     FREE_NODES.store(node)
     unlock_table()
@@ -1532,7 +1532,7 @@ common routine AccessManager.begin_wait(access: Addr, holder: @U64, place: @Sour
     unlock_table()
     if DEADLOCK_ON.peek_unbroken() != 0
         check_deadlock(flow,
-            wait: AccessWait(access, holder, word: None(), expected: 0, hooked: true))
+            wait: AccessWait(access, holder, word: none, expected: 0, hooked: true))
     return
 
 ### Notes that the running flow no longer waits (see begin_wait).

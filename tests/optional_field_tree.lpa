@@ -11,7 +11,7 @@ entity Tree
 ### :param value: The value.
 ### :returns: The tree.
 common routine Tree.construct(value: S64) -> Me
-    return Me(value, left: None(), right: None())
+    return Me(value, left: none, right: none)
 
 ### Ends the children, then says which node ends.
 routine @Tree.destruct() -> None

@@ -119,10 +119,10 @@ routine refused() -> None
             Console.show("construct_result: failed false")
             drop made
         is OutOfMemoryError as failure => Console.show("construct_result: failed true, {failure}")
-    none: &[U8] <- .construct(count: 0, manager: manager)
-    resized: Bool = try none.resize(4)
-    Console.show("resize_result: {resized}, count still {none.count()}")
-    drop none
+    empty: &[U8] <- .construct(count: 0, manager: manager)
+    resized: Bool = try empty.resize(4)
+    Console.show("resize_result: {resized}, count still {empty.count()}")
+    drop empty
     drop manager
     return
 

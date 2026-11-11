@@ -1,0 +1,8 @@
+# `None()` is the old spelling of the value `none`, and writing it is a build error that says so.
+
+import Hosted
+
+routine start() -> None
+    a: S64? = None()
+    Console.show("{a}")
+    return

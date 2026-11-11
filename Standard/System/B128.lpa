@@ -166,9 +166,9 @@ secret record B128Parts
 ### :param n: The shift amount, at least 0. From 128 on, every bit is shifted out.
 ### :returns: The shifted value, its bit 0 set when any set bit was lost.
 routine shr_sticky(value: U128, n: S64) -> U128
-    none: Bool = n == 0
+    unshifted: Bool = n == 0
     when
-        none => return value
+        unshifted => return value
         n >= 128 => return (value != 0).to[U128]()
         else =>
             amount: U128 = n.to[U128]()

@@ -303,10 +303,10 @@ secret routine cm_expm1_ashr3(o: CmWide3, n: U64) -> CmWide3
     lk: U64 = 64 -% rk & 63
     whole: Bool = rk == 0
 
-    none: Bool = n == 0
+    unshifted: Bool = n == 0
     one: Bool = n < 64
     when
-        none => return o
+        unshifted => return o
         one =>
             w0: U64 = (o.w1 << lk) | (o.w0 >> rk)
             w1: U64 = (o.w2 << lk) | (o.w1 >> rk)

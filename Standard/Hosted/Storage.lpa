@@ -152,7 +152,7 @@ secret routine mount_of(mounts: @[Byte], key: @[Byte]) -> Optional[MountLine]
                 is None => nothing
         continue with start: start + len + 1
     then
-        return None()
+        return none
 
 ### The mount point of mountinfo as the path it names: `\040` and the other octal escapes turned back into their
 ### bytes, in memory from manager.
@@ -478,7 +478,7 @@ secret routine mac_partition(st: @StatFs, manager: @MemoryManager) -> PartitionM
 secret routine partitions(manager: @MemoryManager) -> List[PartitionManager]
     list: &List[PartitionManager] <- .construct(manager)
 
-    n: CInt = c_getfsstat(None(), 0, 2)
+    n: CInt = c_getfsstat(none, 0, 2)
     if n <= 0
         return list
     count: U64 = n.to[U64]()
@@ -605,11 +605,10 @@ secret routine windows_partition(root: @U16, manager: @MemoryManager) -> Partiti
     at: &[Byte] <- copied_wide(units: root, count: n, manager)
     fs_name: &[Byte] <- copied(text: "", manager)
 
-    if c_get_volume_information(root, None(), 0, None(), None(), None(), fs.getview().to[@U16](),
-        64) != 0
+    if c_get_volume_information(root, none, 0, none, none, none, fs.getview().to[@U16](), 64) != 0
         fs_name.replace(value: copied_wide(units: fs.getview().to[@U16](),
             count: wide_length(fs.getview().to[@U16]()), manager))
-        c_get_disk_free_space(root, None(), total, None())
+        c_get_disk_free_space(root, none, total, none)
     path: @[Byte] = at.getslice()
     # The drive "C:" is the root without its separator.
     name: @[Byte] = when

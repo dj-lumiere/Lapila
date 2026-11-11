@@ -281,6 +281,8 @@ public sealed class Printer
                 if (r.TypeArgs.Count > 0) name += $"[{string.Join(", ", r.TypeArgs.Select(Type))}]";
                 return $"{name}.to[{(r.Callable is null ? "Callable" : Type(r.Callable))}]()";
             }
+            case CallExpr none when Compiler.IsNoneValue(none):
+                return "none";
             case CallExpr c:
             {
                 string name = (c.Path is null ? "" : c.Path + "/") + Name(c.Name);

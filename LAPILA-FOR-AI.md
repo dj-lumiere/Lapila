@@ -193,7 +193,7 @@ routine start() -> None
   one call, `m.borrow_and_fill[T](t: v)` of `protocol ResourceManageable[M]` (a `MemoryManager` obeys it). With no `from` (or `from
   STACK`, or `from StackManager.current()`) the manager is the running flow's stack, and the place is one frame slot
   with no fields. `x: &[T] <- [v] * n from HEAP` borrows a run (a `BorrowedSlice[T]`), `node: &Node <- (value: 1, next:
-  None()) from HEAP` one value (a `BorrowedCell[T]`). `&T` is short for `BorrowedCell[T]` and `&[T]` for `BorrowedSlice[T]` (the long names
+  none) from HEAP` one value (a `BorrowedCell[T]`). `&T` is short for `BorrowedCell[T]` and `&[T]` for `BorrowedSlice[T]` (the long names
   stay valid), the way `@T` is `PointedCell[T]`. `@T` / `@[T]` only view: they come from `getview`, `getslot`, `getslice`, and
   are never places. `=` binds a value or a view (`x: S64 = 3`, `cell: @Cell = m.getslot(i)`), never a `&T` / `&[T]`
   (build error: "a &List[S64] is a place borrowed from a manager, and '=' only binds a value or a view: xs:
@@ -252,7 +252,7 @@ routine start() -> None
   used as a value on a path where it may still be unfilled is a build error. A `lateinit global` and a read inside an
   f-string are not followed.
   `T.hollow()`, `.hollow()` and `.uninit()` are gone (writing them is a build error that names what to write): a zero
-  value is a literal or constructor (`0`, `false`, `None()`, `Addr.zero()`, `@[Byte].empty()`,
+  value is a literal or constructor (`0`, `false`, `none`, `Addr.zero()`, `@[Byte].empty()`,
   `BorrowedSlice[T].empty(manager)`), and `place.zeroinit(1)` empties a place in memory. An array value comes from `[1, 2, x]` or a
   load (COUNT values at `first: @T` are `first.to[@Items[T, COUNT]]().peek()`);
   a bare `[1, 2]` isn't a value. `[a, b] * 3` repeats the elements (`a, b, a, b, a, b`). A bracket literal followed by `*` is always that repeat, so a Vector literal is bound to a name before it is multiplied. Where the type is known from where the value goes (a typed binding, a `preset` or
@@ -341,7 +341,7 @@ routine start() -> None
   error that points to `xs: Items[S32, _] = [...]`, or to `xs: &Items[S32, _] <- [...]` and `xs.getview()`.
 - **Memory from a manager is written with `from`.** `words: &[U64] <- [0] * n from HEAP` (the count
   may be a runtime value: it calls `BorrowedSlice[T].construct(values: @[T], times: U64, manager)`),
-  `node: &Node <- (value: 1, next: None()) from HEAP`, and `x: &S64 <- 10 from HEAP` (they
+  `node: &Node <- (value: 1, next: none) from HEAP`, and `x: &S64 <- 10 from HEAP` (they
   call `BorrowedCell[T].construct(value, manager)`). The builder drops these at the end of their scope, and the program
   may `drop` one earlier. With `try` or `check`
   in front of the value the line receives both failures, the value's own and the manager having no memory:
@@ -1121,6 +1121,10 @@ routine start() -> None
   `BF16`, `B32`, `B64`, and `B128` with its 113 significant bits) that holds it exactly: anywhere else, or one the
   type would round, overflow, or flush below its smallest subnormal, is a build error that says which. A decimal
   float literal isn't a `B128` yet: write a hex float, or convert a `B64` (`B64.to[B128](1.5)`).
+- `none` is the one value of the type `None` (a reserved word): an empty `T?` (`m: S64? = none`, `return none`,
+  `f(none)`, `Pair(first: 1, second: none)`, a value `when` arm), a null `@T?` or `Callable?`, a hollow kept `E?`, and
+  the value where a `T` bound to `None` goes. Where a flags value is expected it is the flags value with no member on.
+  `None()` is a build error that says to write `none`. `None` stays the type's name (`-> None`, `is None`, `Thread[None]`).
 - `inf` and `nan` are float literals (reserved words) typed by where they go, like `1.5`: `top: B64 = inf`,
   `low: B32 = -inf` (`-inf` is one literal, the negative infinity), `return nan`, `x < inf`, `[1.0, inf]` as a float
   Vector. Every binary float takes them, `B128` included, and a preset folds them. `nan` is the canonical quiet NaN
@@ -1476,7 +1480,7 @@ routine start() -> None
   code, the choice's first member (the build doesn't check it). Inside, code throws and receives failures, not `Result`.
 - **The `Crash` service** (System, one per program) reports a crash and a failure nothing received, then
   stops. `Crash.report_with(routine.to[Callable]())` puts a reporting routine in its slot and returns the one before
-  (a `Callable?`, None for the default; `Crash.report_with(None())` puts the default back), so it can be put back: `routine report(name: @[Byte], message: @CrashMessage, place:
+  (a `Callable?`, None for the default; `Crash.report_with(none)` puts the default back), so it can be put back: `routine report(name: @[Byte], message: @CrashMessage, place:
   @SourceLocation) -> None`, mark it `@untraced` so its own frame isn't on the trace it reads with `trace_depth()` /
   `trace_frame(back)`. `message.text()` writes the message into Crash's fixed buffer (`CRASH_MESSAGE_SIZE` bytes,
   `[crash] message-size` in config.toml, default 512, a longer message cut and ended with `…`) and gives a view of it,
@@ -1521,7 +1525,7 @@ routine start() -> None
   Write the message from those values when it is asked for (`message_into`), never ahead of time.
 - **Events: `CpuEventManager`** (`CpuEvents.lpa` of Hosted with an OS, of Unhosted without one) holds
   one handler per kind of event, a `Callable[(CpuEvent,), None]?` (`CpuEvent` has `kind`, `code`, `place`, `address`),
-  and hands back the one before so it can be put back (`None()` is the system's action):
+  and hands back the one before so it can be put back (`none` is the system's action):
   `before = CpuEventManager.when_terminated(h)` (SIGTERM, a console window closed or a shutdown on Windows: `h`
   decides, it calls `ProcessManager.exit_process` to end, and when it returns the program goes on, except that
   Windows ends the process itself after a closed console window, a logoff or a shutdown),
@@ -1573,7 +1577,8 @@ routine start() -> None
   errors. Members combine with `and` (`CellMarks.MINE and CellMarks.FLAGGED`). Where a value of the flags type is
   expected (a typed binding, a parameter, a field, the other side of `==`, `!=` or `and` from a flags value), a member is named
   bare (`marks.has(MINE)`) and the value with no member on is `none` (`marks: CellMarks = none`, `marks == none`). A
-  visible value of the same name (`none` or a member's) hides the bare spelling there. `x.has(A and B)` is true when all of
+  visible value named like a member hides the bare spelling there. Where a `CellMarks?` goes, `none` is the None value,
+  since the type there is the Optional and not the flags type (a bare member isn't one there either). `x.has(A and B)` is true when all of
   them are on, `x.has_any(A and B)` when at least one is, `x.lacks(A and B)` when none is, and `x.without(A)` is `x`
   with `A` off. `==` and `!=` compare the whole set. `x.to[U64]()` is the bitmask (and `to[U8]()` for a `U8` flags
   type, likewise for its own width). A bitmask goes back with `bits.to[CellMarks]()` on any unsigned integer type
@@ -1750,12 +1755,12 @@ routine start() -> None
   be zero and keeps its `is_hollow()`. `@T?` is UnbrokenStorable and UnbrokenExchangeable like `@T`. `&@T?` is an Optional place (`Optional[BorrowedCell[PointedCell[T]]]`), and a
   place that holds an `@T?` is written with parentheses, `&(@T?)` (one type in parentheses only groups it). For an entity `T` (or one holding an entity) it is one address (`ptr`) of
   the place the `T` lives in, null for None, handed over with `steal`. Both are read and made as a variant
-  (`m: S64? = 5`, `return None()`, `when`, `is None`, `try`). `Maybe` is an unknown type whose error names
+  (`m: S64? = 5`, `return none`, `when`, `is None`, `try`). `Maybe` is an unknown type whose error names
   `Optional[T]` and `T?`. An `Optional` of a variant written inline (`Optional[Circle | Square]`) keeps the tagged
   layout, since its flag can't say which branch.
 - **Where an Optional's entity lives.** In the frame of the routine whose call made the Optional, so no memory comes
   from a manager the code doesn't name. A routine that returns `T?` is given the place for the `T` by its caller as a
-  hidden last parameter: `return x` moves the `T` there, `return None()` is null. `try f()` of a routine that returns
+  hidden last parameter: `return x` moves the `T` there, `return none` is null. `try f()` of a routine that returns
   a `T` puts the `T` in a place of the caller's frame. `try Console.ask_line(HEAP)` gives a `BorrowedSlice[Byte]` in
   that place whose bytes come from `HEAP`, the manager the call was given. So an Optional stays in that routine: in a
   STACK place (`r: &Optional[Counter] <- f()`), a parameter (which takes the entity over), or a return. `drop r` ends
@@ -1772,10 +1777,10 @@ routine start() -> None
   `from STACK` puts the E in a slot of the routine's frame, which the field holds with no manager: the holder then
   stays in the routine (the escape check), and a loop body can't fill from STACK (each pass would use the same slot).
   A fill without a manager is a build error that names `from HEAP`, and so is an E written where the field goes
-  (`Me(next: Node.construct(1))`: write `None()` and fill it on a line of its own). The field must hold nothing:
+  (`Me(next: Node.construct(1))`: write `none` and fill it on a line of its own). The field must hold nothing:
   a fill the build knows follows another one is a build error ("this line would lose it: drop first.next first, or
   take it out with steal first.next as old"), and one it can't follow checks while running and
-  crashes with `UnacceptedValueError`. A construct writes `None()` for it. Emptying it gives back
+  crashes with `UnacceptedValueError`. A construct writes `none` for it. Emptying it gives back
   what it holds: `drop me.next` (the E's destruct, then the place back to its manager, the field hollow), or `steal
   me.next as old` (`old` is a `&Node` place the routine ends). What comes out of a place that keeps an `E?` is an `E?`
   again, hollow when the place held None, so reading it as an `E` before a `when old` (`is None`, `is Node as n`) is a build error;
@@ -1788,13 +1793,13 @@ routine start() -> None
   is `next: @Node?` (an `@Node` always points at a value).
 - Two branches of the same type are a build error (a `variant` listing `S64` twice, `Optional[None]`), and so is a branch that is a
   variant holding another branch's type (`Optional[Optional[S64]]`): wrap one in a record of its own. A branch that is `None` is the
-  value `None()`. A variant holds itself only through a pointer (`@Tree`).
+  value `none`. A variant holds itself only through a pointer (`@Tree`).
 - Build: a value of a branch type goes where the variant is expected as it is, one level deep: `e: Expr = 5`,
-  `e: Expr = Empty()`, `m: Optional[S64] = 5`, `return value`, `return None()`, a carried
+  `e: Expr = Empty()`, `m: Optional[S64] = 5`, `return value`, `return none`, a carried
   value, a routine argument. An untyped literal goes in through the one branch that takes it (an integer literal
   never picks a choice branch). Two levels of NAMED variants don't widen by themselves (`Exited` -> `ExitStatus` ->
   `Optional[ExitStatus]`): bind the middle type first (`status: ExitStatus = Exited(code)`, then `return status`). A
-  value `when` widens each arm: `n` in one arm, `None()` in another.
+  value `when` widens each arm: `n` in one arm, `none` in another.
 - Read with `when e`: `is S64 as n => use(n)` names the value for that arm's line or lines, `is Empty =>` observes
   without naming, `is S64, is BinaryExpr => ...` puts
   several unnamed observations in one arm, `else => ...` takes the rest, and `else as rest` names what the other arms
@@ -1823,7 +1828,7 @@ routine start() -> None
 - A choice or variant without `@derive` derives Representable, Diagnosable, Equatable, Hashable, and Comparable (a flags type
   all but Comparable, a variant each only when every branch has it), skipping what it declares itself; `@derive(...)` lists exactly what
   to derive, `@derive()` nothing. A record derives only what it lists. A variant writes the held value as that value
-  writes itself (an `Optional[S64]` holding 4 prints `4`, an empty one `None`, diagnosed `None()`), a pointer branch its
+  writes itself (an `Optional[S64]` holding 4 prints `4`, an empty one `None`, diagnosed `none`), a pointer branch its
   address. eq: same branch and equal values. compare: by branch in declaration order, then by value. hash: the
   branch position combined with the value's hash.
 
@@ -1955,7 +1960,7 @@ Format through `System/Text` (`Format.lpa`), not printf. printf is for C interop
   `v.represent_hex_into(out)` for an integer's bits in hex; `represent_into(out, min_digits)` (`U64`, `U128`, `U256`) and `represent_hex_into(out,
   min_digits)` (`U64`) zero-pad; `represent_fixed_into(out, digits)`; `represent_with_into(out, v, spec)` with a `FormatSpec`.
   There are no `write_decimal_*` / `write_hex_*` helpers: the integer's own method is the writer.
-- `v.diagnose_into(out)` writes a value as Lapila source: `"a\n"`, `'A'`, `Byte('\x41')`, `None()`, `[1, 2]`; a variant as the value it holds diagnoses itself (`3` for an `Optional[S64]` holding 3). A record or
+- `v.diagnose_into(out)` writes a value as Lapila source: `"a\n"`, `'A'`, `Byte('\x41')`, `none`, `[1, 2]`; a variant as the value it holds diagnoses itself (`3` for an `Optional[S64]` holding 3). A record or
   record gets routines written for it with `@derive(Representable, Diagnosable, Equatable, Hashable, Comparable)` (any subset), which
   also declares the conformance; choices and variants get all five without asking. Otherwise declare the routine: a
   bare `obeys` never generates one. In a template, `{v}` writes `v.represent_into(out)`, and `{v.diagnose()}`
@@ -2655,14 +2660,14 @@ byte order (`to_be`, `from_le`), the same quantity in another unit (`to_degrees`
 that `to[T]`, which would call itself there. It keeps the shape under its own name, `x.soft_to[B16]()`
 (System/Numerics/SoftFloat), and a shim that only exists to be exported is named for its symbol (`export_truncsfhf2`).
 
-**The empty value: `.empty()`, `.zero()`, or `None()`.** A type's ready-made empty value (the "nothing yet" of a record) is a
+**The empty value: `.empty()`, `.zero()`, or `none`.** A type's ready-made empty value (the "nothing yet" of a record) is a
 typewise routine without arguments. A type whose all-zero bytes are a value has a place with no value (`x: &T`). `@[T].empty()` is
 a view of no elements and `BorrowedSlice[T].empty(manager)` memory with no values, which keeps its manager (an empty slice holds an
 aligned address that is never read, so a collection always has a manager). A type whose empty value means something of its own names it
 `.empty()` (`FileHandle.empty()`, an OS handle, `FileStorage[T].empty()`). A type with no pointer inside (numbers, records and vectors of
-numbers) has `.zero()`: `Vector[T, LANES].zero()`, and `Addr.zero()` is the address 0. `Optional[T]` is empty as `None()`, and a pointer that may point
+numbers) has `.zero()`: `Vector[T, LANES].zero()`, and `Addr.zero()` is the address 0. `Optional[T]` is empty as `none`, and a pointer that may point
 at nothing is an `@T?` whose None is that, so there is no `none()` or `nothing()` routine, and no `null`: writing it is a build
-error. A default that isn't empty is named for what it is: `ProcessOptions.default()` captures both streams.
+error, and so is `None()`, which says to write `none`. A default that isn't empty is named for what it is: `ProcessOptions.default()` captures both streams.
 
 **The memory manager comes last.** A routine that takes an `@MemoryManager` takes it as its last parameter:
 `List[T].construct(manager)`, `BorrowedSlice[T].construct(count, manager)`, `allocate[T](count, manager)`,

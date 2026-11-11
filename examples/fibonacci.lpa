@@ -3,7 +3,7 @@
 # Introduces:
 #   overflow: a bare add stops the program, try a + b gives Optional[U64]
 #   reading an Optional with when x binds the value for that arm's target,
-#   None() is the other case
+#   none is the other case
 
 import Hosted
 

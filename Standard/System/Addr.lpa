@@ -177,6 +177,6 @@ needs AnyType T
 routine Addr.to[@T?]() -> @T?
 needs AnyType T
     if me.is_hollow()
-        return None()
+        return none
     r: @T = bitcast[Me, @T](me)
     return r

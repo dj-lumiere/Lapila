@@ -1,10 +1,10 @@
 # Lapila stdlib: Optional[T] and KVPair[TKey, TValue]
 #
 # Optional[T] is a value that may be absent: a T, or None when there is none. `try` in front of a failable call gives
-# one, `try iter.emit()` included. A T goes where an Optional[T] is expected as it is, and so does None():
+# one, `try iter.emit()` included. A T goes where an Optional[T] is expected as it is, and so does none:
 #
 #     return(value)
-#     return(None())
+#     return(none)
 #
 # Read it with when:
 #

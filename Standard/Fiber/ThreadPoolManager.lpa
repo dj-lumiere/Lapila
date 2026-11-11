@@ -241,7 +241,7 @@ secret routine @ThreadPoolManager.take() -> @PassableFiberSlot?
     held: @U8 <- me.guard.get_exclusive_access()
     first: @PassableFiberSlot? = me.first.peek().to[@PassableFiberSlot?]()
     if first.is_absent()
-        return None()
+        return none
     passable: @PassableFiberSlot = first.unwrap()
     next: @PassableFiberSlot? = passable.next.peek().to[@PassableFiberSlot?]()
     me.first.poke(next.to[Addr]())
@@ -268,7 +268,7 @@ secret routine @ThreadPoolManager.queue_woken(fiber: @FiberState) -> None
 secret routine @ThreadPoolManager.take_woken() -> @FiberState?
     held: @U8 <- me.guard.get_exclusive_access()
     if me.woken.is_empty()
-        return None()
+        return none
     fiber: @FiberState = me.woken.remove_first()
     return fiber
 
@@ -295,7 +295,7 @@ secret routine @ThreadPoolManager.take_fiber() -> @FiberState
         drop held
         spare.next_idle.poke(Addr.zero())
         # No manager runs it until a thread adopts it, which counts it among that thread's busy fibers.
-        spare.manager.poke_unbroken(None())
+        spare.manager.poke_unbroken(none)
         return spare
     drop held
     manager: @MemoryManager = me.manager.peek()
@@ -308,9 +308,9 @@ secret routine @ThreadPoolManager.take_fiber() -> @FiberState
     fiber: @FiberState = fiber_at.to[@FiberState]()
     stack.sp.poke(initial_stack(stack: stack.bottom.peek(), size: stack.size().bytes(),
         entry: fiber_start.addr()))
-    fiber.poke(FiberState(stack: steal stack, manager: None(), slot: .construct(manager),
+    fiber.poke(FiberState(stack: steal stack, manager: none, slot: .construct(manager),
         work: fiber.slot.to[Addr](), then: requeue.to[Callable](), wake_state: FIBER_RUNNING,
-        timer: 0, trace_depth: 0, access: None(), race: race_stack_new(), next_idle: Addr.zero(),
+        timer: 0, trace_depth: 0, access: none, race: race_stack_new(), next_idle: Addr.zero(),
         next_all: Addr.zero(), pool: me, mold: Addr.zero()))
     held2: @U8 <- me.guard.get_exclusive_access()
     fiber.next_all.poke(me.fibers.peek())

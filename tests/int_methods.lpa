@@ -18,8 +18,8 @@ needs T obeys Representable
             show(out, label, v: value)
             return
         is None =>
-            none: @[Byte] = "none"
-            show(out, label, v: none)
+            none_text: @[Byte] = "none"
+            show(out, label, v: none_text)
             return
 
 routine part0(out: @BufWriter[ConsoleOutput]) -> None

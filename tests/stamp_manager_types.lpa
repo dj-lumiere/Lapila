@@ -53,11 +53,11 @@ routine start() -> None
     pool: &StampManager[Item] <- .construct(manager: HEAP)
     labels: &StampManager[Label] <- .construct(manager: HEAP)
     points: &StampManager[Point] <- .construct(manager: HEAP)
-    last: Stamped[Item] = pool.add(Item.construct(value: 3, next: None()))
+    last: Stamped[Item] = pool.add(Item.construct(value: 3, next: none))
     first: Stamped[Item] = pool.add(Item.construct(value: 1, next: last))
     label: Stamped[Label] = labels.add(Label.construct(text: 7))
     spot: Stamped[Point] = points.add(Point(x: 4, y: 5))
-    missing: Stamped[Item]? = None()
+    missing: Stamped[Item]? = none
     Console.show("follow: {follow(first.fetch().next.peek())}, none: {follow(missing)}")
     Console.show("label: {label.fetch().text.peek()}, point: {spot.fetch().x.peek()},{spot.fetch().y.peek()}")
     pool.remove(last)

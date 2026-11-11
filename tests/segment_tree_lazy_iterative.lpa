@@ -350,8 +350,8 @@ routine RangeSum.apply(lazy: RangeAdd, count: U64) -> Me
     return result
 
 common routine RangeAdd.identity() -> Me
-    none: Me = Me(delta: 0)
-    return none
+    identity: Me = Me(delta: 0)
+    return identity
 
 routine RangeAdd.compose(older: Me) -> Me
     both: Me = Me(delta: me.delta + older.delta)

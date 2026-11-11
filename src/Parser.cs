@@ -2869,10 +2869,13 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
                     // Infinity and NaN are float literals, typed like `1.5` by where they go, and `-inf` is `-` on `inf`.
                     case "inf": Next(); return new FloatLit(double.PositiveInfinity, t.Pos) { Text = "inf" };
                     case "nan": Next(); return new FloatLit(BitConverter.Int64BitsToDouble(0x7FF8000000000000), t.Pos) { Text = "nan" };
+                    // `none` is the one value of the type None. Where a flags value goes, the checker reads it as the
+                    // flags value with no member on.
+                    case "none": Next(); return Compiler.NoneValue(t.Pos);
                     case "null" when !IsValue(t):
                         // `null` is gone: a pointer that holds nothing is the all-zero value every type has.
                         Next();
-                        Old(t.Pos, "a pointer that may hold nothing is an @T? and nothing is None(), not null");
+                        Old(t.Pos, "a pointer that may hold nothing is an @T? and nothing is none, not null");
                         return new ImplicitCallExpr("hollow", [], [], t.Pos);
                     case "if": throw Error(Li.BranchSyntax, "you wrote if c then a else b where a value goes, and it is a value only directly "
                                            + "after return: choose the value with when (x: T = when ...) and use its name");
@@ -2890,7 +2893,7 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
     private void RejectGone(string name, Pos pos)
     {
         if (name == "hollow")
-            throw new CompileError(Li.RemovedSpelling, pos, "'.hollow()' is gone: write the zero value as a literal or constructor (0, false, None(), "
+            throw new CompileError(Li.RemovedSpelling, pos, "'.hollow()' is gone: write the zero value as a literal or constructor (0, false, none, "
                 + "Addr.zero(), @[T].empty(), T(...)), start a place with no value (x: &T, every byte zero, only for a type whose zero "
                 + "is a value), or write lateinit x: &T for a place filled later");
         if (name == "uninit")
@@ -2986,6 +2989,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
             bool numbers = typeArgs.Any(a => a is not TypeArgType);
             var targs = numbers ? [] : typeArgs.Select(a => ((TypeArgType)a).Type).ToList();
             var (args, names) = ParseNamedArgs();
+            // `None()` is the old spelling of the value `none`.
+            if (name.Text == "None" && path is null && typeArgs.Count == 0 && args.Count == 0) Old(pos, OldSpellings.NoneCall);
             // `Byte('A')` and `Byte('\\xE9')` are one Byte literal.
             if (name.Text == "Byte" && path is null && targs.Count == 0 && !numbers && args is [TypedIntLit { Bits: 32 } letter] && (names is null || names.All(n => n is null)))
             {

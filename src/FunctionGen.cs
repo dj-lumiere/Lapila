@@ -3252,6 +3252,8 @@ public sealed partial class FunctionGen
         _moving = false;
         if (FlagsOf(expected) is { } flagsExpected && e is BinaryExpr { Op: "|" or "&" or "^" } bitwise)
             throw Err(Li.FlagsUse, bitwise.Pos, FlagsBitwise(bitwise.Op, flagsExpected));
+        // `none` where a flags value goes: the value with no member on.
+        if (FlagsOf(expected) is { } noneFlags && Compiler.IsNoneValue(e)) return IntConst(BigInteger.Zero, e.Pos, noneFlags);
         e = AsStride(AsField(AsIndexed(_c.AsRecordLit(Desugar(e), _env))));
         if (e is FieldExpr narrowedField && NarrowedType(narrowedField) is { } narrowedType)
         {
@@ -3262,7 +3264,7 @@ public sealed partial class FunctionGen
         // A `&T` handed into a protocol's place: the place holds its type id and its address.
         if (IntoPlace(e, expected) is { } stored) return stored;
         if (!moving && CopiedEntity(e) is { } copied) throw Err(Li.EntityCopied, e.Pos, copied);
-        // `None()` where an `E?` is kept (a `&E` of an entity): the hollow place, which holds nothing.
+        // `none` where an `E?` is kept (a `&E` of an entity): the hollow place, which holds nothing.
         if (e is CallExpr { Name: "None", Args.Count: 0 } or RecordLit { Fields.Count: 0 } && KeptOptional(new PtrType(expected)) is not null
             && Compiler.IsNoneRecord(InferQuiet(e)))
         {
@@ -3271,7 +3273,7 @@ public sealed partial class FunctionGen
         }
         // An E where an `E?` is kept: the E goes in a place from a manager, which a `<-` line names.
         if (KeptOptional(new PtrType(expected)) is var (_, keptHeld) && InferQuiet(e) is { } keptGiven && keptGiven.Equals(keptHeld))
-            throw Err(Li.ManagerFill, e.Pos, $"a {keptHeld.Name}? is kept in a place from a manager, and this {keptHeld.Name} has none: put None() "
+            throw Err(Li.ManagerFill, e.Pos, $"a {keptHeld.Name}? is kept in a place from a manager, and this {keptHeld.Name} has none: put none "
                 + $"here and fill it on a line of its own, x.field <- value from HEAP, or pass a &{keptHeld.Name} from one "
                 + $"(c: &{keptHeld.Name} <- value from HEAP, then steal c)");
         // A value of a branch type is a value of the variant (one level), and so is a narrower variant's.
@@ -5235,12 +5237,10 @@ public sealed partial class FunctionGen
     /// The flags type `t` is, or null.
     private static ChoiceType? FlagsOf(DType? t) => t is ChoiceType { Decl.IsFlags: true } f ? f : null;
 
-    /// A bare name where a value of the flags type `f` goes: one of its members (its bit), or `none` (no member on).
-    /// Null for any other name.
+    /// A bare name where a value of the flags type `f` goes: one of its members (its bit). Null for any other name.
     private static BigInteger? BareFlags(PresetRef r, ChoiceType f)
     {
         if (r.Owner is not null || r.Path is not null) return null;
-        if (r.Name == "none") return BigInteger.Zero;
         return f.Decl.Members.FirstOrDefault(m => m.Name == r.Name) is { Name: not null, Value: IntLit bit } ? bit.Value : null;
     }
 
@@ -5261,6 +5261,7 @@ public sealed partial class FunctionGen
         bool Bare(Expr e) => e switch
         {
             PresetRef { Owner: null, Path: null } r => ResolvePresetQuiet(r) is null,
+            CallExpr none when Compiler.IsNoneValue(none) => true,
             BinaryExpr { Op: "and" } inner => FlagsAnd(inner) is (null, true),
             _ => false,
         };
@@ -5321,7 +5322,7 @@ public sealed partial class FunctionGen
                 if (b.Op is "|" or "&" or "^" && (FlagsOf(operand) ?? FlagsOf(TryInfer(b.Right))) is { } bitFlags)
                     throw Err(Li.FlagsUse, b.Pos, FlagsBitwise(b.Op, bitFlags));
                 // `none == marks`: a bare member or none takes its type from the other side, so the flags value goes first.
-                if (b.Op is "==" or "!=" && operand is null && b.Left is PresetRef { Owner: null }
+                if (b.Op is "==" or "!=" && (operand is null && b.Left is PresetRef { Owner: null } || Compiler.IsNoneValue(b.Left))
                     && FlagsOf(TryInfer(b.Right)) is not null)
                     return Desugar(b with { Left = b.Right, Right = b.Left });
                 Expr Call(string routine) => literalLeft && operand is not null
@@ -5687,7 +5688,7 @@ public sealed partial class FunctionGen
     /// Resolves a type written as a namespace, or null if it doesn't name a type (it may be a preset).
     private DType? TryResolveOwner(TypeRef owner)
     {
-        // `None()` builds the one value: the record, not the return of nothing.
+        // `none` builds the one value: the record, not the return of nothing.
         try { return Resolve(owner, allowVoid: true) is var t && t is VoidType ? Resolve(owner) : t; }
         catch (CompileError e) when (owner.Args.Count == 0 && !e.Final) { return null; }
     }
@@ -6023,6 +6024,8 @@ public sealed partial class FunctionGen
                     continue;
                 }
                 var pt = _c.ResolveParam(r, r.Params[i + first], env);
+                // `none` where a flags value goes is the value with no member on.
+                if (FlagsOf(pt) is not null && Compiler.IsNoneValue(args[i])) continue;
                 if (InferQuiet(args[i]) is { } at)
                 {
                     // A value of a branch type goes into its variant, and memory lends its view: fits an exact

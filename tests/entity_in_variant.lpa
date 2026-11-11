@@ -51,7 +51,7 @@ routine open(n: S64) -> Opened
 routine even(n: S64) -> Optional[Counter]
     if n % 2 == 0
         return Counter.construct(n)
-    return None()
+    return none
 
 ### Takes a result over and reads it.
 ### :param r: The result, handed over: inside, its slot.

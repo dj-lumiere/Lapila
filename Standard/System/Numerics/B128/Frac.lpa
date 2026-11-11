@@ -197,7 +197,7 @@ secret routine cm_frac_round(frac: U128, exponent: S64, sign: U128, gate: U64) -
     shifted: U64 = rest + gate -% 0x4000
     distance: U64 = shifted & 0x7FFF
     if distance <= gate * 2
-        return None()
+        return none
     up: U128 = (rest > 0x4000).to[U128]()
     biased_exponent: S64 = exponent + 16382
     biased: U128 = biased_exponent.to[U128]() << 112

@@ -7,6 +7,6 @@ needs T obeys Equatable
     return a == b
 
 routine start() -> None
-    p: Optional[Point] = None()
+    p: Optional[Point] = none
     s: Bool = same(a: p, b: p)
     return

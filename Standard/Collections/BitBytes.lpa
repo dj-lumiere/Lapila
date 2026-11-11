@@ -110,7 +110,7 @@ secret routine bit_any(data: @Byte, bits: U64) -> Bool
 ### :absent: When no bit at `from` or after it equals `value`.
 secret routine bit_find(data: @Byte, bits: U64, from: U64, value: Bool) -> Optional[U64]
     if from >= bits
-        return None()
+        return none
     first_byte: U64 = from // 8
     shift: U8 = (from % 8).to[U8]()
     low: U8 = U8.shift_left(U8.MAX, shift)
@@ -127,10 +127,10 @@ secret routine bit_find(data: @Byte, bits: U64, from: U64, value: Bool) -> Optio
             found: U64 = i * 8 + masked.trailing_zeros().to[U64]()
             # the complement of the spare high bits of the last byte is 1, and they aren't bits of the run
             if found >= bits
-                return None()
+                return none
             return found
     then
-        return None()
+        return none
 
 ### Whether two runs of bits are equal, compared a byte at a time.
 ### :param data: The first byte of one run.

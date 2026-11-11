@@ -48,7 +48,7 @@ entity InterruptManagerByGic
 @target(arch: "aarch64", os: "none")
 common routine InterruptManagerByGic.construct(distributor: Addr, cpu_interface: Addr) -> Me
     empty: &Items[Addr, GIC_LINES]
-    return Me(distributor, cpu_interface, handlers: empty.load(), before: None())
+    return Me(distributor, cpu_interface, handlers: empty.load(), before: none)
 
 ### Turns the controller on and takes the CpuEventManager's interrupt slot: from now on an interrupt on a line goes to
 ### that line's handler. The lines themselves stay off until `turn_on`.
@@ -94,7 +94,7 @@ routine @InterruptManagerByGic.when_line_raised(line: U32,
 @target(arch: "aarch64", os: "none")
 secret routine line_handler_at(at: Addr) -> Callable[(U32,), None]?
     if at.is_hollow()
-        return None()
+        return none
     held: Callable[(U32,), None] = bitcast(at)
     return held
 

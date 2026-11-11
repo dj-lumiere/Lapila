@@ -82,7 +82,7 @@ routine start() -> None
     Console.show("stderr: [{line(oops.stderr.getslice())}], stdout empty {oops.stdout.count() == 0}")
     Console.show("arguments as given: {quoting_ok(manager)}")
     vars: &Items[EnvVar, 1] <- [EnvVar(name: "LAPILA_PROBE", value: "a value, with commas")]
-    with_env: ProcessOptions = ProcessOptions(directory: None(), env: vars.getview().to[@EnvVar](),
+    with_env: ProcessOptions = ProcessOptions(directory: none, env: vars.getview().to[@EnvVar](),
         env_count: 1, stdin: InputMode.NULL, stdout: OutputMode.CAPTURE, stderr: OutputMode.CAPTURE)
     r: &ProcessOutput <- ProcessManager.create_shell_process(command: show_var(), options: with_env,
         manager)
@@ -99,7 +99,7 @@ routine start() -> None
         manager)
     here: Bool = line(r2.stdout.getslice()).has_suffix(name)
     Console.show("directory: {here}")
-    quiet: ProcessOptions = ProcessOptions(directory: None(), env: dangling[EnvVar](), env_count: 0,
+    quiet: ProcessOptions = ProcessOptions(directory: none, env: dangling[EnvVar](), env_count: 0,
         stdin: InputMode.NULL, stdout: OutputMode.NULL, stderr: OutputMode.CAPTURE)
     q: &ProcessOutput <- ProcessManager.create_shell_process(command: "echo dropped",
         options: quiet, manager)

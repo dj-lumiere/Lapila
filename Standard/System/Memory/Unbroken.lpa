@@ -520,7 +520,7 @@ needs MemoryOrder S = SEQ_CST, MemoryOrder F = if S == ACQ_REL then ACQUIRE else
     swapped: Bool = me.compare_exchange_unbroken_raw_unchecked[S, F](expected, new, previous)
     value: T = previous.load()
     if swapped
-        return None()
+        return none
     return value
 
 ### Writes `new` if the value here is `expected`, unbroken, and returns whether it did. The value that was here is stored
@@ -586,7 +586,7 @@ needs MemoryOrder S = SEQ_CST, MemoryOrder F = if S == ACQ_REL then ACQUIRE else
     swapped: Bool = me.compare_exchange_weak_unbroken_raw_unchecked[S, F](expected, new, previous)
     value: T = previous.load()
     if swapped
-        return None()
+        return none
     return value
 
 # -- Unbroken[T] -------------------------------------------------------------------

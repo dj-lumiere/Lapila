@@ -22,7 +22,7 @@ routine @Holder.keep(v: @S64) -> None
 ### Hands the holder a view of memory it gives back.
 routine start() -> None
     x: &S64 <- 5 from HEAP
-    h: &Holder <- Holder.construct(v: None())
+    h: &Holder <- Holder.construct(v: none)
     h.keep(v: x)
     drop x
     return

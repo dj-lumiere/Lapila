@@ -38,12 +38,12 @@ routine two_sum(list: @[S32], target: S32) -> Optional[(U64, U64)]
             right_val: S32 = list.getitem(right_idx)
             if left_val + right_val == target
                 return (left_idx, right_idx)
-    return None()
+    return none
 ```
 
 Two `for` loops make the O(n²) search, and the numbers come as a span, `@[S32]`: the address and the count of a run
 of values, carried together, so `getitem` checks each position against the count. The answer is an `Optional` of a
-tuple: the tuple itself, built with `(...)` and typed by the return type, or `None()` when there is none.
+tuple: the tuple itself, built with `(...)` and typed by the return type, or `none` when there is none.
 
 > **Early alpha.** The language is still changing, and the builder works but is incomplete. Every commit runs the
 > golden tests on Linux, Windows, and macOS, 64- and 32-bit, checks 32-bit ARM and aarch64 Linux builds, and builds

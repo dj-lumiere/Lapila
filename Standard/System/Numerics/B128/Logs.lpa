@@ -178,7 +178,7 @@ secret routine b128_log_special(x: B128) -> Optional[B128]
         zero => return -inf
         negative => return nan
         x.is_infinite() => return x
-        else => return None()
+        else => return none
 
 ### log2 x, correctly rounded, as {B128.log2}.
 ### :param x: The argument.

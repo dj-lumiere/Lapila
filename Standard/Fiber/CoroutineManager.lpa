@@ -344,8 +344,8 @@ secret routine @CoroutineManager.make_fiber() -> @FiberState
     fiber.poke(FiberState(stack: steal stack, manager: me,
         slot: .construct(manager: me.manager.peek()), work: fiber.slot.to[Addr](),
         then: requeue.to[Callable](), wake_state: FIBER_RUNNING, timer: 0, trace_depth: 0,
-        access: None(), race: race_stack_new(), next_idle: Addr.zero(), next_all: me.all.peek(),
-        pool: None(), mold: Addr.zero()))
+        access: none, race: race_stack_new(), next_idle: Addr.zero(), next_all: me.all.peek(),
+        pool: none, mold: Addr.zero()))
     me.all.poke(fiber.to[Addr]())
     return fiber
 
@@ -356,7 +356,7 @@ routine @CoroutineManager.current() -> @FiberState?
     waiter: Waiter = current_waiter()
     if waiter.manager === me
         return waiter.fiber.to[@FiberState?]()
-    return None()
+    return none
 
 ### Inside a fiber: lets the other ready fibers run first, then goes on. Outside one it does nothing.
 @target(os: not "none")
@@ -450,7 +450,7 @@ routine @CoroutineManager.waitfor(duration: Duration) -> None
 @target(os: not "none")
 routine @CoroutineManager.run() -> None
     me.ensure()
-    me.drive(awaited: None(), deadline: Duration.MAX, idle_only: false)
+    me.drive(awaited: none, deadline: Duration.MAX, idle_only: false)
     return
 
 ### Runs the fibers that are ready, and those they make ready, until none is, then returns: for a thread that takes
@@ -458,7 +458,7 @@ routine @CoroutineManager.run() -> None
 @target(os: not "none")
 routine @CoroutineManager.run_until_idle() -> None
     me.ensure()
-    me.drive(awaited: None(), deadline: Duration.MAX, idle_only: true)
+    me.drive(awaited: none, deadline: Duration.MAX, idle_only: true)
     return
 
 ### How long the thread that drives the manager may sleep before a fiber waiting with a deadline is due: for a thread

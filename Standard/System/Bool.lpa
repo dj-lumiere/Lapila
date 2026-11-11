@@ -43,7 +43,7 @@ needs AnyType T
     if me
         r: Optional[T] = value
         return r
-    r: Optional[T] = None()
+    r: Optional[T] = none
     return r
 
 # -- generic conversions -------------------------------------------------------

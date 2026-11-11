@@ -44,7 +44,7 @@ obeys Equatable[Waiter]
 ### A Waiter that waits for nothing: no fiber, no manager, no routines.
 ### :returns: The empty Waiter.
 common routine Waiter.none() -> Me
-    return Me(fiber: Addr.zero(), manager: Addr.zero(), park_fn: None(), wake_fn: None())
+    return Me(fiber: Addr.zero(), manager: Addr.zero(), park_fn: none, wake_fn: none)
 
 ### What runs here: the running fiber, or this thread. Never inlined, like the other readers of RUNNING_FIBER on the
 ### way to a park: a ThreadPoolManager's job may go on on another thread after a park, and a caller that kept this

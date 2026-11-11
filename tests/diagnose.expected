@@ -4,7 +4,7 @@ tab	here "quoted" back\slash
 Byte('\x41') Byte('\x27') Byte('\x0A') Byte('\x7F') Byte('\xE9')
 'A' '\\' '\0' 'é'
 -42 255 1.0 true
-"hi" None()
+"hi" none
 7 "no"
 hi None 7 no
 Point(x: 1, y: -2)

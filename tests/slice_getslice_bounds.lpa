@@ -18,8 +18,8 @@ routine start() -> None
     text: @[Byte] = "span"
     view: @[Byte] = text.getview()
     tail: @[Byte] = view.getslice(start: 2, count: 2)
-    none: @[Byte] = view.getslice(start: 4, count: 0)
-    Console.show("tail {tail.count()}, none {none.count()}")
+    empty_tail: @[Byte] = view.getslice(start: 4, count: 0)
+    Console.show("tail {tail.count()}, none {empty_tail.count()}")
     past: @[Byte] = view.getslice(start: 3, count: 2)
     Console.show("not reached {past.count()}")
     return

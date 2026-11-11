@@ -18,7 +18,7 @@ routine start() -> None
     fresh: &Box <- Box.construct(n: 7) from HEAP
     slots.add_last(steal fresh)
     packed: &List[Box] <- .construct(HEAP)
-    steal slots.getslot(0) as taken inject None()
+    steal slots.getslot(0) as taken inject none
     when steal taken
         is Box as b => packed.add_last(steal b)
         is None => nothing

@@ -40,7 +40,7 @@ routine @SortedSetNode[T].destruct() -> None
 ### :param manager: The memory manager the set stores and later frees its memory with.
 ### :returns: A new empty SortedSet.
 common routine SortedSet[T].construct(manager: @MemoryManager) -> Me
-    return Me(root: None(), count: 0, manager: manager)
+    return Me(root: none, count: 0, manager: manager)
 
 ### A SortedSet of the values of an Items, drawing its storage from `manager`. The array is taken over: its values go
 ### into the sorted set, entity values too, a value equal to an earlier one ending there.
@@ -628,7 +628,7 @@ routine @SortedSet[T].remove(key: @T) -> Bool
         if root_count == 0
             if root.leaf.peek()
                 deallocate[SortedSetNode[T]](data: root, manager)
-                me.root.poke(None())
+                me.root.poke(none)
                 return true
             new_root: @SortedSetNode[T] = root.children[0]
             deallocate[SortedSetNode[T]](data: root, manager)
@@ -676,7 +676,7 @@ routine @SortedSet[T].destruct() -> None
             manager: @MemoryManager = me.manager.peek()
             root.free_recursive(manager)
         is None => nothing
-    me.root.poke(None())
+    me.root.poke(none)
     me.count.poke(0)
     return
 

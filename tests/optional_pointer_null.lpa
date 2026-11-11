@@ -8,7 +8,7 @@ routine first_even(xs: @[S64]) -> @S64?
     for i in 0 til xs.count()
         if xs.getitem(i) % 2 == 0
             return xs.getslot(i)
-    return None()
+    return none
 
 ### Doubles `x`.
 ### :param x: The number.
@@ -35,7 +35,7 @@ routine start() -> None
     when first_even(b.getview())
         is @S64 as p => Console.show("found {p.peek()}")
         is None => Console.show("none")
-    Console.show("{apply(f: twice.to[Callable](), x: 21)} {apply(f: None(), x: 7)}")
+    Console.show("{apply(f: twice.to[Callable](), x: 21)} {apply(f: none, x: 7)}")
     # The size of one address, which is 4 on a 32-bit target and 8 on a 64-bit one.
     address: U64 = sizeof[Addr]()
     Console.show("one address {sizeof[@S64?]() == address} {sizeof[Callable[(S64,), S64]?]() == address}")

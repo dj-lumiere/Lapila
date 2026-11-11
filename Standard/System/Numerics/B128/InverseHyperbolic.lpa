@@ -238,7 +238,7 @@ routine cm_asinh_quick(a: B128) -> Optional[U128]
             r: Optional[U128] = cm_frac_round(frac: t.frac, exponent: t.exponent, sign: 0,
                 gate: B128_INV_LOG_GATE)
             return r
-        u >= B128_INV_HUGE_BITS => return None()
+        u >= B128_INV_HUGE_BITS => return none
         else =>
             # z = a + sqrt(a² + 1)
             x: CmFrac = cm_inv_frac(u)
@@ -278,7 +278,7 @@ routine cm_acosh_quick(x: B128) -> Optional[U128]
             r: Optional[U128] = cm_frac_round(frac: t.frac, exponent: t.exponent, sign: 0,
                 gate: B128_INV_LOG_GATE)
             return r
-        u >= B128_INV_HUGE_BITS => return None()
+        u >= B128_INV_HUGE_BITS => return none
         else =>
             # z = x + sqrt(x² - 1)
             s: CmFrac = cm_frac_sub(a: cm_frac_mul(a: v, b: v), b: one)

@@ -28,7 +28,7 @@ routine @Friend.destruct() -> None
 ### Ends a pool of friends who look at each other.
 routine start() -> None
     pool: &StampManager[Friend] <- .construct(manager: HEAP)
-    one: Stamped[Friend] = pool.add(Friend.construct(name: 1, friend: None()))
+    one: Stamped[Friend] = pool.add(Friend.construct(name: 1, friend: none))
     two: Stamped[Friend] = pool.add(Friend.construct(name: 2, friend: one))
     three: Stamped[Friend] = pool.add(Friend.construct(name: 3, friend: two))
     one.fetch().friend.poke(three)

@@ -99,7 +99,7 @@ routine start() -> None
     when check even_step(6)
         is S64 as v => Console.show("even_step 6 = {v}")
         is Crashables as e => Console.show("even_step 6: {e.name()}")
-    found: Check[S64] = check present[S64](None())
+    found: Check[S64] = check present[S64](none)
     when found
         is S64 as v => Console.show("present {v}")
         is NegativeError => Console.show("present: nothing")

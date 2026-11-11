@@ -58,7 +58,7 @@ routine what_happened(link: Stamped[Node]?) -> @[Byte]
 routine start() -> None
     pool: &StampManager[Node] <- .construct(manager: HEAP)
     some: Pt? = Pt(x: 21)
-    empty: Pt? = None()
+    empty: Pt? = none
     tried: S64? = try some.twice(2)
     when tried
         is S64 as v => Console.show("try on a value: {v}")
@@ -79,10 +79,10 @@ routine start() -> None
         is S64 as v => Console.show("check on a value: {v}")
         is Crashables as e => Console.show("check on a value failed: {e.name()}")
 
-    a: Stamped[Node] = pool.add(Node.construct(value: 7, parent: None()))
+    a: Stamped[Node] = pool.add(Node.construct(value: 7, parent: none))
     b: Stamped[Node] = pool.add(Node.construct(value: 8, parent: a))
     link: Stamped[Node]? = a
-    missing: Stamped[Node]? = None()
+    missing: Stamped[Node]? = none
     Console.show("link: {value_of(link)}, missing: {value_of(missing)}")
     Console.show("parent of b: {value_of(b.fetch().parent.peek())}, of a: {value_of(a.fetch().parent.peek())}")
     Console.show("split: {what_happened(link)}, {what_happened(missing)}")

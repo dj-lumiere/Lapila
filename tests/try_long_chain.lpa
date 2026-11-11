@@ -13,7 +13,7 @@ entity Blossom
 ### :param slot: Its slot.
 ### :returns: The node.
 common routine Blossom.construct(slot: S64) -> Me
-    return Me(slot, up: None(), lfrom: None())
+    return Me(slot, up: none, lfrom: none)
 
 ### Walks a chain of twelve links under one `try`: each link used to be inferred again by every link above it, so a chain this long took minutes to build.
 routine start() -> None

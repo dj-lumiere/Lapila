@@ -36,7 +36,7 @@ routine counter_for(n: S64) -> Counter?
     if n > 0
         made: &Counter <- .construct(n)
         return made
-    return None()
+    return none
 
 ### Hands on what counter_for gives: the counter moves into this routine's caller's place.
 ### :param n: The count.
@@ -64,7 +64,7 @@ routine describe(m: S64?) -> S64
 
 routine start() -> None
     a: S64? = 7
-    b: Optional[S64] = None()
+    b: Optional[S64] = none
     c: Optional[S64]
     Console.show("{describe(a)} {describe(b)} {describe(c)} {a.is_present()} {c.is_absent()}")
     # S64 is aligned to 8 bytes on most targets and to 4 on 32-bit x86 Linux, and the flag takes one alignment step.

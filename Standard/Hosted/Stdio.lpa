@@ -204,7 +204,7 @@ needs TSource obeys RawReader
                     continue
                 me.unread()
                 break
-            is None => return None()
+            is None => return none
 
     # length bytes of the word are known
     loop with length: U64 = 1
@@ -420,7 +420,7 @@ needs TSource obeys RawReader
             drop text
             if any
                 return trim_cr(steal rest)
-            return None()
+            return none
         from: U64 = me.start.peek()
         end: U64 = me.end.peek()
         buffered: @Byte = me.bytes.getview().to[@Byte]()
@@ -519,7 +519,7 @@ needs TSource obeys RawReader
                 text.append(chunk: single, n: 1, manager)
                 break
             is None =>
-                return None()
+                return none
 
     # The rest of the word, up to the next white space (put back) or the end of the input.
     loop

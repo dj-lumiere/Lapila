@@ -133,7 +133,7 @@ infallible routine @CrashSink.write_bytes(data: @Byte, count: U64) -> None
 ### :param text: The message.
 ### :returns: The new value.
 infallible common routine CrashMessage.of_text(text: @[Byte]) -> Me
-    return Me(text, error: Addr.zero(), writer: None(), failure: 0)
+    return Me(text, error: Addr.zero(), writer: none, failure: 0)
 
 ### Writes the message to `out`: the text, or the crashable's message.
 ### :param out: The sink the message goes to.
@@ -217,7 +217,7 @@ infallible common routine Crash.report_with(report: Callable[(@[Byte], @CrashMes
 infallible common routine Crash.reporter() -> Callable[(@[Byte], @CrashMessage, @SourceLocation), None]?
     at: Addr = CRASH_SLOT.report.peek()
     if not (CRASH_SLOT.set.peek() == CRASH_SLOT_SET) or at.is_hollow()
-        return None()
+        return none
     held: Callable[(@[Byte], @CrashMessage, @SourceLocation), None] = bitcast(at)
     return held
 

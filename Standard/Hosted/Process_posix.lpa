@@ -189,7 +189,7 @@ secret record Prepared
 ### :returns: The empty {Prepared}.
 @target(os: ("linux", "macos"))
 secret common routine Prepared.empty() -> Me
-    return Me(argv: None(), argc: 0, envp: None(), own_first: 0, own_count: 0, directory: None())
+    return Me(argv: none, argc: 0, envp: none, own_first: 0, own_count: 0, directory: none)
 
 ### `text` with a NUL after it, in memory from `manager`.
 ### :param text: The bytes to copy.
@@ -200,7 +200,7 @@ secret routine c_string(text: @[Byte], manager: @MemoryManager) -> @Byte?
     n: U64 = text.count()
     p_at: Addr = allocate[Byte](count: n + 1, manager)
     if p_at.is_hollow()
-        return None()
+        return none
     p: @Byte = p_at.to[@Byte]()
     p.copy(src: text.data, count: n)
     p.stride(n).poke(0x00)
@@ -216,7 +216,7 @@ secret routine env_entry(v: EnvVar, manager: @MemoryManager) -> @Byte?
     m: U64 = v.value.count()
     p_at: Addr = allocate[Byte](count: n + m + 2, manager)
     if p_at.is_hollow()
-        return None()
+        return none
     p: @Byte = p_at.to[@Byte]()
     p.copy(src: v.name.data, count: n)
     p.stride(n).poke(Byte('='))
@@ -272,7 +272,7 @@ secret routine @Prepared.make(program: @[Byte], args: @[@[Byte]], options: Proce
             return false
         argv.stride(i).poke(s)
         me.argc.poke(i + 1)
-    argv.stride(arg_count + 1).poke(None())
+    argv.stride(arg_count + 1).poke(none)
     when options.directory
         is @[Byte] as d =>
             directory: @Byte? = c_string(text: d, manager)
@@ -306,7 +306,7 @@ secret routine @Prepared.make(program: @[Byte], args: @[@[Byte]], options: Proce
             me.own_count.poke(j)
             return false
         envp.stride(first.load() + j).poke(e)
-    envp.stride(first.load() + options.env_count).poke(None())
+    envp.stride(first.load() + options.env_count).poke(none)
     me.own_first.poke(first.load())
     me.own_count.poke(options.env_count)
     return true
@@ -733,7 +733,7 @@ secret routine reap(pid: CInt) -> Optional[ExitStatus]
         if rc2 < 0 and errno() == 4
             continue
         if rc2 < 0
-            return None()
+            return none
         s: CInt = status.load()
         low: CInt = s & 0x7F
         # WIFEXITED, else WIFSIGNALED (0x7F is a stop, which waitpid without WUNTRACED doesn't report)
@@ -756,13 +756,13 @@ secret routine env_var(name: @[Byte], manager: @MemoryManager) -> Optional[Borro
     key: &Items[Byte, 256]
 
     if (name.count() >= 256) or name.has("\0")
-        return None()
+        return none
     key.getview().to[@Byte]().copy(src: name.data, count: name.count())
     key_end: @Byte = key.getview().to[@Byte]().stride(name.count())
     key_end.poke(0x00)
     value_or_none: @Byte? = c_getenv(key.getview().to[@Byte]().to[CStrView]())
     if value_or_none.is_absent()
-        return None()
+        return none
     value: @Byte = value_or_none.unwrap()
     n: U64 = value.to[CStrView]().count()
     when check BorrowedSlice[Byte].construct(count: n.max(1), manager: manager)
@@ -770,4 +770,4 @@ secret routine env_var(name: @[Byte], manager: @MemoryManager) -> Optional[Borro
             text.data.peek().copy(src: value, count: n)
             text.keep_first(n)
             return text
-        is OutOfMemoryError => return None()
+        is OutOfMemoryError => return none

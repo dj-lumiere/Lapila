@@ -237,7 +237,7 @@ needs U64 BITS
 routine @Bits[BITS].next_true(after: U64) -> Optional[U64]
 needs U64 BITS
     if after >= BITS
-        return None()
+        return none
     return bit_find(data: me.data(), bits: BITS, from: after + 1, value: true)
 
 ### The position of the first `false` bit of a Bits value.
@@ -273,7 +273,7 @@ needs U64 BITS
 routine @Bits[BITS].next_false(after: U64) -> Optional[U64]
 needs U64 BITS
     if after >= BITS
-        return None()
+        return none
     return bit_find(data: me.data(), bits: BITS, from: after + 1, value: false)
 
 # -- combining --------------------------------------------------------------------

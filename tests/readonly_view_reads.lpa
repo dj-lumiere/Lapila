@@ -12,7 +12,7 @@ entity Node
 ### :param value: Its value.
 ### :returns: The node.
 common routine Node.construct(value: S64) -> Me
-    return Me(value, next: None())
+    return Me(value, next: none)
 
 ### The node's value, read through a %Node.
 ### :returns: The value.

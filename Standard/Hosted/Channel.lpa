@@ -265,7 +265,7 @@ routine @ChannelCore[T].transmit_if_room(value: T) -> T?
         drop held
         return steal value
     me.push(value: steal value)
-    return None()
+    return none
 
 ### Takes the oldest value, waiting while there is none.
 ### :returns: The value, `ChannelClosedError`, or `CancelRequested`.

@@ -316,21 +316,21 @@ infallible routine failure_trace(seq: U32) -> @FailureTrace?
     table: @FailureTable = FAILURES
 
     if seq == 0
-        return None()
+        return none
     for i in 0 til FAILURE_TRACES
         entry: @FailureTrace = table.entries.getview().to[@FailureTrace]().stride(i)
         if entry.seq.peek() == seq
             return entry
         continue
     then
-        return None()
+        return none
 
 ### No failure's trace: this build keeps none.
 ### :param seq: Unused.
 ### :returns: None.
 @trace("off")
 infallible routine failure_trace(seq: U32) -> @FailureTrace?
-    return None()
+    return none
 
 ### Writes where failure `seq` was made, and where each failure it wraps was, most recent frame first: what the report
 ### of a failure nothing received adds after the crash trace. Nothing for 0 (an untraced build).
@@ -495,7 +495,7 @@ infallible routine fault_pc() -> Addr
 @noinline
 @trace("stack")
 infallible routine trace_depth() -> U64
-    copy: TraceCopy = (skip: 0, want: 0, out: None())
+    copy: TraceCopy = (skip: 0, want: 0, out: none)
     return trace_walk(start: walk_start(), fault_pc: FAULT_PC.load(), copy, early: false)
 
 ### A frame of the running flow's trace, counting from the innermost: 0 is the routine that crashed, or that called

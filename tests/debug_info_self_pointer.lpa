@@ -5,7 +5,7 @@
 
 import Hosted
 
-global FIRST: &Node <- (prev: None())
+global FIRST: &Node <- (prev: none)
 global SECOND: &Node <- (prev: FIRST)
 global TOP: &@Node <- SECOND
 
@@ -30,7 +30,7 @@ routine depth(node: @Node) -> S64
         return count.load()
 
 routine start() -> None
-    odd: &Odd <- Odd(next: None())
+    odd: &Odd <- Odd(next: none)
     even: &Even <- Even(next: odd)
 
     linked: Bool = even.next.peek().is_present()

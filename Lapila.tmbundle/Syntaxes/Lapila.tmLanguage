@@ -503,7 +503,7 @@
                     <key>name</key>
                     <string>constant.language.lpa</string>
                     <key>match</key>
-                    <string>(?&lt;![#\w`.])(true|false)\b</string>
+                    <string>(?&lt;![#\w`.])(true|false|none)\b</string>
                 </dict>
                 <dict>
                     <key>name</key>

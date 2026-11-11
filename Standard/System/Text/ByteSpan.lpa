@@ -223,7 +223,7 @@ routine @[Byte].find(needle: Me) -> Optional[U64]
         r: Optional[U64] = 0
         return r
     if nlen > slen
-        r: Optional[U64] = None()
+        r: Optional[U64] = none
         return r
     last: U64 = slen - nlen
 
@@ -242,7 +242,7 @@ routine @[Byte].find(needle: Me) -> Optional[U64]
 
         continue with i: i + 1
     then
-        r: Optional[U64] = None()
+        r: Optional[U64] = none
         return r
 
 ### The byte index of the first match of `needle`.

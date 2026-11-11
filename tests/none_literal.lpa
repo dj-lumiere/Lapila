@@ -1,0 +1,70 @@
+# `none` is the one value of the type None: a binding, a return, an argument, a field, a when arm's value, an `@T?`,
+# a `Callable?`, an `Optional[T]` in a generic routine, and a `T?` of a flags type all take it.
+
+import Hosted
+
+### What is true of a cell.
+flags CellMarks
+    ### The cell holds a mine.
+    MINE
+    ### The cell carries a flag.
+    FLAGGED
+
+### A cell that may have a note.
+record Note
+    ### The note's number, if it has one.
+    number: S64?
+
+### The first even number of `xs`.
+### :param xs: The numbers.
+### :returns: The first even one, `none` when there is none.
+routine first_even(xs: @[S64]) -> S64?
+    for i in 0 til xs.count()
+        if xs[i] % 2 == 0
+            return xs[i]
+    return none
+
+### Describes a number that may be missing.
+### :param n: The number, if any.
+### :returns: The text for it.
+routine describe(n: S64?) -> @[Byte]
+    when n
+        is None => return "missing"
+        else => nothing
+    return "present"
+
+### The value `x`, or none.
+### :typeparam T: The type of the value.
+### :param x: The value.
+### :param keep: Whether to keep it.
+### :returns: `x` when kept, else `none`.
+routine kept[T](x: T, keep: Bool) -> T?
+    if keep
+        return x
+    return none
+
+routine start() -> None
+    a: S64? = none
+    Console.show("binding: {describe(a)}")
+    Console.show("argument: {describe(none)}")
+    Console.show("return: {describe(first_even([1, 3, 5]))}, {describe(first_even([1, 4]))}")
+    note: Note = Note(number: none)
+    Console.show("field: {describe(note.number)}")
+    big: Bool = false
+    b: S64? = when
+        big => 10
+        else => none
+    Console.show("when arm: {describe(b)}")
+    Console.show("generic: {describe(kept[S64](x: 1, keep: false))}, {describe(kept[S64](x: 1, keep: true))}")
+    p: @S64? = none
+    Console.show("pointer: {p.is_absent()}")
+    hook: Callable[(), None]? = none
+    Console.show("callable: {hook.is_absent()}")
+    marks: CellMarks? = none
+    when marks
+        is None => Console.show("flags optional: none")
+        is CellMarks as m => Console.show("flags optional: {m}")
+    empty: CellMarks = none
+    Console.show("flags: {empty}, {empty == none}")
+    Console.show("shown: {a}, diagnosed: {a.diagnose()}")
+    return

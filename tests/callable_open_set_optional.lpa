@@ -30,6 +30,6 @@ routine show_hook(hook: Hook) -> None
 ### Runs the example.
 routine start() -> None
     show_hook(keep(thrice.to[Callable]()))
-    show_hook(keep(None()))
+    show_hook(keep(none))
     show_hook(Hook(action: thrice.to[Callable]()))
     return

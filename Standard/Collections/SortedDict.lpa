@@ -49,7 +49,7 @@ routine @SortedDictNode[TKey, TValue].destruct() -> None
 ### :param manager: The memory manager the dict stores and later frees its memory with.
 ### :returns: A new empty SortedDict.
 common routine SortedDict[TKey, TValue].construct(manager: @MemoryManager) -> Me
-    return Me(root: None(), count: 0, manager: manager)
+    return Me(root: none, count: 0, manager: manager)
 
 ### A SortedDict of the values of an Items, drawing its storage from `manager`. The array is taken over: its values go
 ### into the sorted dict, entity values too, each a key and its value (a later key equal to an earlier one replaces its value).
@@ -149,7 +149,7 @@ routine @SortedDictNode[TKey, TValue].find_index(key: @TKey) -> U64
 secret routine @SortedDict[TKey, TValue].find_spot(key: @TKey) -> Optional[SortedDictSpot[TKey, TValue]]
     root_or_none: @SortedDictNode[TKey, TValue]? = me.root.peek()
     if root_or_none.is_absent()
-        return None()
+        return none
 
     root: @SortedDictNode[TKey, TValue] = root_or_none.unwrap()
     loop with node: @SortedDictNode[TKey, TValue] = root
@@ -159,7 +159,7 @@ secret routine @SortedDict[TKey, TValue].find_spot(key: @TKey) -> Optional[Sorte
             if key.compare(node.keys.getslot(i)) == 0
                 return SortedDictSpot[TKey, TValue](node: node, index: i)
         if node.leaf.peek()
-            return None()
+            return none
         continue with node: node.children[i]
 
 ### Reads the value stored under the key at `key`, read through its place.
@@ -749,7 +749,7 @@ routine @SortedDict[TKey, TValue].remove(key: @TKey) -> Bool
         if root_count == 0
             if root.leaf.peek()
                 deallocate[SortedDictNode[TKey, TValue]](data: root, manager)
-                me.root.poke(None())
+                me.root.poke(none)
                 return true
             new_root: @SortedDictNode[TKey, TValue] = root.children[0]
             deallocate[SortedDictNode[TKey, TValue]](data: root, manager)
@@ -798,7 +798,7 @@ routine @SortedDict[TKey, TValue].destruct() -> None
             manager: @MemoryManager = me.manager.peek()
             root.free_recursive(manager)
         is None => nothing
-    me.root.poke(None())
+    me.root.poke(none)
     me.count.poke(0)
     return
 

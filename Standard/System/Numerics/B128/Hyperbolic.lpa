@@ -146,7 +146,7 @@ secret routine cm_hyper_quick(a: B128, kind: HyperKind) -> Optional[U128]
     one: CmFrac = CmFrac(frac: CM_FRAC_TOP, exponent: 1)
 
     if u >= CM_EXP_E_OVERFLOW
-        return None()
+        return none
     when kind
         HyperKind.SINH =>
             # (m + m / (m + 1)) / 2 with m = e^a - 1 below 1/2

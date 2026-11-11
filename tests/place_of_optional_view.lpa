@@ -16,6 +16,6 @@ routine start() -> None
     report()
     SEEN.store(VALUE)
     report()
-    SEEN.store(None())
+    SEEN.store(none)
     report()
     return

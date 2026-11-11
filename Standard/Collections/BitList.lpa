@@ -235,7 +235,7 @@ routine @BitList.first_true() -> Optional[U64]
 routine @BitList.next_true(after: U64) -> Optional[U64]
     count: U64 = me.count.peek()
     if after >= count
-        return None()
+        return none
     return bit_find(data: me.storage.data.peek(), bits: count, from: after + 1, value: true)
 
 ### The position of the first `false` bit.
@@ -251,7 +251,7 @@ routine @BitList.first_false() -> Optional[U64]
 routine @BitList.next_false(after: U64) -> Optional[U64]
     count: U64 = me.count.peek()
     if after >= count
-        return None()
+        return none
     return bit_find(data: me.storage.data.peek(), bits: count, from: after + 1, value: false)
 
 # -- combining --------------------------------------------------------------------

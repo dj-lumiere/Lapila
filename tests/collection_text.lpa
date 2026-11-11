@@ -53,7 +53,7 @@ routine start() -> None
     Console.show("")
 
     index: &SortedDict[S64, Optional[S64]] <- .construct(manager)
-    index[2] = None()
+    index[2] = none
     index[1] = 10
     index.diagnose_into(Console.output())
     Console.show("")

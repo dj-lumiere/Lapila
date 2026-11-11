@@ -735,7 +735,7 @@ routine cm_b64_log_ratio_fast(x: B64, base: B64) -> Optional[B64]
     right: B64 = q_hi +! (q_lo +! width)
     if left == right
         return left
-    return None()
+    return none
 
 ### The accurate path of log: log x as a dint with about 126 bits of accuracy, for a positive finite x other than 1.
 ### :param x: The argument.

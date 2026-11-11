@@ -33,12 +33,12 @@ routine start() -> None
     # An address and a U64, with at most the padding that aligns the U64.
     fits: Bool = sizeof[Addr]() + sizeof[U64]() <= stamp_size <= 2 * sizeof[U64]()
     Console.show("sizes: {fits} {sizeof[Stamped[Node]?]() == stamp_size}")
-    last: Stamped[Node] = pool.add(Node.construct(value: 3, next: None()))
+    last: Stamped[Node] = pool.add(Node.construct(value: 3, next: none))
     first: Stamped[Node] = pool.add(Node.construct(value: 1, next: last))
-    none: Stamped[Node]? = None()
+    missing: Stamped[Node]? = none
     some: Stamped[Node]? = first
-    Console.show("describe: {describe(none)} {describe(some)} {describe(first.fetch().next.peek())}")
-    Console.show("absent: {none.is_absent()} {some.is_absent()} {first.fetch().next.peek().is_absent()} {last.fetch().next.peek().is_absent()}")
+    Console.show("describe: {describe(missing)} {describe(some)} {describe(first.fetch().next.peek())}")
+    Console.show("absent: {missing.is_absent()} {some.is_absent()} {first.fetch().next.peek().is_absent()} {last.fetch().next.peek().is_absent()}")
     Console.show("same: {some.unwrap() === first}")
     via_try: S64 = when try some.unwrap().fetch()
         is @Node as n => n.value.peek()

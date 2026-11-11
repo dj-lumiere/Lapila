@@ -374,7 +374,7 @@ secret routine find_slots(program: Program, input: PatternInput, from: U64,
 
     if find_match(search: Search(program, input), from, slots: slots.getslice(), manager)
         return slots
-    return None()
+    return none
 
 ### Whether the whole text matches the pattern.
 ### :param text: The text, UTF-8.
@@ -404,7 +404,7 @@ routine @TextPattern.find(text: @[Byte], manager: @MemoryManager) -> Optional[Te
     when find_slots(program, input: PatternInput.of_utf8(text), from: 0, manager)
         is BorrowedSlice[U64] as slots => return TextMatch.construct(source: text,
             slots: steal slots, program: me.program.getslice())
-        is None => return None()
+        is None => return none
 
 ### The leftmost place the pattern matches in the bytes.
 ### :param bytes: The bytes.
@@ -415,7 +415,7 @@ routine @BytesPattern.find(bytes: @[Byte], manager: @MemoryManager) -> Optional[
     when find_slots(program, input: PatternInput.of_bytes(bytes), from: 0, manager)
         is BorrowedSlice[U64] as slots => return BytesMatch.construct(source: bytes,
             slots: steal slots, program: me.program.getslice())
-        is None => return None()
+        is None => return none
 
 ### Where the search after a match goes on: its end, or one character further when it matched nothing.
 ### :param input: The input.

@@ -10,6 +10,6 @@ variant Label
     None
 
 routine start() -> None
-    l: Label = None()
+    l: Label = none
     order: S32 = l.compare(l)
     return

@@ -47,7 +47,7 @@ routine @SortedListNode[T].destruct() -> None
 ### :param manager: The memory manager the list stores and later frees its memory with.
 ### :returns: A new empty SortedList.
 common routine SortedList[T].construct(manager: @MemoryManager) -> Me
-    return Me(root: None(), count: 0, manager: manager)
+    return Me(root: none, count: 0, manager: manager)
 
 ### A SortedList of the values of an Items, drawing its storage from `manager`. The array is taken over: its values go
 ### into the sorted list, entity values too.
@@ -640,7 +640,7 @@ routine @SortedList[T].remove(order: U64) -> T
             root_count: U64 = root.count.peek()
             if root_count == 0
                 deallocate[SortedListNode[T]](data: root, manager)
-                me.root.poke(None())
+                me.root.poke(none)
                 return steal value
             return steal value
         root_count: U64 = root.count.peek()
@@ -678,7 +678,7 @@ routine @SortedList[T].destruct() -> None
             manager: @MemoryManager = me.manager.peek()
             root.free_recursive(manager)
         is None => nothing
-    me.root.poke(None())
+    me.root.poke(none)
     me.count.poke(0)
     return
 

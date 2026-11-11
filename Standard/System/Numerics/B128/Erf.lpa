@@ -304,12 +304,12 @@ routine b128_erfc(x: B128, exact: Bool) -> B128
     bits: U128 = x.bits()
     is_nan: Bool = b128_is_nan_bits(bits)
     zero: Bool = b128_is_zero_bits(bits)
-    none: Bool = x >= B128_ERFC_ZERO  # +inf too
+    underflows: Bool = x >= B128_ERFC_ZERO  # +inf too
     # -inf too
     when
         is_nan => return b128_of(b128_quiet(bits))
         zero => return b128_of(B128_ONE)
-        none => return b128_of(0)
+        underflows => return b128_of(0)
         x <= B128_ERFC_TWO.neg() => return b128_of(0x40000000000000000000000000000000)
         else =>
             if not exact

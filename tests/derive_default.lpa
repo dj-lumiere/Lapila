@@ -60,11 +60,11 @@ routine start() -> None
     Console.show("{s} vs {t}: eq {s.eq(t)}, compare {s.compare(t)}, {e.compare(t)}")
 
     l: Label = Point(x: 1, y: 2)
-    none: Label = None()
-    Console.show("label {l}, eq {l.eq(none)}")
+    blank: Label = none
+    Console.show("label {l}, eq {l.eq(blank)}")
 
     a: Loose = 1
-    b: Loose = None()
+    b: Loose = none
     Console.show("loose eq {a.eq(b)}")
 
     manager: @MemoryManager = HEAP

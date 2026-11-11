@@ -21,7 +21,7 @@ routine start() -> None
     xs: &List[Counter?] <- .construct(HEAP)
     one: &Counter <- Counter.construct(n: 1) from HEAP
     xs.add_last(steal one)
-    xs.add_last(None())
+    xs.add_last(none)
     two: &Counter <- Counter.construct(n: 2) from HEAP
     xs.add_last(steal two)
     for i in 0 til xs.count()

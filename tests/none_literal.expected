@@ -1,0 +1,11 @@
+binding: missing
+argument: missing
+return: missing, present
+field: missing
+when arm: missing
+generic: missing, present
+pointer: true
+callable: true
+flags optional: none
+flags: none, true
+shown: None, diagnosed: none

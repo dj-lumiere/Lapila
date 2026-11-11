@@ -281,10 +281,10 @@ secret routine cm_acos_if_safe(y: B128, s: CmAsinW3, k: S64, eps: U64) -> Option
     low_words: U128 = cm_asin_join(hi: s.w1, lo: s.w0)
     tail: U128 = low_words +% eps.to[U128]() & msk
     unsafe: Bool = tail < (eps *% 2).to[U128]()
-    none: Optional[B128] = None()
+    missing: Optional[B128] = none
     some: Optional[B128] = y
     r: Optional[B128] = when
-        unsafe => none
+        unsafe => missing
         else => some
     return r
 

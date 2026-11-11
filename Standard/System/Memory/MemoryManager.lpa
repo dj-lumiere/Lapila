@@ -166,8 +166,8 @@ needs TWriter obeys Writer
 secret common routine MemoryManager.construct(borrow_fn: Callable[(Addr, U64, U64), Addr],
     reborrow_fn: Callable[(Addr, Addr, U64, U64), Addr], give_back_fn: Callable[(Addr, Addr), None],
     state: Addr) -> Me
-    return Me(borrow_fn, reborrow_fn, give_back_fn, reserve_fn: None(), commit_fn: None(),
-        release_fn: None(), protect_fn: None(), state)
+    return Me(borrow_fn, reborrow_fn, give_back_fn, reserve_fn: none, commit_fn: none,
+        release_fn: none, protect_fn: none, state)
 
 ### The table of a manager that hands out blocks and doesn't handle pages: routines that call its `borrow`, `reborrow`,
 ### and `give_back`, with its address. Its page routines are empty (`has_pages()` and `has_protect()` are false).
@@ -177,8 +177,8 @@ routine @T.to[MemoryManager]() -> MemoryManager
 needs AnyType T, T obeys MemoryManageable
     return MemoryManager(borrow_fn: forward_borrow[T].to[Callable](),
         reborrow_fn: forward_reborrow[T].to[Callable](),
-        give_back_fn: forward_give_back[T].to[Callable](), reserve_fn: None(), commit_fn: None(),
-        release_fn: None(), protect_fn: None(), state: me)
+        give_back_fn: forward_give_back[T].to[Callable](), reserve_fn: none, commit_fn: none,
+        release_fn: none, protect_fn: none, state: me)
 
 ### The table of a manager that handles pages: routines that call its `borrow`, `reborrow`, `give_back`, `reserve`, `commit`,
 ### `release`, and `protect`, with its address (`has_pages()` and `has_protect()` are true).
@@ -302,7 +302,7 @@ routine @MemoryManager.reborrow(at: Addr, size: U64, align: U64) -> Addr
     reborrow_fn: Callable[(Addr, Addr, U64, U64), Addr] = me.reborrow_fn.peek()
     note_call_place(caller_location())
     block_start: Addr = reborrow_fn.call(me.state.peek(), at, size, align)
-    note_call_place(None())
+    note_call_place(none)
     return block_start
 
 ### Gives the block at `at` back to this manager, the one it was borrowed from. The manager takes it back.
@@ -313,7 +313,7 @@ routine @MemoryManager.give_back(at: Addr) -> None
     give_back_fn: Callable[(Addr, Addr), None] = me.give_back_fn.peek()
     note_call_place(caller_location())
     give_back_fn.call(me.state.peek(), at)
-    note_call_place(None())
+    note_call_place(none)
     return
 
 ### Whether this manager handles pages: `reserve`, `commit`, and `release` are there.
@@ -482,7 +482,7 @@ routine memory_manager_call_place() -> @SourceLocation?
 ### :returns: None.
 @heap_check("off")
 routine memory_manager_call_place() -> @SourceLocation?
-    return None()
+    return none
 
 ### Copies `count` values of `T` from `src` to the values at this address, as raw bytes (`llvm.memcpy`):
 ### `dst.copy(src, count)`.

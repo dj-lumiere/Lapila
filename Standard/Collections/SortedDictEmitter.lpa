@@ -77,7 +77,7 @@ secret routine @SortedDictEmitter[TKey, TValue].next_spot() -> Optional[SortedDi
             return SortedDictSpot[TKey, TValue](node: node, index: index)
         me.depth.poke(level)
         continue
-    return None()
+    return none
 
 ### Yields the next element and advances the emitter.
 ### :returns: The next element, smallest key first.

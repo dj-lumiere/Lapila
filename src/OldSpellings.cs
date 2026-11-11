@@ -86,6 +86,9 @@ public static class OldSpellings
     private static string Message(string name, string now) =>
         $"'{name}' is not defined: {now}";
 
+    /// The message for `None()`, the old spelling of the one value of the type None.
+    public const string NoneCall = "the one value of the type None is written none: x: S64? = none, return none";
+
     /// `OutOfRange` is `OUT_OF_RANGE`, `Log10` is `LOG10`, `HTTPServer` is `HTTP_SERVER`.
     public static string Screaming(string name)
     {

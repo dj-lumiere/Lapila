@@ -124,8 +124,8 @@ routine cm_atan2_reduce(xa: U128, ya: U128) -> CmAtanReduction
         b_subnormal =>
             # subnormal b (or a too): normalize the significand, extending the exponent below 1
             b_zero: Bool = b == 0
-            none: CmAtanReduction = CmAtanReduction(zero: true, g: g, isct: 0, dn: 0, kn: 0, kd0: 0,
-                kd1: 0, kd2: 0)
+            zero_reduction: CmAtanReduction = CmAtanReduction(zero: true, g: g, isct: 0, dn: 0,
+                kn: 0, kd0: 0, kd1: 0, kd2: 0)
             lz_b: U128 = b.leading_zeros()
             ns_b: S64 = lz_b.to[S64]() - 15
             b_norm: U128 = b << ns_b.max(0).to[U128]()
@@ -141,7 +141,7 @@ routine cm_atan2_reduce(xa: U128, ya: U128) -> CmAtanReduction
                 a_subnormal => 1 - ns_a
                 else => xn
             if b_zero
-                return none
+                return zero_reduction
             becomes (a_used, b_norm, xn_used, yn2)
         else => (a, b, xn, yn)
     a_raw, b_raw, a_exponent, yn2 = values2

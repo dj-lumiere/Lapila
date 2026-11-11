@@ -1,5 +1,5 @@
 year 2026, month 10, day 20
-hour: None()
+hour: none
 matches: true false
 either_longer: "category" at 0..8
 either_shorter: "cat" at 0..3

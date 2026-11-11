@@ -28,9 +28,9 @@ routine start() -> None
     sum: S64 = apply(f: (a, b) => a + b, a: 2, b: 3)
     far: S64 = apply(f: (a, b) => a * b + OFFSET, a: 2, b: 3)
     double: Callable[(S64,), S64] = (x) => x * 2
-    none: Callable[(), S64] = () => 7
+    seven: Callable[(), S64] = () => 7
     say: Callable[(S64,), None] = (n) => Console.show("said {n}")
     total: B64 = fold(f: (acc, n) => acc + n.to[B64](), start: 0.5)
-    Console.show("{sum} {far} {double.call(21)} {none.call()} {total}")
+    Console.show("{sum} {far} {double.call(21)} {seven.call()} {total}")
     say.call(5)
     return

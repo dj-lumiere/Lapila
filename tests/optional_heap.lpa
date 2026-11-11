@@ -18,7 +18,7 @@ routine counter_for(n: S64) -> Counter?
     if n > 0
         made: &Counter <- .construct(n)
         return made
-    return None()
+    return none
 
 routine start() -> None
     kept: &Optional[Counter] <- counter_for(1) from HEAP

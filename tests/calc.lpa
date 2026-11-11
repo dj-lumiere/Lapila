@@ -224,7 +224,7 @@ routine operator_at(kind: TokenKind, level: S64) -> Optional[ExprKind]
                 TokenKind.MINUS =>
                     becomes ExprKind.SUB
                 else =>
-                    r: Optional[ExprKind] = None()
+                    r: Optional[ExprKind] = none
                     return r
         else =>
             when kind
@@ -235,7 +235,7 @@ routine operator_at(kind: TokenKind, level: S64) -> Optional[ExprKind]
                 TokenKind.PERCENT =>
                     becomes ExprKind.REM
                 else =>
-                    r: Optional[ExprKind] = None()
+                    r: Optional[ExprKind] = none
                     return r
     r: Optional[ExprKind] = op
     return r
