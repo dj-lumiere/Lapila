@@ -253,7 +253,22 @@ public sealed partial class Compiler
     private IEnumerable<string> StaleDispatch() =>
         _dispatchSeen.Where(kv => _instances.TryGetValue(kv.Key, out var inst) && PlaceThroughParam(inst) is { } place
                                   && ReachKey(Reaching(place)) != kv.Value)
-            .Select(kv => kv.Key).ToList();
+            .Select(kv => kv.Key)
+            .Concat(_endsSeen.Where(kv => _instances.ContainsKey(kv.Key) && kv.Value.Values.Any(seen => ReachKey(Reaching(seen.Place)) != seen.Reach))
+                .Select(kv => kv.Key))
+            .Distinct().ToList();
+
+    /// The routine instances that call a routine that ends entities of a pool of a protocol (`remove`, the pool's end), by
+    /// symbol: for each place, the reaching types the instance was built with. What such a call ends grows with the types
+    /// that reach, so the instance is built again when more reach (FinishThrows).
+    private readonly Dictionary<string, Dictionary<string, (RecordType Place, string Reach)>> _endsSeen = [];
+
+    /// The instance `symbol` calls a routine that ends entities of a pool of the protocol of `place`.
+    public void NoteEndsThroughPlace(string symbol, RecordType place)
+    {
+        if (!_endsSeen.TryGetValue(symbol, out var seen)) _endsSeen[symbol] = seen = [];
+        seen[place.Key] = (place, ReachKey(Reaching(place)));
+    }
 
     private static RecordType? PlaceThroughParam(Instance inst) =>
         inst.Params.Count > 0 ? Dispatch.PlaceThrough(inst.Params[0]) : null;

@@ -424,8 +424,8 @@ routine start() -> None
     same in every module of one program including the library base, and a build error when two types of one build share it.
   - **`StampManager[T]` and `Stamped[T]`** (System/Memory, `StampManager.lpa`): the way to link entities that must see when one ends.
     A pool is an entity the program holds, as a local or in a field: `pool: &StampManager[Node] <- .construct(manager: HEAP)` (the
-    manager gives the pool's slot store). A pool keeps one type (a record too): several types take a pool each, or one pool of a
-    variant type (`StampManager[Shape]`). `s = pool.add(e)` hands an entity over and gives its `Stamped[E]` (the
+    manager gives the pool's slot store). A pool keeps one type (a record too): several types take a pool each, one pool of a
+    variant type (`StampManager[Shape]`), or one pool of a protocol (`StampManager[Enemy]`, below). `s = pool.add(e)` hands an entity over and gives its `Stamped[E]` (the
     entity's address and its slot's generation, a U64: 16 bytes on a 64-bit target), copied for free, kept in a
     field, a global, a list. `s.fetch()` gives the entity's `@E`, or throws `StaleStampError` once it was removed or its pool ended: a
     bare `fetch()` crashes, `try s.fetch()` gives None. There is no empty `Stamped[E]` (its fields are `secret`): a link that may be
@@ -453,6 +453,18 @@ routine start() -> None
     fetch of a stale stamp always reads a generation that isn't the stamp's. A type aligned past 16 bytes is refused. Several pools
     live at once. The pool needs an operating system (its pages come from the C library). Revare's entity stores are the same
     `SlotStore` (Ingrid exports its routines under C names).
+    **A pool of a protocol**, `StampManager[Enemy]` for `protocol Enemy[T]`, keeps entities (or records) of every type that obeys
+    it. Its `T` is the protocol's stored value (Stored values of a protocol, below), so `add` takes a `&T` handed over with
+    `steal` (`s: &Slime <- .construct(hp: 3) from HEAP`, `a: Stamped[Enemy] = pool.add(steal s)`), and a Slime and a Goblin
+    go into one pool. A slot keeps the stored value (type id, address, manager: the same size for every type), and the entity
+    stays in the memory of its `&T`. So a pool of a protocol has one slot store, like any pool, and a `fetch` follows the slot to
+    the entity. `fetch()` gives an `@Enemy` (`%Enemy` through a view that only reads), whose calls branch on the type id;
+    `when s.fetch()` with `is Goblin as g` takes the type out (`%Goblin` when the fetch only reads). `remove` ends the entity with
+    its own type's `destruct`, then gives its memory back to its manager. What a remove ends grows with the types: the views of
+    the protocol, those of every type the build puts into the protocol's places, and those each of their destructs may remove
+    (`LP-S1118`), so a routine that removes is built again when another type reaches the protocol. A `Stamped[Goblin]` of
+    another pool is no `Stamped[Enemy]` (a build error by type). A STACK `&T` given to `add` stays where it is: the pool keeps
+    the frame's slot, so a pool that outlives the frame is `LP-S600` / `LP-S601`.
     **A pool belongs to one thread** (the rule is a global's, `LP-S448`): a routine that work runs on another thread, or one it calls,
     that makes a pool, `add`s, `fetch`es, `remove`s or ends one is a build error that names the call chain
     (`t.put_work(work) runs 'work' on another thread, and it uses the pool (work calls read, line 19: s.fetch()): a StampManager belongs
@@ -1277,7 +1289,8 @@ routine start() -> None
   original keeps its holder in the routine: returning it, a global, or anything outliving the frame is `LP-S600` /
   `LP-S601`, and a STACK place of a loop body doesn't go into a stored value (`LP-S1102`). A stored value given to `x: @T`
   under `needs T obeys Enemy` builds that routine for the stored value (its calls branch), which works when every routine
-  of the protocol takes `@Me`. The standard library's protocols have no stored form yet.
+  of the protocol takes `@Me`. A `StampManager[Enemy]` is a pool of stored values (`StampManager[T]` above). The standard
+  library's protocols have no stored form yet.
 - A bare literal doesn't bind a type parameter: bind it first (`n: S64 = 42`), then pass `n`.
 - **Overloads.** Routines of one name under one parent (a module's free routines, one type's routines) may differ in
   their parameter types (`me` included); a call picks the one whose parameter types are its arguments' types

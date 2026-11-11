@@ -139,8 +139,10 @@ public sealed partial class FunctionGen
                 Expr view = new MethodCallExpr(new MethodCallExpr(subject, Dispatch.AddressRoutine, [], [], binding.Pos) { Builder = true }, "to",
                     [new TypeRef("PointedCell", [new TypeArgType(new TypeRef("$stored", [], binding.Pos) { Known = t })], binding.Pos)], [], binding.Pos);
                 bool entity = Entities.Holds(t);
+                // Over a value reached through a view that only reads, an entity's `t` only reads too (`%T`).
                 var written = entity
-                    ? new TypeRef("PointedCell", [new TypeArgType(new TypeRef("$stored", [], binding.Pos) { Known = t })], binding.Pos)
+                    ? new TypeRef("PointedCell", [new TypeArgType(new TypeRef(t.Name, [], binding.Pos) { Known = t })], binding.Pos)
+                        { ReadOnly = ReadOnlyView(subject) }
                     : new TypeRef("$stored", [], binding.Pos) { Known = t };
                 if (!entity) view = new MethodCallExpr(view, "peek", [], [], binding.Pos);
                 body.Add(new BindStmt(binding.Name, written, view, binding.Pos));

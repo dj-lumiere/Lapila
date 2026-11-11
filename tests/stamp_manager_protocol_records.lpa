@@ -1,0 +1,61 @@
+### A StampManager[Shape] keeps records of two types: each value goes into a &T of its own first, add takes it with steal,
+### fetch gives an @Shape whose calls go to the record's own type, and a when through a %Shape (a stamp read through a
+### view that only reads) takes a copy of the record out.
+import Hosted
+
+record Square
+obeys Shape[Square]
+    side: S64
+
+record Circle
+obeys Shape[Circle]
+    radius: S64
+
+### Something that keeps a link to a shape.
+entity Board
+    pinned: Stamped[Shape]
+
+### A shape with an area.
+### :typeparam T: The shape type.
+protocol Shape[T]
+    ### The area.
+    ### :returns: The area.
+    routine Me.area() -> S64
+
+### A board.
+### :param pinned: The shape on it.
+### :returns: The board.
+common routine Board.construct(pinned: Stamped[Shape]) -> Me
+    return Me(pinned: pinned)
+
+### The area.
+### :returns: The area.
+routine Square.area() -> S64
+    return me.side * me.side
+
+### The area, roughly.
+### :returns: The area.
+routine Circle.area() -> S64
+    return 3 * me.radius * me.radius
+
+### Says what the board's shape is, reading the board only.
+### :param board: The board.
+routine describe(board: %Board) -> None
+    when board.pinned.peek().fetch()
+        is Square as s => Console.show("a square of side {s.side}")
+        is Circle as c => Console.show("a circle of radius {c.radius}")
+        else => Console.show("another shape")
+    return
+
+routine start() -> None
+    shapes: &StampManager[Shape] <- .construct(manager: HEAP)
+    square: &Square <- Square(side: 3) from HEAP
+    first: Stamped[Shape] = shapes.add(steal square)
+    circle: &Circle <- Circle(radius: 2)
+    second: Stamped[Shape] = shapes.add(steal circle)
+    Console.show("areas {first.fetch().area()} and {second.fetch().area()}")
+    board: &Board <- .construct(pinned: second)
+    describe(board)
+    shapes.remove(first)
+    Console.show("{shapes.count()} left")
+    return

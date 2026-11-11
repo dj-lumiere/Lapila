@@ -1,0 +1,57 @@
+### A StampManager[Enemy] removes only a Stamped[Enemy]: a Stamped[Goblin] of a pool of goblins is a build error, though a Goblin obeys Enemy.
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+    name: @[Byte]
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :param name: The goblin's name.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64, name: @[Byte]) -> Me
+    return Me(hp: hp, name: name)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.name.peek()} runs")
+    return
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.name.peek()} ends")
+    return
+
+routine start() -> None
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    goblins: &StampManager[Goblin] <- .construct(manager: HEAP)
+    g: Stamped[Goblin] = goblins.add(Goblin.construct(hp: 1, name: "Rak"))
+    pool.remove(g)
+    return

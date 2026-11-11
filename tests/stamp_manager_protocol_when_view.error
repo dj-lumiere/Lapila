@@ -1,0 +1,1 @@
+'g', a view fetched through a stamp, is used after pool.remove(...) on line 58, which may end the entity it was fetched from: fetch it again after line 58, or use it before

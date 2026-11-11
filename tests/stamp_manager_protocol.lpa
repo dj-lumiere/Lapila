@@ -1,0 +1,111 @@
+### A StampManager[Enemy] keeps entities of two types that obey Enemy: add takes each &T with steal and gives a
+### Stamped[Enemy], fetch gives an @Enemy whose calls go to the entity's own type, a when takes the type back out, a
+### Stamped[Enemy]? may be missing, remove ends one entity with its own destruct, and the pool's end ends the rest.
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+    name: @[Byte]
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+    ### The hit points left.
+    ### :returns: The hit points.
+    routine @Me.health() -> S64
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### The slime's hit points.
+### :returns: The hit points.
+routine @Slime.health() -> S64
+    return me.hp.peek()
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :param name: The goblin's name.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64, name: @[Byte]) -> Me
+    return Me(hp: hp, name: name)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.name.peek()} runs")
+    return
+
+### The goblin's hit points.
+### :returns: The hit points.
+routine @Goblin.health() -> S64
+    return me.hp.peek()
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.name.peek()} ends")
+    return
+
+### Says what an enemy is.
+### :param e: The enemy.
+routine describe(e: @Enemy) -> None
+    when e
+        is Slime as s => Console.show("a slime with {s.hp.peek()} hp")
+        is Goblin as g => Console.show("a goblin called {g.name.peek()}")
+        else => Console.show("something else")
+    return
+
+### Shows what a link leads to.
+### :param link: The link, which may be missing.
+routine show_target(link: Stamped[Enemy]?) -> None
+    when link
+        is Stamped[Enemy] as s => Console.show("a link to an enemy with {s.fetch().health()} hp")
+        is None => Console.show("a link to nothing")
+    return
+
+routine start() -> None
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    slime: &Slime <- .construct(hp: 3) from HEAP
+    a: Stamped[Enemy] = pool.add(steal slime)
+    goblin: &Goblin <- .construct(hp: 12, name: "Nim") from HEAP
+    b: Stamped[Enemy] = pool.add(steal goblin)
+    other: &Slime <- .construct(hp: 7)
+    c: Stamped[Enemy] = pool.add(steal other)
+    a.fetch().update()
+    b.fetch().update()
+    describe(b.fetch())
+    describe(c.fetch())
+    when b.fetch()
+        is Goblin as g => Console.show("the goblin has {g.hp.peek()} hp")
+        else => Console.show("not a goblin")
+    missing: Stamped[Enemy]? = none
+    show_target(missing)
+    show_target(b)
+    Console.show("same: {a === a}, other: {a === b}")
+    pool.remove(a)
+    Console.show("removed, {pool.count()} left")
+    when try a.fetch()
+        is None => Console.show("the slime is gone")
+        else => Console.show("the slime is still there")
+    drop pool
+    Console.show("the end")
+    return

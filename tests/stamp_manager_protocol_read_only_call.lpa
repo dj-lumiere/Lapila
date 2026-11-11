@@ -1,0 +1,76 @@
+### Through a %Holder, a fetched Stamped[Enemy] gives a %Enemy, and a when takes a %Goblin out of it: a routine that takes @Goblin is a build error.
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+    name: @[Byte]
+
+### Holds a link to an enemy.
+entity Holder
+    link: Stamped[Enemy]
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :param name: The goblin's name.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64, name: @[Byte]) -> Me
+    return Me(hp: hp, name: name)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.name.peek()} runs")
+    return
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.name.peek()} ends")
+    return
+
+### A holder.
+### :param link: The link.
+### :returns: The holder.
+common routine Holder.construct(link: Stamped[Enemy]) -> Me
+    return Me(link: link)
+
+### Looks at what the holder links to.
+### :param h: The holder, read only.
+routine look(h: %Holder) -> None
+    when h.link.peek().fetch()
+        is Goblin as g => g.update()
+        else => Console.show("other")
+    return
+
+routine start() -> None
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    goblin: &Goblin <- .construct(hp: 12, name: "Nim") from HEAP
+    b: Stamped[Enemy] = pool.add(steal goblin)
+    h: &Holder <- .construct(link: b)
+    look(h)
+    return

@@ -1,0 +1,36 @@
+### A StampManager[Enemy] keeps a STACK &Goblin handed to add where the goblin is, so returning the pool from that frame is a build error.
+import Hosted
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A goblin.
+### :param hp: The hit points.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.hp.peek()} runs")
+    return
+
+### Makes a pool with a goblin from STACK.
+### :returns: The pool.
+routine make() -> StampManager[Enemy]
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    goblin: &Goblin <- .construct(hp: 1)
+    kept: Stamped[Enemy] = pool.add(steal goblin)
+    kept.fetch().update()
+    return steal pool
+
+routine start() -> None
+    pool: &StampManager[Enemy] <- make()
+    return

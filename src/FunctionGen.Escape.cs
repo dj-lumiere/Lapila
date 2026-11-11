@@ -30,6 +30,12 @@ public sealed partial class FunctionGen
         _escape = _c.Escapes.Begin(_inst, reports: EscapeOn);
         foreach (var (moved, _) in DeclaredReshapes(_decl))
             if (_decl.Params.FindIndex(p => p.Name == moved) is >= 0 and var index) _escape.Reshapes.Add(index);
+        // A library routine marked `@keeps(value)` keeps that parameter in memory `me` reaches, through an address the
+        // check doesn't follow (a StampManager's slot): the store is recorded as if written through `me`.
+        if (_decl.IsLibrary && _decl.AnnotationNamed("keeps") is { } keeps && _decl.Params is [{ Name: "me" }, ..])
+            foreach (var arg in keeps.Args)
+                if (_decl.Params.FindIndex(p => p.Name == (arg.Value ?? arg.Key)) is > 0 and var kept)
+                    _escape.Stores.Add(new EscapeCheck.StoreFact([new ParamAtom(0, 1)], [new ParamAtom(kept, 0)], keeps.Pos, _decl.Params[kept].Name));
         for (int i = 0; i < _decl.Params.Count && i < _inst.Params.Count; i++)
         {
             var p = _decl.Params[i];

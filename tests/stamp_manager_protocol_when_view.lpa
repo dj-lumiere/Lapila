@@ -1,0 +1,61 @@
+### A view a when takes out of a fetched Stamped[Enemy] (is Goblin as g) ends with a remove of the pool, like the fetched view.
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+    name: @[Byte]
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :param name: The goblin's name.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64, name: @[Byte]) -> Me
+    return Me(hp: hp, name: name)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.name.peek()} runs")
+    return
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.name.peek()} ends")
+    return
+
+routine start() -> None
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    goblin: &Goblin <- .construct(hp: 12, name: "Nim") from HEAP
+    b: Stamped[Enemy] = pool.add(steal goblin)
+    when b.fetch()
+        is Goblin as g =>
+            pool.remove(b)
+            Console.show("{g.name.peek()}")
+        else => nothing
+    return

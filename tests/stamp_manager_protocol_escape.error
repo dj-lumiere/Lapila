@@ -1,0 +1,1 @@
+this returns a value that reaches the frame slot 'goblin' (claimed at line 29), which is gone once 'make' returns: return the values themselves, or let the caller pass the memory in (a span or a slot) and write there

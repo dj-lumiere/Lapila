@@ -148,7 +148,7 @@ public sealed partial class FunctionGen
             {
                 FieldExpr f => f.Base,
                 IndexExpr ix => ix.Base,
-                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" or "peek" } m => m.Receiver,
+                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" or "peek" or Dispatch.AddressRoutine } m => m.Receiver,
                 // A stamp read through the view gives the entity's view, read only too.
                 MethodCallExpr { Name: "fetch", Args.Count: 0 } m when IsStampFetch(m) => m.Receiver,
                 _ => null,
@@ -179,21 +179,33 @@ public sealed partial class FunctionGen
 
     /// What a call of the standard library's `@ends_stamped` routines may end: `remove` from a `StampManager[T]`, and
     /// ending one, ends the entities of T and what T's destruct may end.
+    /// A pool of a protocol (`StampManager[Enemy]`) keeps entities of every type the build puts into the protocol's places,
+    /// so it ends the views of the protocol, of each of those types, and what each of their destructs may end.
     private List<(string Param, string? Field)> StampedEnds(CallPlan plan)
     {
         if (plan.Env.Get("T") is not { } t) return [(StampedEntities, null)];
-        var ends = new List<(string, string?)> { (StampRoot(t.Key), null) };
-        if (t is not RecordType owner) return ends;
-        foreach (var destruct in _c.MethodCandidates(t, "destruct", _env.File, plan.Pos, anyModule: true)
-                     .Where(d => d.Owner?.Name == owner.Decl.Name && d.Module == owner.Decl.Module && d.Blocks is not null))
+        var ends = new List<(string, string?)>();
+        List<DType> kept = [t];
+        if (Dispatch.PlaceOf(t) is { } place)
         {
-            try
+            if (!_c.Prechecking) _c.NoteEndsThroughPlace(_inst.Symbol, place);
+            kept.AddRange(_c.Reaching(place));
+        }
+        foreach (var held in kept)
+        {
+            if (!ends.Contains((StampRoot(held.Key), null))) ends.Add((StampRoot(held.Key), null));
+            if (held is not RecordType owner) continue;
+            foreach (var destruct in _c.MethodCandidates(held, "destruct", _env.File, plan.Pos, anyModule: true)
+                         .Where(d => d.Owner?.Name == owner.Decl.Name && d.Module == owner.Decl.Module && d.Blocks is not null))
             {
-                var env = BindOwner(destruct, t, plan.Pos);
-                foreach (var (moved, _) in _c.ReshapesOf(_c.Signature(destruct, env), _inst, plan.Pos))
-                    if (moved.StartsWith(StampedEntities, StringComparison.Ordinal) && !ends.Contains((moved, null))) ends.Add((moved, null));
+                try
+                {
+                    var env = BindOwner(destruct, held, plan.Pos);
+                    foreach (var (moved, _) in _c.ReshapesOf(_c.Signature(destruct, env), _inst, plan.Pos))
+                        if (moved.StartsWith(StampedEntities, StringComparison.Ordinal) && !ends.Contains((moved, null))) ends.Add((moved, null));
+                }
+                catch (CompileError) { ends.Add((StampedEntities, null)); }
             }
-            catch (CompileError) { ends.Add((StampedEntities, null)); }
         }
         return ends;
     }
@@ -209,7 +221,7 @@ public sealed partial class FunctionGen
             {
                 FieldExpr f => f.Base,
                 IndexExpr ix => ix.Base,
-                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" } m => m.Receiver,
+                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" or Dispatch.AddressRoutine } m => m.Receiver,
                 _ => null,
             };
         }
@@ -229,7 +241,7 @@ public sealed partial class FunctionGen
             {
                 FieldExpr f => f.Base,
                 IndexExpr ix => ix.Base,
-                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" } m => m.Receiver,
+                MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getslice" or "to" or "getview" or Dispatch.AddressRoutine } m => m.Receiver,
                 _ => null,
             };
         }
@@ -326,8 +338,9 @@ public sealed partial class FunctionGen
                     + "to write (m: @T <- p.get_exclusive_access(), or @[T] for a run of values)")
                 : Err(Li.ReadOnlyViewWrite, plan.Pos, $"{Spelled(written)} {ReachedAs(written)} {why}, and '{(plan.Decl.IsLibrary ? plan.Decl.Name : plan.Decl.DisplayName)}' writes through it: "
                     + "take a @T (or a @[T]) to write");
-        // A view that only reads, handed where a routine of the program takes a view that writes.
-        if (!plan.Decl.IsLibrary)
+        // A view that only reads, handed where a routine of the program takes a view that writes. The address a `when`
+        // over a stored value of a protocol reads is the builder's, and the view it makes reads only there.
+        if (!plan.Decl.IsLibrary && plan.Decl.Name != Dispatch.AddressRoutine)
         {
             int at = plan.Receiver is null ? 0 : 1;
             var handed = plan.Receiver is { } receiver ? plan.Args.Prepend(receiver).ToList() : plan.Args;

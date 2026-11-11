@@ -1,0 +1,100 @@
+### Removing a Stamped[Enemy] ends the views of what each type that reaches Enemy may end in its destruct: a Leader ends a Slime of another pool, so a view of that Slime ends too, through a routine that removes.
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+    name: @[Byte]
+
+### A goblin that takes a slime with it when it ends.
+entity Leader
+obeys Enemy[Leader]
+    slimes: @StampManager[Slime]
+    follower: Stamped[Slime]
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :param name: The goblin's name.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64, name: @[Byte]) -> Me
+    return Me(hp: hp, name: name)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    Console.show("goblin {me.name.peek()} runs")
+    return
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.name.peek()} ends")
+    return
+
+### A leader.
+### :param slimes: The slimes' pool.
+### :param follower: Its slime.
+### :returns: The leader.
+common routine Leader.construct(slimes: @StampManager[Slime], follower: Stamped[Slime]) -> Me
+    return Me(slimes: slimes, follower: follower)
+
+### Moves the leader.
+routine @Leader.update() -> None
+    Console.show("leader moves")
+    return
+
+### Ends the leader and its follower.
+routine @Leader.destruct() -> None
+    me.slimes.peek().remove(me.follower.peek())
+    return
+
+### Removes an enemy.
+### :param pool: The pool.
+### :param s: The enemy's stamp.
+routine kill(pool: @StampManager[Enemy], s: Stamped[Enemy]) -> None
+    pool.remove(s)
+    return
+
+### Adds a leader.
+### :param pool: The pool.
+### :param slimes: The slimes.
+### :param follower: The follower.
+### :returns: The stamp.
+routine add_leader(pool: @StampManager[Enemy], slimes: @StampManager[Slime],
+    follower: Stamped[Slime]) -> Stamped[Enemy]
+    leader: &Leader <- .construct(slimes: slimes, follower: follower) from HEAP
+    return pool.add(steal leader)
+
+routine start() -> None
+    slimes: &StampManager[Slime] <- .construct(manager: HEAP)
+    follower: Stamped[Slime] = slimes.add(Slime.construct(hp: 2))
+    pool: &StampManager[Enemy] <- .construct(manager: HEAP)
+    a: Stamped[Enemy] = add_leader(pool, slimes, follower)
+    seen: @Slime = follower.fetch()
+    kill(pool, a)
+    Console.show("{seen.hp.peek()}")
+    return

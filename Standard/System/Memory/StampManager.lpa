@@ -1,7 +1,9 @@
 # Lapila stdlib: the StampManager and Stamped, entities of one type linked by stamps
 #
 # A `StampManager[T]` keeps entities of the one type T (a variant type keeps several kinds, `StampManager[Shape]`, and
-# several types take several pools). `pool.add(steal node)` hands an entity over, which the pool keeps in a slot, and
+# several types take several pools). A pool of a protocol, `StampManager[Enemy]`, keeps entities of every type that
+# obeys it: its T is the protocol's stored value (the type id, the address of a `&T` and its manager), so each slot
+# has the same size, the entity stays in its `&T`'s memory, and `pool.add(steal s)` takes a `&Slime` or a `&Goblin`. `pool.add(steal node)` hands an entity over, which the pool keeps in a slot, and
 # gives a `Stamped[T]`: the entity's address and its slot's generation, a U64 (16 bytes on a 64-bit target).
 # `stamp.fetch()` gives the entity's `@T`, or throws `StaleStampError` once the entity has ended.
 # `pool.remove(stamp)` ends the entity right there: the slot's generation goes up, so every later `fetch` of any stamp
@@ -81,6 +83,7 @@ needs TWriter obeys Writer
 ### :returns: The stamp.
 ### :throws: Throws `OutOfMemoryError` when there is no memory for a new page of slots. Throws `UnacceptedValueError` for a type aligned past 16 bytes. The value ends before the failure goes on.
 @uses_pool
+@keeps(value)
 @target(os: not "none")
 routine @StampManager[T].add(value: T) -> Stamped[T]
     if alignof[T]() > 16
