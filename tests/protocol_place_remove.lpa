@@ -1,0 +1,54 @@
+### A call through a stored value ends the views of every type a routine it may reach removes.
+import Hosted
+
+entity Slime
+    hp: S64
+
+record Hunter
+obeys Actor[Hunter]
+    power: S64
+
+record Idler
+obeys Actor[Idler]
+    naps: S64
+
+### Something that acts.
+### :typeparam T: The type.
+protocol Actor[T]
+    ### Acts on the pool.
+    ### :param pool: the pool.
+    ### :param target: a stamp.
+    routine @Me.act(pool: @StampManager[Slime], target: Stamped[Slime]) -> None
+
+### Makes one.
+### :param hp: hp.
+### :returns: it.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Removes the target.
+### :param pool: the pool.
+### :param target: a stamp.
+routine @Hunter.act(pool: @StampManager[Slime], target: Stamped[Slime]) -> None
+    pool.remove(target)
+    return
+
+### Does nothing.
+### :param pool: the pool.
+### :param target: a stamp.
+routine @Idler.act(pool: @StampManager[Slime], target: Stamped[Slime]) -> None
+    return
+
+routine start() -> None
+    pool: &StampManager[Slime] <- .construct(manager: HEAP)
+    one: &Slime <- .construct(hp: 3)
+    s: Stamped[Slime] = pool.add(steal one)
+    h: &Hunter <- Hunter(power: 1)
+    actor: &Actor <- steal h
+    i: &Idler <- Idler(naps: 2)
+    other: &Actor <- steal i
+    v: @Slime = s.fetch()
+    other.act(pool, s)
+    actor.act(pool, s)
+    Console.show("{v.hp.peek()}")
+    return

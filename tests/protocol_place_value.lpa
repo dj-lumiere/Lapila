@@ -1,0 +1,38 @@
+### A record value goes into a protocol place only as a &T of its own.
+import Collections
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+record Bat
+obeys Enemy[Bat]
+    wings: S64
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Moves the bat.
+routine @Bat.update() -> None
+    Console.show("bat {me.wings.peek()} flaps")
+    return
+
+routine start() -> None
+    enemies: &List[Enemy] <- .construct(HEAP)
+    enemies.add_last(Bat(wings: 2))
+    return

@@ -1,0 +1,1 @@
+'first', a view of 'enemies', is used after drop enemies on line 40 ended it, so it reads memory that is gone: use 'first' before line 40, or take the view again from memory that is still there

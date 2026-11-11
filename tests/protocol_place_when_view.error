@@ -1,0 +1,1 @@
+'found', a view of 'enemies', is used after drop enemies on line 41 ended it, so it reads memory that is gone: use 'found' before line 41, or take the view again from memory that is still there

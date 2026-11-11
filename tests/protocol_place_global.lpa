@@ -1,0 +1,41 @@
+### A protocol place in a global outlives the frame, so it holds no STACK original.
+import Collections
+import Hosted
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+record Bat
+obeys Enemy[Bat]
+    wings: S64
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Moves the bat.
+routine @Bat.update() -> None
+    Console.show("bat {me.wings.peek()} flaps")
+    return
+
+lateinit global KEPT: &List[Enemy]
+
+routine start() -> None
+    KEPT <- .construct(HEAP)
+    s: &Slime <- .construct(hp: 3)
+    KEPT.add_last(steal s)
+    return

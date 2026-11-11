@@ -114,6 +114,7 @@ public static class Li
     public static readonly Code VariantBranchNotFound = S(353, "VariantBranchNotFound", "A type that is not a branch of the variant.", shared: true);
     public static readonly Code ChoiceMemberNotFound = S(355, "ChoiceMemberNotFound", "A name that is not a member of the choice.", shared: true);
     public static readonly Code NonExhaustiveWhen = S(356, "NonExhaustiveWhen", "A when that does not cover every case.", shared: true);
+    public static readonly Code StoredArmType = S(357, "StoredArmType", "A when arm over a stored protocol value that names a type not obeying the protocol.", shared: true);
     public static readonly Code DuplicateWhenCase = S(358, "DuplicateWhenCase", "Two arms or cases of a when that match the same thing.", shared: true);
     public static readonly Code SecretField = S(403, "SecretField", "A field that is secret to its module, used from outside.", shared: true);
     public static readonly Code DuplicateRoutine = S(406, "DuplicateRoutine", "Two routines with the same signature, or one symbol defined twice.", shared: true);
@@ -142,6 +143,7 @@ public static class Li
     public static readonly Code ProtocolRoutineMismatch = S(703, "ProtocolRoutineMismatch", "A routine that does not have the shape the protocol wants.", shared: true);
     public static readonly Code ThrowsListIncomplete = S(712, "ThrowsListIncomplete", "A @throws list that leaves out a crashable the routine can throw.", shared: true);
     public static readonly Code ThrowsListMisplaced = S(713, "ThrowsListMisplaced", "A @throws list on a routine that cannot fail, or naming a type that is not a crashable.", shared: true);
+    public static readonly Code StoredSelfCall = S(715, "StoredSelfCall", "A routine of a protocol that takes or gives Me, called on a stored value of the protocol.", shared: true);
     public static readonly Code UnreachableStatement = S(786, "UnreachableStatement", "A line that can never run.", shared: true);
     public static readonly Code ExternalSignatureMismatch = S(811, "ExternalSignatureMismatch", "Two declarations of one C symbol that disagree.", shared: true);
     public static readonly Code RecursiveValueRecord = S(960, "RecursiveValueRecord", "A type that contains itself by value.", shared: true);

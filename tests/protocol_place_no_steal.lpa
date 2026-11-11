@@ -1,0 +1,39 @@
+### A &T goes into a protocol place handed over with steal.
+import Collections
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+record Bat
+obeys Enemy[Bat]
+    wings: S64
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    Console.show("slime {me.hp.peek()} oozes")
+    return
+
+### Moves the bat.
+routine @Bat.update() -> None
+    Console.show("bat {me.wings.peek()} flaps")
+    return
+
+routine start() -> None
+    enemies: &List[Enemy] <- .construct(HEAP)
+    s: &Slime <- .construct(hp: 3)
+    enemies.add_last(s)
+    return

@@ -1,0 +1,1 @@
+an Enemy place may hold any type that obeys Enemy, so a when over one needs an else arm

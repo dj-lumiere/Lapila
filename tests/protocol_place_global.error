@@ -1,0 +1,1 @@
+KEPT.add_last(steal s) hands 'List[T].add_last' a value that reaches the frame slot 's' (claimed at line 39), and 'List[T].add_last' keeps what its 'value' reaches where it outlives the call (line 140: data.stride(count).poke(steal value)). That memory is gone once 'start' returns: keep the values themselves there, or keep the view in 'start' only

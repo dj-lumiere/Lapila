@@ -66,7 +66,7 @@ public sealed partial class FunctionGen
     {
         if (_escape is null) return [];
         if (into is not null && !CarriesAddress(into)) return [];
-        if (InferQuiet(e) is { } t && !CarriesAddress(t)) return [];
+        if (InferQuiet(e) is { } t && !CarriesAddress(t) && !(e is StealExpr && _stackIntoPlace.Contains(e.Pos))) return [];
         return AtomsOf(e);
     }
 
@@ -111,6 +111,9 @@ public sealed partial class FunctionGen
                 return [span];
             }
             // `steal x` of a slot (an entity's, memory's, or a claimed one) and `steal place` give what the slot holds.
+            // A STACK place handed into a protocol's place: the stored value is the slot's address.
+            case StealExpr s when s.Value is ValueRef inPlace && _stackIntoPlace.Contains(s.Pos):
+                return AtomsOf(inPlace);
             case StealExpr s when s.Value is ValueRef stolen:
                 return InferQuiet(stolen) is PtrType stolenSlot && (Tracked(stolenSlot) && !PointerOfTypeParam(stolen.Name)
                                                              || _claimedSlots.Contains(stolen.Name))
@@ -291,6 +294,8 @@ public sealed partial class FunctionGen
         PtrType => true,
         RecordType { Decl: { Name: "PointedSlice" } } span when span.Decl.Module == Compiler.SystemModule => true,
         RecordType { Decl: { Name: "BorrowedSlice" or "BorrowedCell" or "SourceLocation" } } held when held.Decl.Module == Compiler.SystemModule => false,
+        // A protocol's stored value holds a `&T`, which the group check follows like a BorrowedCell.
+        RecordType stored when Dispatch.IsPlaceDecl(stored.Decl) => false,
         ArrayType a => HoldsView(a.Elem, seen),
         VectorType v => HoldsView(v.Elem, seen),
         RecordType r when seen.Add(r.Key) => _c.Fields(r).Any(f => HoldsView(f.Type, seen)),

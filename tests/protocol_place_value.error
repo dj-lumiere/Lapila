@@ -1,0 +1,1 @@
+an Enemy place holds a &Bat handed over with steal, and this is a Bat value: put the value in a place of its own (v: &Bat <- value, from a manager or STACK) and hand that over, steal v

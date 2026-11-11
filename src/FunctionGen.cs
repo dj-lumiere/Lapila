@@ -838,7 +838,7 @@ public sealed partial class FunctionGen
         // An Addr is a number: the builder doesn't follow a view made from one (`a.to[@T]()`), whose writer answers for
         // the memory, nor the Addr made from a view (`v.to[Addr]()`).
         MethodCallExpr { Name: "to" } m when IsAddr(InferQuiet(m.Receiver)) || IsAddr(InferQuiet(m)) => null,
-        MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getview" or "to" or "getslice" or "peek" } m
+        MethodCallExpr { Name: "getslot" or "stride" or "offset" or "getview" or "to" or "getslice" or "peek" or Dispatch.AddressRoutine } m
             => RootName(m.Receiver),
         _ => null,
     };
@@ -1457,6 +1457,9 @@ public sealed partial class FunctionGen
         _decl = inst.Decl;
         _env = inst.Env;
         _out = output;
+        // A routine on a protocol's place entity takes its body from the types that reach the place now.
+        if (inst.Decl.AnnotationNamed(Dispatch.RoutineMark) is not null && !c.Prechecking)
+            _env = c.PrepareDispatch(inst, HandedOnByValue);
     }
 
     private CompileError Err(Code code, Pos pos, string msg) => new(code, pos, msg + InstantiationNote());
@@ -3256,6 +3259,8 @@ public sealed partial class FunctionGen
             if (!Compatible(narrowedVal.Type, expected)) throw Mismatch(e.Pos, expected, narrowedVal.Type.ToString() ?? "");
             return narrowedVal;
         }
+        // A `&T` handed into a protocol's place: the place holds its type id and its address.
+        if (IntoPlace(e, expected) is { } stored) return stored;
         if (!moving && CopiedEntity(e) is { } copied) throw Err(Li.EntityCopied, e.Pos, copied);
         // `None()` where an `E?` is kept (a `&E` of an entity): the hollow place, which holds nothing.
         if (e is CallExpr { Name: "None", Args.Count: 0 } or RecordLit { Fields.Count: 0 } && KeptOptional(new PtrType(expected)) is not null
@@ -3916,6 +3921,8 @@ public sealed partial class FunctionGen
     {
         // A value if or when widens each side on its own.
         if (e is IfExpr or WhenExpr) return null;
+        // A `&T` handed into an optional protocol place goes into its place branch.
+        if (vt.Leaves.FirstOrDefault(l => Dispatch.PlaceOf(l) is not null && IntoPlaceFits(e, l)) is { } storedBranch) return storedBranch;
         var actual = InferQuiet(e);
         if (actual is not null)
             return actual.Equals(vt) ? null : Widens(actual, vt) ? actual
@@ -4210,6 +4217,15 @@ public sealed partial class FunctionGen
 
     private void EmitWhen(WhenStmt w, ValueFrame? frame)
     {
+        if (StoredWhen(w, frame) is { } chain)
+        {
+            foreach (var line in chain)
+            {
+                if (_cur.Terminated) break;
+                EmitStmt(line);
+            }
+            return;
+        }
         w = WithImplicitElse(w, frame);
         // What an arm takes out of a view that only reads is read only too: a stamp peeked there fetches a %T.
         if (w.Value is { } observed && ReadOnlyReason(observed) is { } readOnly)
@@ -4646,7 +4662,9 @@ public sealed partial class FunctionGen
         if (Entities.Holds(branch))
         {
             // An Optional's value is the address of the E's place already.
-            string place = EmitTmp(vt.IsAddressed ? $"load ptr, ptr {slot}" : $"getelementptr inbounds {vt.Llvm}, ptr {slot}, i32 0, i32 2");
+            // A bare Optional (a protocol's stored value, None its zero type id) is the value itself.
+            string place = vt.IsAddressed ? EmitTmp($"load ptr, ptr {slot}") : vt.IsBare ? slot
+                : EmitTmp($"getelementptr inbounds {vt.Llvm}, ptr {slot}, i32 0, i32 2");
             Define(binding.Name, new Val(place, new PtrType(branch)), binding.Pos);
             if (MemOn)
             {
@@ -5785,6 +5803,11 @@ public sealed partial class FunctionGen
     private CallPlan? PlanCall(Expr e, DType? expected)
     {
         var plan = PlanCallInner(e, expected);
+        if (plan?.Decl.AnnotationNamed(Dispatch.RoutineMark) is { First: "self" }
+            && plan.Receiver is { } storedReceiver && Dispatch.PlaceThrough(InferQuiet(storedReceiver)) is { } stored)
+            throw Err(Li.StoredSelfCall, plan.Pos, $"'{plan.Decl.Name}' takes or gives Me, the value's own type, and a stored {stored.Name} may "
+                + $"hold any type that obeys {stored.Name}, so it can't be called on one: call it where the type is known, inside "
+                + $"when {new Printer().Expr(storedReceiver, 0)} (is T as t)");
         // `@unavailable("why")` keeps a standard library routine whose call is a build error on this target or board:
         // the routine says why it can't run there, and what the program needs for it.
         if (plan?.Decl.AnnotationNamed("unavailable") is { } unavailable)
@@ -6004,7 +6027,7 @@ public sealed partial class FunctionGen
                 {
                     // A value of a branch type goes into its variant, and memory lends its view: fits an exact
                     // overload beats.
-                    if (Widens(at, pt) || Lends(at, pt) || SlotsTemp(at, pt) || PresetViews(args[i], at, pt)) preferred = false;
+                    if (Widens(at, pt) || Lends(at, pt) || SlotsTemp(at, pt) || PresetViews(args[i], at, pt) || IntoPlaceFits(args[i], pt)) preferred = false;
                     else if (FailingCallable(r, i + first, at, pt, args[i].Pos) is { } failing)
                         env.Bind(Compiler.FailingParamKey(r.Params[i + first].Name), failing);
                     else if (!at.Equals(pt) && !(at is VoidType && Compiler.IsNoneRecord(pt)) && !FitsFailures(at, pt)

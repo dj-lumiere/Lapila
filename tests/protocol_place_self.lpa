@@ -1,0 +1,44 @@
+### A routine of the protocol that takes Me can't be called on a stored value, and a %T view calls the routines that take me as a value.
+import Hosted
+
+record Box
+obeys Sized[Box]
+    side: S64
+
+### Comparable shapes.
+### :typeparam T: The type.
+protocol Sized[T]
+    ### Whether it is bigger.
+    ### :param other: the other.
+    ### :returns: whether.
+    routine Me.bigger(other: Me) -> Bool
+
+    ### Its size.
+    ### :returns: it.
+    routine Me.size() -> S64
+
+### Whether it is bigger.
+### :param other: the other.
+### :returns: whether.
+routine Box.bigger(other: Me) -> Bool
+    return me.side > other.side
+
+### Its size.
+### :returns: it.
+routine Box.size() -> S64
+    return me.side
+
+### Reads it.
+### :param s: the value.
+routine read(s: %Sized) -> None
+    Console.show("{s.size()}")
+    return
+
+routine start() -> None
+    b: &Box <- Box(side: 2)
+    x: &Sized <- steal b
+    read(x)
+    c: &Box <- Box(side: 3)
+    y: &Sized <- steal c
+    Console.show("{x.bigger(y)}")
+    return

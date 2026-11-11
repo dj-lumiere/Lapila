@@ -323,6 +323,12 @@ S 653 MutationCategoryConflict
 S 654 AccessEnterWithoutToken
 S 655 NumberBuiltFromBits
 S 657 ViewedValueHoldsWayToChange
+S 658 ReferenceWrittenByName
+S 659 ReferenceVerbWritten
+S 660 AccessBlockNotNeeded
+S 661 RecordReferenceKept
+S 662 StealWithoutHolding
+S 663 ReferenceForHandOver
 S 700 ThrowNotCrashable
 S 701 ThrowRequiresRecordType
 S 702 MissingProtocolMemberRoutine

@@ -374,7 +374,7 @@ public sealed class VariantType(VariantDecl decl, List<DType> args, Func<Variant
 
     /// Whether this is an `Optional[E]`, a flagged Optional whose `T` holds an entity: one address, `ptr`, of the place the
     /// E lives in, null for None. The place is the frame of the routine whose call made the Optional.
-    public bool IsAddressed => IsFlagged && Entities.Holds(Leaves[0]);
+    public bool IsAddressed => IsFlagged && Entities.Holds(Leaves[0]) && Dispatch.PlaceOf(Leaves[0]) is null;
 
     /// Whether this is an Optional of an address that is never null itself, `@T?` or `Callable[...]?`: the address alone,
     /// `ptr`, null for None. A value of it is the T's own pointer, so it costs nothing over the T and passes to C as one.

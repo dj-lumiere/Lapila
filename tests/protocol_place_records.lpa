@@ -1,0 +1,80 @@
+### Protocol places that hold records: a list mixing two record types, each value copied first and then handed over
+### as its own &T (from HEAP or STACK), a routine of the protocol that takes me as a value, and a bundle protocol
+### (Figure obeys Shape and Named) whose places call the routines of both.
+import Collections
+import Hosted
+
+record Square
+obeys Shape[Square], Named[Square]
+    side: S64
+
+record Circle
+obeys Shape[Circle], Named[Circle]
+    radius: S64
+
+### A shape with an area.
+### :typeparam T: The shape type.
+protocol Shape[T]
+    ### The area.
+    ### :returns: The area.
+    routine Me.area() -> S64
+
+### Something that can be named.
+### :typeparam T: The type.
+protocol Named[T]
+    ### Writes the name.
+    routine @Me.say() -> None
+
+### A shape with a name.
+### :typeparam T: The type.
+protocol Figure[T]
+obeys Shape[T], Named[T]
+
+### The area.
+### :returns: The area.
+routine Square.area() -> S64
+    return me.side * me.side
+
+### The area, roughly.
+### :returns: The area.
+routine Circle.area() -> S64
+    return 3 * me.radius * me.radius
+
+### Says it.
+routine @Square.say() -> None
+    Console.show("square {me.side.peek()}")
+    return
+
+### Says it.
+routine @Circle.say() -> None
+    Console.show("circle {me.radius.peek()}")
+    return
+
+### The total area.
+### :param shapes: The shapes.
+### :returns: The sum.
+routine total(shapes: @List[Shape]) -> S64
+    for i in 0 til shapes.count() with sum: S64 = 0
+        continue with sum: sum + shapes.getslot(i).area()
+    then
+        return sum
+
+routine start() -> None
+    shapes: &List[Shape] <- .construct(HEAP)
+    base: Square = Square(side: 2)
+    first: &Square <- base from HEAP
+    second: &Square <- base from HEAP
+    shapes.add_last(steal first)
+    shapes.add_last(steal second)
+    c: &Circle <- Circle(radius: 1)
+    shapes.add_last(steal c)
+    Console.show("total {total(shapes)}")
+    figures: &List[Figure] <- .construct(HEAP)
+    f: &Circle <- Circle(radius: 5) from HEAP
+    figures.add_last(steal f)
+    g: &Square <- Square(side: 3)
+    figures.add_last(steal g)
+    for i in 0 til figures.count()
+        figures.getslot(i).say()
+        Console.show("area {figures.getslot(i).area()}")
+    return

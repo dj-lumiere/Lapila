@@ -1,0 +1,1 @@
+'x' holds a stored Enemy, which is never copied: it holds a &T, and a &T gives its own memory back, so a copy would give it back twice. Hand it over with steal x, or take a view of it where it is, v: @Enemy = x

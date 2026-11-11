@@ -1,0 +1,1 @@
+'v', a view fetched through a stamp, is used after actor.act(...) on line 52, which may end the entity it was fetched from: fetch it again after line 52, or use it before

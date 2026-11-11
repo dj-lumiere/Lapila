@@ -1,0 +1,1 @@
+'s' is a place of this loop's frame, which every pass of the loop borrows again, so an Enemy place would keep a slot the next pass fills: borrow it from a manager, s: &Slime <- value from HEAP
