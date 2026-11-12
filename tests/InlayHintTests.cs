@@ -188,4 +188,104 @@ public class InlayHintTests
     {
         Assert.Equal(5, Hints(ImplicitSource).Count);
     }
+
+    private const string DispatchSource = """
+        import Hosted
+
+        entity Slime
+        obeys Enemy[Slime]
+            hp: S64
+
+        entity Goblin
+        obeys Enemy[Goblin]
+            hp: S64
+
+        ### Something with hit points.
+        ### :typeparam T: The enemy type.
+        protocol Enemy[T]
+            ### The hit points left.
+            ### :returns: The hit points.
+            routine @Me.health() -> S64
+
+        ### A slime.
+        ### :param hp: The hit points.
+        ### :returns: The slime.
+        common routine Slime.construct(hp: S64) -> Me
+            return Me(hp: hp)
+
+        ### A goblin.
+        ### :param hp: The hit points.
+        ### :returns: The goblin.
+        common routine Goblin.construct(hp: S64) -> Me
+            return Me(hp: hp)
+
+        ### The slime's hit points.
+        ### :returns: The hit points.
+        routine @Slime.health() -> S64
+            return me.hp.peek()
+
+        ### The goblin's hit points.
+        ### :returns: The hit points.
+        routine @Goblin.health() -> S64
+            return me.hp.peek()
+
+        ### Reads an enemy whose type is known while the program runs.
+        ### :param e: The enemy.
+        ### :returns: Its hit points.
+        routine read(e: @Enemy) -> S64
+            return e.health()
+
+        ### Reads an enemy whose type is known at buildtime.
+        ### :typeparam T: The enemy's type.
+        ### :param e: The enemy.
+        ### :returns: Its hit points.
+        routine read_built[T](e: @T) -> S64
+        needs T obeys Enemy
+            return e.health()
+
+        routine start() -> None
+            slime: &Slime <- .construct(hp: 3)
+            one: &Enemy <- steal slime
+            a: S64 = one.health()
+            b: S64 = read(one)
+            goblin: &Goblin <- .construct(hp: 5)
+            c: S64 = read_built(goblin)
+            Console.show("{a} {b} {c}")
+            return
+        """;
+
+    private static List<(int Line, int Col, string Tooltip)> DispatchHints()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "lapila-inlay-hints-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "enemies.lpa");
+        File.WriteAllText(file, DispatchSource);
+        try
+        {
+            return LanguageServer.DispatchHints(file, DispatchSource, Path.Combine(FindRoot(), "Standard"));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void CallsOnAStoredProtocolValueShowDispatchAfterTheRoutineName()
+    {
+        var at = DispatchHints().Select(h => (h.Line, h.Col)).ToList();
+
+        // A `&Enemy` place and a `@Enemy` parameter: the type is known while the program runs. A `needs T obeys Enemy`
+        // body is built for each type, so it gets no hint.
+        Assert.Equal([(44, 20), (57, 24)], at);
+    }
+
+    [Fact]
+    public void DispatchTooltipListsTheTypesThatReachTheProtocol()
+    {
+        string tooltip = DispatchHints()[0].Tooltip;
+
+        Assert.Contains("while the program runs", tooltip);
+        Assert.EndsWith("Types the places of Enemy hold in this build: Slime.", tooltip);
+    }
 }

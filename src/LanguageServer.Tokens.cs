@@ -278,6 +278,27 @@ public static partial class LanguageServer
         /// name, and the bracket to show there.
         public List<(int Line, int Col, string Label)> Hints { get; } = [];
 
+        /// The calls on a stored value of a protocol, whose routine is chosen by the value's type while the program runs:
+        /// the place right after the routine's name, and the tooltip naming the types that reach that protocol's places.
+        public List<(int Line, int Col, string Tooltip)> Dispatches { get; } = [];
+
+        /// Marks a call the builder made a dispatch routine call (a call on a stored value of a protocol). A call in a
+        /// generic body (`needs T obeys Enemy`) is chosen at buildtime and records nothing.
+        private void HintDispatch(Pos pos, string name)
+        {
+            if (analysis.Compiler.CallUses.GetValueOrDefault((pos, name))?.Decl is not { } used
+                || used.AnnotationNamed(Dispatch.RoutineMark) is not { First: not "destruct" }
+                || NameAt(pos, name) is not { } at)
+                return;
+            string protocol = used.Owner?.Name ?? "";
+            var types = analysis.Compiler.ReachingOf(used).Select(t => t.ToString().TrimStart('&')).Order(StringComparer.Ordinal).ToList();
+            string list = types.Count > 0
+                ? $"Types the places of {protocol} hold in this build: {string.Join(", ", types)}."
+                : $"No type goes into a place of {protocol} in this build.";
+            Dispatches.Add((at.Pos.Line, at.Pos.Col + at.Text.Length,
+                $"Calls the {name} of the stored value's type, which is known only while the program runs. {list}"));
+        }
+
         /// Hints `[A, B]` after the name at `pos` when the builder bound `parameters` there and the source wrote none.
         /// A generic routine's body is checked per instance and records nothing, so a parameter still standing for
         /// itself never gets here.
@@ -1201,6 +1222,7 @@ public static partial class LanguageServer
                         ?? (method.Name == "write" && method.Args is [StrLit] ? TemplateHover() : null));
                     if (method.Name == "write" && method.Args is [StrLit methodTemplate]) TemplateHoles(methodTemplate);
                     HintRoutine(method.Pos, method.Name, method.TypeArgs.Count > 0);
+                    HintDispatch(method.Pos, method.Name);
                     Labels(method.Pos, method.Name, method.ArgNames, "parameter");
                     foreach (var t in method.TypeArgs) Type(t);
                     foreach (var a in method.Args) Expr(a);

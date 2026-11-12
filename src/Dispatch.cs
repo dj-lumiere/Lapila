@@ -236,6 +236,14 @@ public sealed partial class Compiler
     /// The types that reach places of `place`.
     public List<DType> Reaching(RecordType place) => _reaching.GetValueOrDefault(place.Key) ?? [];
 
+    /// The types that reach the places a dispatch routine is built for, over every built instance of it: what the
+    /// language server lists for a call of it.
+    public List<DType> ReachingOf(RoutineDecl decl) =>
+        [.. _instances.Values.Where(i => ReferenceEquals(i.Decl, decl))
+            .Select(PlaceThroughParam).OfType<RecordType>()
+            .SelectMany(Reaching)
+            .DistinctBy(t => t.Key)];
+
     private static string ReachKey(List<DType> types) => string.Join("|", types.Select(t => t.Key));
 
     /// The protocol a place entity is for.

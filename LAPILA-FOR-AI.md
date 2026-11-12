@@ -1292,6 +1292,8 @@ routine start() -> None
   under `needs T obeys Enemy` builds that routine for the stored value (its calls branch), which works when every routine
   of the protocol takes `@Me`. A `StampManager[Enemy]` is a pool of stored values (`StampManager[T]` above). The standard
   library's protocols have no stored form yet.
+  The language server marks a call on a stored value with a gray `dispatch` inlay hint after the routine name, its
+  tooltip listing the types that reach places of that protocol in this build (none in a `needs T obeys` body).
 - A bare literal doesn't bind a type parameter: bind it first (`n: S64 = 42`), then pass `n`.
 - **Overloads.** Routines of one name under one parent (a module's free routines, one type's routines) may differ in
   their parameter types (`me` included); a call picks the one whose parameter types are its arguments' types

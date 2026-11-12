@@ -27,7 +27,9 @@ public static partial class LanguageServer
             return hints;
         }
 
-        foreach (var (line, col, label) in InferredArguments(tokens, analysis))
+        var classifier = new Classifier(tokens, analysis);
+        classifier.Run();
+        foreach (var (line, col, label) in classifier.Hints)
             hints.Add(new JsonObject
             {
                 ["position"] = new JsonObject { ["line"] = line - 1, ["character"] = col - 1 },
@@ -35,7 +37,29 @@ public static partial class LanguageServer
                 ["kind"] = 1,
                 ["paddingLeft"] = false,
             });
+        foreach (var (line, col, tooltip) in classifier.Dispatches)
+            hints.Add(new JsonObject
+            {
+                ["position"] = new JsonObject { ["line"] = line - 1, ["character"] = col - 1 },
+                ["label"] = DispatchLabel,
+                ["tooltip"] = tooltip,
+                ["paddingLeft"] = true,
+            });
         return hints;
+    }
+
+    /// The hint after a call on a stored value of a protocol: the routine that runs is the value's type's, chosen while
+    /// the program runs.
+    internal const string DispatchLabel = "dispatch";
+
+    /// The dispatch hints of a checked text (1-based place, tooltip). For the tests.
+    internal static List<(int Line, int Col, string Tooltip)> DispatchHints(string path, string text, string stdlib)
+    {
+        var (_, analysis) = Check(new Uri(Path.GetFullPath(path)).AbsoluteUri, text, () => stdlib);
+        if (analysis is null || Lex(analysis.Shown, text) is not { } tokens) return [];
+        var classifier = new Classifier(tokens, analysis);
+        classifier.Run();
+        return classifier.Dispatches;
     }
 
     /// The type arguments the builder inferred where the source wrote none, as `[Bool]` right after the routine's or the
