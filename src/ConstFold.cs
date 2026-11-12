@@ -208,6 +208,8 @@ public sealed partial class Compiler
             switch (e)
             {
                 case CallExpr none when Compiler.IsNoneValue(none):
+                    throw new CompileError(Li.RemovedSpelling, none.Pos, OldSpellings.FlagsNone(flags.Name));
+                case PresetRef { Owner: null, Path: null, Name: "empty" } when flags.Decl.Members.All(m => m.Name != "empty"):
                     return new ConstVal(flags, 0);
                 case PresetRef { Owner: null, Path: null } bare when flags.Decl.Members.FirstOrDefault(m => m.Name == bare.Name) is { Name: not null, Value: IntLit bit }:
                     return new ConstVal(flags, bit.Value);

@@ -3252,8 +3252,13 @@ public sealed partial class FunctionGen
         _moving = false;
         if (FlagsOf(expected) is { } flagsExpected && e is BinaryExpr { Op: "|" or "&" or "^" } bitwise)
             throw Err(Li.FlagsUse, bitwise.Pos, FlagsBitwise(bitwise.Op, flagsExpected));
-        // `none` where a flags value goes: the value with no member on.
-        if (FlagsOf(expected) is { } noneFlags && Compiler.IsNoneValue(e)) return IntConst(BigInteger.Zero, e.Pos, noneFlags);
+        // `none` where a flags value goes is the old spelling of `empty`.
+        if (FlagsOf(expected) is { } noneFlags && Compiler.IsNoneValue(e))
+            throw Err(Li.RemovedSpelling, e.Pos, OldSpellings.FlagsNone(noneFlags.Name));
+        // `empty` where a `CellMarks?` goes: the flags value with no member on, in the Optional.
+        if (expected is VariantType { IsOptional: true, Args: [var optionalArg] } emptyOptional && FlagsOf(optionalArg) is { } optionalFlags
+            && e is PresetRef { Owner: null, Path: null, Name: "empty" } emptyRef && ResolvePresetQuiet(emptyRef) is null)
+            return WrapInVariant(IntConst(BigInteger.Zero, e.Pos, optionalFlags), emptyOptional, e.Pos);
         e = AsStride(AsField(AsIndexed(_c.AsRecordLit(Desugar(e), _env))));
         if (e is FieldExpr narrowedField && NarrowedType(narrowedField) is { } narrowedType)
         {
@@ -5237,10 +5242,12 @@ public sealed partial class FunctionGen
     /// The flags type `t` is, or null.
     private static ChoiceType? FlagsOf(DType? t) => t is ChoiceType { Decl.IsFlags: true } f ? f : null;
 
-    /// A bare name where a value of the flags type `f` goes: one of its members (its bit). Null for any other name.
+    /// A bare name where a value of the flags type `f` goes: one of its members (its bit), or `empty` (no member on). Null
+    /// for any other name.
     private static BigInteger? BareFlags(PresetRef r, ChoiceType f)
     {
         if (r.Owner is not null || r.Path is not null) return null;
+        if (r.Name == "empty" && f.Decl.Members.All(m => m.Name != "empty")) return BigInteger.Zero;
         return f.Decl.Members.FirstOrDefault(m => m.Name == r.Name) is { Name: not null, Value: IntLit bit } ? bit.Value : null;
     }
 
@@ -6024,8 +6031,11 @@ public sealed partial class FunctionGen
                     continue;
                 }
                 var pt = _c.ResolveParam(r, r.Params[i + first], env);
-                // `none` where a flags value goes is the value with no member on.
+                // `none` where a flags value goes fits, and its evaluation says to write `empty`.
                 if (FlagsOf(pt) is not null && Compiler.IsNoneValue(args[i])) continue;
+                // `empty` where a `CellMarks?` goes is the flags value with no member on.
+                if (pt is VariantType { IsOptional: true, Args: [var emptyArg] } && FlagsOf(emptyArg) is not null
+                    && args[i] is PresetRef { Owner: null, Path: null, Name: "empty" } emptyArgRef && ResolvePresetQuiet(emptyArgRef) is null) continue;
                 if (InferQuiet(args[i]) is { } at)
                 {
                     // A value of a branch type goes into its variant, and memory lends its view: fits an exact

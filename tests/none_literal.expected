@@ -7,5 +7,5 @@ generic: missing, present
 pointer: true
 callable: true
 flags optional: none
-flags: none, true
+flags: empty, true
 shown: none, diagnosed: none

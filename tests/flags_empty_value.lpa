@@ -1,0 +1,68 @@
+# `empty` is the flags value with no member on, a keyword only where a flags value goes: a typed binding, a parameter,
+# a field, a preset, a return, the other side of `==` and `and`, a `CellMarks?` place (where `none` is the empty
+# Optional), and a generic `T` or `T?` place with T a flags type. Elsewhere it is a name like any other.
+
+import Hosted
+
+preset NOTHING_ON: CellMarks = empty
+
+### What is true of a cell.
+flags CellMarks
+    ### The cell holds a mine.
+    MINE
+    ### The cell carries a flag.
+    FLAGGED
+
+### A cell.
+record Cell
+    ### Its marks.
+    marks: CellMarks
+
+### Shows marks that may be missing.
+### :param m: The marks, if any.
+routine show_marks(m: CellMarks?) -> None
+    when m
+        is None => Console.show("no marks")
+        is CellMarks as marks => Console.show("marks: {marks}")
+    return
+
+### Marks with nothing on.
+### :returns: The marks.
+routine cleared() -> CellMarks
+    return empty
+
+### The value, or the fallback when there is none.
+### :typeparam T: The value's type.
+### :param x: The value, if any.
+### :param fallback: The fallback.
+### :returns: One of them.
+routine or_else[T](x: T?, fallback: T) -> T
+    when x
+        is None => return fallback
+        else => nothing
+    return x
+
+### The number of items in a box of `n`, a name like any other.
+### :param n: The count.
+### :returns: Whether the box is empty.
+routine box_is_empty(n: S64) -> Bool
+    empty: Bool = n == 0
+    return empty
+
+routine start() -> None
+    present: CellMarks? = empty
+    missing: CellMarks? = none
+    show_marks(present)
+    show_marks(missing)
+    show_marks(empty)
+    show_marks(CellMarks.MINE)
+    Console.show("generic, present: {or_else[CellMarks](x: empty, fallback: CellMarks.MINE)}")
+    Console.show("generic, missing: {or_else[CellMarks](x: none, fallback: CellMarks.MINE)}")
+    Console.show("generic T: {or_else[CellMarks](x: CellMarks.FLAGGED, fallback: empty)}")
+    cell: Cell = Cell(marks: empty)
+    marks: CellMarks = CellMarks.MINE
+    Console.show("field: {cell.marks}, return: {cleared()}, preset: {NOTHING_ON}")
+    Console.show("== empty: {cell.marks == empty}, {empty == marks}, without: {marks.without(MINE) == empty}")
+    Console.show("shown: {cell.marks}, diagnosed: {cell.marks.diagnose()}")
+    Console.show("a name elsewhere: {box_is_empty(0)} {box_is_empty(3)}")
+    return

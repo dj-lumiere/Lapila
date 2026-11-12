@@ -1135,7 +1135,8 @@ routine start() -> None
   float literal isn't a `B128` yet: write a hex float, or convert a `B64` (`B64.to[B128](1.5)`).
 - `none` is the one value of the type `None` (a reserved word): an empty `T?` (`m: S64? = none`, `return none`,
   `f(none)`, `Pair(first: 1, second: none)`, a value `when` arm), a null `@T?` or `Callable?`, a hollow kept `E?`, and
-  the value where a `T` bound to `None` goes. Where a flags value is expected it is the flags value with no member on.
+  the value where a `T` bound to `None` goes. Where a flags value is expected it is a build error: the flags value with
+  no member on is `empty`.
   `None()` is a build error that says to write `none`. `None` stays the type's name (`-> None`, `is None`, `Thread[None]`).
 - `inf` and `nan` are float literals (reserved words) typed by where they go, like `1.5`: `top: B64 = inf`,
   `low: B32 = -inf` (`-inf` is one literal, the negative infinity), `return nan`, `x < inf`, `[1.0, inf]` as a float
@@ -1589,9 +1590,12 @@ routine start() -> None
   width doesn't have, more members than it has bits, two members on one bit, and any other written type are build
   errors. Members combine with `and` (`CellMarks.MINE and CellMarks.FLAGGED`). Where a value of the flags type is
   expected (a typed binding, a parameter, a field, the other side of `==`, `!=` or `and` from a flags value), a member is named
-  bare (`marks.has(MINE)`) and the value with no member on is `none` (`marks: CellMarks = none`, `marks == none`). A
-  visible value named like a member hides the bare spelling there. Where a `CellMarks?` goes, `none` is the None value,
-  since the type there is the Optional and not the flags type (a bare member isn't one there either). `x.has(A and B)` is true when all of
+  bare (`marks.has(MINE)`) and the value with no member on is `empty`, a contextual keyword (`marks: CellMarks = empty`,
+  `marks == empty`, `return empty`, a preset, a field, and a `CellMarks?` place or a generic `T` / `T?` place with T a
+  flags type). Everywhere else `empty` is a name like any other. A visible value named like a member, or `empty`, hides
+  the bare spelling there. `none` is the None value only: in a `CellMarks?` place it is the empty Optional, and where a
+  flags value goes it is a build error that says to write `empty`. A bare member isn't one in a `CellMarks?` place
+  (write `CellMarks.MINE`). `x.has(A and B)` is true when all of
   them are on, `x.has_any(A and B)` when at least one is, `x.lacks(A and B)` when none is, and `x.without(A)` is `x`
   with `A` off. `==` and `!=` compare the whole set. `x.to[U64]()` is the bitmask (and `to[U8]()` for a `U8` flags
   type, likewise for its own width). A bitmask goes back with `bits.to[CellMarks]()` on any unsigned integer type
@@ -1599,9 +1603,9 @@ routine start() -> None
   so `try`/`check` take a bitmask from C that may hold other bits. `bits.bitcast[CellMarks]()` and `bitcast[U32,
   CellMarks](bits)` are build errors that point to `to[CellMarks]()`. `|`, `&`, `^` and `~` on a flags value, `or` between flags values, a number
   where a flags value goes, `<` and the other orderings, and `when x` on a flags value are build errors. A flags
-  type derives Representable (`MINE and FLAGGED`, `none` when no member is on), Diagnosable (`CellMarks.MINE and
-  CellMarks.FLAGGED`, `none`), Equatable, and Hashable (as its bits), never Comparable. Presets take flags values
-  too: `preset EMPTY: CellMarks = none`, `preset START: Cell = Cell(marks: MINE and FLAGGED, adjacent_mines: 0)`.
+  type derives Representable (`MINE and FLAGGED`, `empty` when no member is on), Diagnosable (`CellMarks.MINE and
+  CellMarks.FLAGGED`, `empty`), Equatable, and Hashable (as its bits), never Comparable. Presets take flags values
+  too: `preset EMPTY: CellMarks = empty`, `preset START: Cell = Cell(marks: MINE and FLAGGED, adjacent_mines: 0)`.
 
   ```lapila
   ### What is true of a cell.

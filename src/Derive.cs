@@ -569,9 +569,9 @@ public static class Derive
 
     // ── Flags ───────────────────────────────────────────────────────────────
 
-    /// A flags value writes its members joined by ` and ` in declaration order (`MINE and FLAGGED`), and `none` when
+    /// A flags value writes its members joined by ` and ` in declaration order (`MINE and FLAGGED`), and `empty` when
     /// none is on. Diagnosed, each member is qualified (`CellMarks.MINE and CellMarks.FLAGGED`), and the empty value is
-    /// `none` too.
+    /// `empty` too.
     private static void FlagsWriter(StringBuilder sb, ChoiceDecl c, string method)
     {
         var u = c.Underlying;
@@ -581,7 +581,7 @@ public static class Derive
         sb.Append($"needs T obeys {Fmt}Writer\n");
         sb.Append($"    bits: {u} = bitcast[Me, {u}](me)\n");
         sb.Append("    if bits == 0\n");
-        sb.Append($"        {Fmt}write_str(out, \"none\")\n");
+        sb.Append($"        {Fmt}write_str(out, \"empty\")\n");
         sb.Append("        return\n");
         var before = System.Numerics.BigInteger.Zero;
         foreach (var (member, value) in c.Members)

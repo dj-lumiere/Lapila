@@ -1,0 +1,14 @@
+# `none` is the None value only: where a flags value goes, the value with no member on is written `empty`, and `none`
+# there is a build error that says so.
+
+import Hosted
+
+### What is true of a cell.
+flags CellMarks
+    ### The cell holds a mine.
+    MINE
+
+routine start() -> None
+    marks: CellMarks = none
+    Console.show("{marks}")
+    return

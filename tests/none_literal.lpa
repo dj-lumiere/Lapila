@@ -1,5 +1,6 @@
 # `none` is the one value of the type None: a binding, a return, an argument, a field, a when arm's value, an `@T?`,
-# a `Callable?`, an `Optional[T]` in a generic routine, and a `T?` of a flags type all take it.
+# a `Callable?`, an `Optional[T]` in a generic routine, and a `T?` of a flags type all take it. A flags value with no
+# member on is `empty`.
 
 import Hosted
 
@@ -64,7 +65,7 @@ routine start() -> None
     when marks
         is None => Console.show("flags optional: none")
         is CellMarks as m => Console.show("flags optional: {m}")
-    empty: CellMarks = none
-    Console.show("flags: {empty}, {empty == none}")
+    blank: CellMarks = empty
+    Console.show("flags: {blank}, {blank == empty}")
     Console.show("shown: {a}, diagnosed: {a.diagnose()}")
     return
