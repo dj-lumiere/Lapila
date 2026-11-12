@@ -9,8 +9,8 @@ preset KNOWN: U64 = 0x7FFD1A40
 routine start() -> None
     out: @ConsoleOutput = Console.output()
 
-    lateinit none: @S64
-    out.write("{none.to[Addr]()}\n")
+    lateinit unset: @S64
+    out.write("{unset.to[Addr]()}\n")
     raw: Addr
     out.write("{raw}\n")
     known: Addr = inttoptr[U64, Addr](KNOWN)
