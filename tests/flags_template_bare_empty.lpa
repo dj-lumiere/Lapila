@@ -1,0 +1,10 @@
+### A template hole holding only empty names no member, so no flags type.
+import Hosted
+
+flags CellMarks
+    MINE
+    FLAGGED
+
+routine start() -> None
+    Console.show("{empty and empty}")
+    return

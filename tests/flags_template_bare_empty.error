@@ -1,0 +1,1 @@
+'empty and empty' names no member, so nothing says which flags type it is: name the type where the value goes (marks: CellMarks = empty), or write a member with it (CellMarks.MINE)

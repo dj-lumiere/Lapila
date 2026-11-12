@@ -4889,6 +4889,14 @@ public sealed partial class FunctionGen
     private void WriteShown(Expr writer, Expr shown, string shower)
     {
         shown = DefaultLiterals(shown);
+        if (FlagsFromMembers(shown) is { } shownFlags)
+        {
+            string name = $"write flags {_tmp++}";
+            _values[name] = Eval(shown, shownFlags);
+            try { WriteShown(writer, new ValueRef(name, shown.Pos), shower); }
+            finally { _values.Remove(name); }
+            return;
+        }
         if (InferQuiet(shown) is { } t and not PtrType && ManagedMemory(t) is null && !IsPointedSlice(t)
             && _c.FindMethod(t, "represent_into", _env.File, shown.Pos) is null)
             throw Err(Li.ShowNotAvailable, shown.Pos, $"'{t}' has no represent_into, so {shower} can't show it");
@@ -5086,6 +5094,14 @@ public sealed partial class FunctionGen
             var at = new Pos(template.Pos.File, template.Pos.Line, template.Pos.Col + 2 + i);
             var value = new Parser(new Lexer(at.File, source, at.Line, at.Col).Lex(), at.File, values: _values.Keys)
                 .ParseLoneExpr();
+            // Bare flags members (`{MINE and FLAGGED}`, `{empty and MINE}`) take the one flags type that has them.
+            string? flagsHole = null;
+            if (FlagsFromMembers(value) is { } holeFlags)
+            {
+                flagsHole = $"write flags {_tmp++}";
+                _values[flagsHole] = Eval(value, holeFlags);
+                value = new ValueRef(flagsHole, value.Pos);
+            }
             // A name another block binds isn't seen here: say so, rather than what the name would be as a preset.
             if (value is PresetRef { Owner: null, Path: null } named && ResolvePreset(named) is null && BoundInRoutine(named.Name))
                 throw Err(Li.UnknownName, at, NotVisible(named.Name, fromNextLine: true));
@@ -5109,6 +5125,7 @@ public sealed partial class FunctionGen
             {
                 _templateHole = null;
                 _shownCell = null;
+                if (flagsHole is not null) _values.Remove(flagsHole);
             }
             i = end;
         }
@@ -5294,6 +5311,54 @@ public sealed partial class FunctionGen
             _ => false,
         };
         return (null, Bare(b.Left) && Bare(b.Right));
+    }
+
+    /// The flags type of a value written with bare members and nothing around it to give its type (a template hole,
+    /// `Console.show(MINE and FLAGGED)`): the one visible flags type that has every member it names. `empty` names none.
+    /// Null when the value has a type of its own or isn't made of bare names. A bare value that names no member, or
+    /// members that two flags types both have, is a build error that says to name the type.
+    private ChoiceType? FlagsFromMembers(Expr value)
+    {
+        var names = new List<string>();
+        bool Bare(Expr e)
+        {
+            switch (e)
+            {
+                case PresetRef { Owner: null, Path: null } r when !_values.ContainsKey(r.Name) && ResolvePresetQuiet(r) is null
+                    && _c.FindFree(r.Name, _env.File, r.Pos, null) is null:
+                    if (r.Name != "empty") names.Add(r.Name);
+                    return true;
+                case BinaryExpr { Op: "and" } b:
+                    return Bare(b.Left) && Bare(b.Right);
+                default:
+                    return false;
+            }
+        }
+        if (!Bare(value)) return null;
+        var fits = new List<ChoiceType>();
+        foreach (var decl in _c.FlagsDecls)
+        {
+            if (!names.All(n => decl.Members.Any(m => m.Name == n))) continue;
+            DType? named;
+            try { named = Resolve(new TypeRef(decl.Name, [], value.Pos)); }
+            catch (CompileError) { continue; }
+            if (named is ChoiceType { Decl: var seen } found && ReferenceEquals(seen, decl) && !fits.Contains(found))
+                fits.Add(found);
+        }
+        string written = new Printer().Expr(value);
+        if (names.Count == 0)
+            throw Err(Li.TypeMismatch, value.Pos, $"'{written}' names no member, so nothing says which flags type it is: name the type "
+                + "where the value goes (marks: CellMarks = empty), or write a member with it (CellMarks.MINE)");
+        if (fits.Count == 0)
+        {
+            // A lone name that is no member stays an unknown name.
+            if (value is PresetRef) return null;
+            throw Err(Li.TypeMismatch, value.Pos, $"no flags type has all of {string.Join(", ", names)}, so '{written}' has no type");
+        }
+        if (fits.Count > 1)
+            throw Err(Li.TypeMismatch, value.Pos, $"'{written}' could be a {string.Join(" or a ", fits.Select(f => f.Name))}: write one member "
+                + $"with its type ({fits[0].Name}.{names[0]})");
+        return fits[0];
     }
 
     /// `a and b` of flags values: the members on in either.

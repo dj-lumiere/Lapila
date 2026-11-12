@@ -1596,7 +1596,9 @@ routine start() -> None
   expected (a typed binding, a parameter, a field, the other side of `==`, `!=` or `and` from a flags value), a member is named
   bare (`marks.has(MINE)`) and the value with no member on is `empty`, a contextual keyword (`marks: CellMarks = empty`,
   `marks == empty`, `return empty`, a preset, a field, and a `CellMarks?` place or a generic `T` / `T?` place with T a
-  flags type). Everywhere else `empty` is a name like any other. A visible value named like a member, or `empty`, hides
+  flags type). In a template hole or `Console.show(...)`, where nothing gives the type, bare members (and `empty`) take
+  the one visible flags type that has every member named (`"{empty and MINE}"`). Two such types, or `empty` alone, is a
+  build error asking for the type. Everywhere else `empty` is a name like any other. A visible value named like a member, or `empty`, hides
   the bare spelling there. `none` is the None value only: in a `CellMarks?` place it is the empty Optional, and where a
   flags value goes it is a build error that says to write `empty`. A bare member isn't one in a `CellMarks?` place
   (write `CellMarks.MINE`). `x.has(A and B)` is true when all of

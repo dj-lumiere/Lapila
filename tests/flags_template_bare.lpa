@@ -1,0 +1,16 @@
+### Bare flags members with nothing around them to give a type: in a template hole and in Console.show, the value takes
+### the one flags type that has every member it names (empty names none).
+import Hosted
+
+flags CellMarks
+    MINE
+    FLAGGED
+    OPENED
+
+routine start() -> None
+    Console.show("{MINE and FLAGGED}")
+    Console.show("{empty and MINE}")
+    Console.show("{OPENED}")
+    Console.show(FLAGGED and OPENED)
+    Console.show("{empty and MINE and empty}")
+    return

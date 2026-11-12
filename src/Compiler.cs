@@ -53,6 +53,9 @@ public sealed partial class Compiler
     private readonly Dictionary<string, List<RecordDecl>> _records = [];
     private readonly Dictionary<string, List<VariantDecl>> _variants = [];
     private readonly Dictionary<string, List<ChoiceDecl>> _choices = [];
+
+    /// Every flags type the program and the standard library declare.
+    public IEnumerable<ChoiceDecl> FlagsDecls => _choices.Values.SelectMany(list => list).Where(d => d.IsFlags);
     private readonly Dictionary<string, List<RoutineDecl>> _free = [];
     private readonly Dictionary<(string Owner, string Name), List<RoutineDecl>> _methods = [];
     private readonly Dictionary<string, List<RoutineDecl>> _blanket = []; // owner is a type parameter: `TFrom.bitcast[TTo]`

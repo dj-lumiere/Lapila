@@ -1,0 +1,14 @@
+### Bare members that two flags types both have don't say which type the value is.
+import Hosted
+
+flags CellMarks
+    MINE
+    FLAGGED
+
+flags Claims
+    MINE
+    THEIRS
+
+routine start() -> None
+    Console.show("{MINE and empty}")
+    return
