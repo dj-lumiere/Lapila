@@ -1,0 +1,27 @@
+### A place of a standard library protocol: a List[Representable] holds a record of the program and an S64, and
+### a template hole writes each through its own represent_into.
+import Collections
+import Hosted
+
+record Square
+obeys Representable[Square]
+    side: S64
+
+### Writes the square.
+### :typeparam TWriter: The writer type.
+### :param out: The writer.
+routine Square.represent_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    "square ".represent_into(out)
+    me.side.represent_into(out)
+    return
+
+routine start() -> None
+    things: &List[Representable] <- .construct(HEAP)
+    s: &Square <- Square(side: 2)
+    things.add_last(steal s)
+    n: &S64 <- 5
+    things.add_last(steal n)
+    for i in 0 til things.count()
+        Console.show("{things.getslot(i)}")
+    return

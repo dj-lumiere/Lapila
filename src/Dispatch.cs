@@ -44,13 +44,12 @@ public static class Dispatch
     public static IEnumerable<Decl> Declarations(List<Decl> decls)
     {
         var concepts = decls.OfType<ConceptDecl>().ToList();
-        if (!concepts.Any(c => !c.IsLibrary)) return [];
         var byName = concepts.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.ToList());
         var types = decls.Where(d => d is RecordDecl or VariantDecl or ChoiceDecl or AliasDecl)
             .Select(d => (d switch { RecordDecl r => r.Name, VariantDecl v => v.Name, ChoiceDecl c => c.Name, AliasDecl a => a.Name, _ => "" }, d.Module))
             .ToHashSet();
         var made = new List<Decl>();
-        foreach (var c in concepts.Where(c => !c.IsLibrary && c.TypeParams.Count > 0 && !types.Contains((c.Name, c.Module))))
+        foreach (var c in concepts.Where(c => c.TypeParams.Count > 0 && !types.Contains((c.Name, c.Module))))
             made.AddRange(Place(c, byName));
         return made;
     }
@@ -113,7 +112,8 @@ public static class Dispatch
                     obeys = false;
                     continue;
                 }
-                if (routines.Any(x => x.Req.Name == r.Name)) continue;
+                // The place's own destruct ends the value through its type's destruct (Destructible asks for it).
+                if (r.Name == "destruct" || routines.Any(x => x.Req.Name == r.Name)) continue;
                 bool takesSelf = r.Params.Where(x => !x.Implicit).Any(x => Mentions(x.Type, "Me") || Mentions(x.Type, self))
                                  || Mentions(r.ReturnType, "Me") || Mentions(r.ReturnType, self);
                 string kind = takesSelf ? "self" : r.TakesAddress ? "address" : "value";

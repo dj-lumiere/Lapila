@@ -1,0 +1,89 @@
+### A when over a stored value of a protocol that is a value: each arm gives the value, a record arm's name is a copy
+### and an entity arm's name is a view of the entity where it is, which a value arm may read and change.
+import Collections
+import Hosted
+
+record Square
+obeys Shape[Square]
+    side: S64
+
+record Circle
+obeys Shape[Circle]
+    radius: S64
+
+entity Bat
+obeys Flyer[Bat]
+    wings: S64
+
+### A shape with an area.
+### :typeparam T: The shape type.
+protocol Shape[T]
+    ### The area.
+    ### :returns: The area.
+    routine Me.area() -> S64
+
+### Something that flies.
+### :typeparam T: The flyer type.
+protocol Flyer[T]
+    ### Flaps once.
+    routine @Me.flap() -> None
+
+### The area.
+### :returns: The area.
+routine Square.area() -> S64
+    return me.side * me.side
+
+### The area, roughly.
+### :returns: The area.
+routine Circle.area() -> S64
+    return 3 * me.radius * me.radius
+
+### A bat.
+### :param wings: The wing count.
+### :returns: The bat.
+common routine Bat.construct(wings: S64) -> Me
+    return Me(wings: wings)
+
+### Flaps the bat.
+routine @Bat.flap() -> None
+    me.wings.poke(me.wings.peek() + 1)
+    return
+
+### Ends the bat.
+routine @Bat.destruct() -> None
+    Console.show("bat ends with {me.wings.peek()}")
+    return
+
+### Names a shape.
+### :param s: The shape.
+### :returns: The name.
+routine name_of(s: %Shape) -> @[Byte]
+    return when s
+        is Square as q => "square"
+        is Circle as c => "circle"
+        else => "other"
+
+routine start() -> None
+    shapes: &List[Shape] <- .construct(HEAP)
+    a: &Square <- Square(side: 2)
+    shapes.add_last(steal a)
+    b: &Circle <- Circle(radius: 3)
+    shapes.add_last(steal b)
+    for i in 0 til shapes.count()
+        side: S64 = when shapes.getslot(i)
+            is Square as q => q.side
+            is Circle as c =>
+                Console.show("a circle")
+                becomes c.radius * 2
+            else => 0
+        Console.show("{name_of(shapes.getslot(i))} {side}")
+    bat: &Bat <- .construct(wings: 2) from HEAP
+    flyer: &Flyer <- steal bat
+    flyer.flap()
+    wings: S64 = when flyer
+        is Bat as found =>
+            found.flap()
+            becomes found.wings.peek()
+        else => -1
+    Console.show("wings {wings}")
+    return

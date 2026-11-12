@@ -373,7 +373,7 @@ routine start() -> None
   - `'s' holds a &[Byte] (from line N) that hasn't ended, and this overwrites it`: a `poke` into a place that
     holds live memory. Drop it first, or use `replace(value: new)`.
   - `'q.m' holds a &[S64], and this poke overwrites it without giving it back`: a field that holds a BorrowedSlice, a BorrowedCell,
-    or an entity is changed with `q.m.replace(value: new)` (it gives the old one back first). A `poke` into it is allowed
+    or an entity is changed with `q.m.replace(value: new)` (it gives the old one back, or ends the old entity, first). A `poke` into it is allowed
     only while it holds nothing: after `steal q.m as old`, or when its place was emptied with `zeroinit(1)` and the field
     wasn't poked since.
   - `'Q.destruct' never drops 'me.m'` (`LP-S1105`): a `destruct` the type writes replaces the builder's walk over its
@@ -1284,14 +1284,16 @@ routine start() -> None
   end branches the same way: the type's `destruct`, then the memory back to its manager. A protocol routine that takes `Me`
   as a value (`routine Me.area()`) is called through `%Enemy` too, and one that takes or gives `Me` elsewhere can't be
   called on a stored value (`LP-S715`). `when x` with `is Slime as s` names an entity as a view where it is (`@Slime`) and a
-  record as a copy, needs `else` (`LP-S356`), and an `is T` whose T doesn't obey the protocol is `LP-S357`; it is a
-  statement, not a value `when`. Views of a stored value and what an arm names follow the view rules (`LP-S1118` after the
+  record as a copy, needs `else` (`LP-S356`), and an `is T` whose T doesn't obey the protocol is `LP-S357`. It is a
+  statement or a value `when` (`side: S64 = when s` with `is Square as q => q.side`). Views of a stored value and what an arm names follow the view rules (`LP-S1118` after the
   place ends, and a call through a stored value ends the views of every type a routine it may reach removes). A STACK
   original keeps its holder in the routine: returning it, a global, or anything outliving the frame is `LP-S600` /
   `LP-S601`, and a STACK place of a loop body doesn't go into a stored value (`LP-S1102`). A stored value given to `x: @T`
   under `needs T obeys Enemy` builds that routine for the stored value (its calls branch), which works when every routine
-  of the protocol takes `@Me`. A `StampManager[Enemy]` is a pool of stored values (`StampManager[T]` above). The standard
-  library's protocols have no stored form yet.
+  of the protocol takes `@Me`. A `StampManager[Enemy]` is a pool of stored values (`StampManager[T]` above). A standard
+  library protocol is a place type too (`List[Representable]` keeps a record of the program and an `&S64` alike). An
+  entity's field that keeps a stored value (or any entity, or an `E?`) changes with `arena.boss.replace(value: steal next)`:
+  the old value ends, then the new one goes in.
   The language server marks a call on a stored value with a gray `dispatch` inlay hint after the routine name, its
   tooltip listing the types that reach places of that protocol in this build (none in a `needs T obeys` body).
 - A bare literal doesn't bind a type parameter: bind it first (`n: S64 = 42`), then pass `n`.

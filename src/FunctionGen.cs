@@ -2453,6 +2453,17 @@ public sealed partial class FunctionGen
                 }
                 break;
             }
+            // `q.m.replace(value: new)` on a field that keeps an entity (a stored value of a protocol included): the old
+            // entity ends, then the new one goes in, as `steal q.m as old`, `drop old` and `q.m.poke(new)`.
+            case ExprStmt { Value: MethodCallExpr { Name: "replace", TypeArgs.Count: 0, Args: [var replacement], Receiver: FieldExpr field } replace }
+                when replace.ArgNames is null or [null or "value"] && EntityField(field) is not null:
+            {
+                string old = $"$replaced{_tmp++}";
+                EmitStmt(new StealStmt(field, old, replace.Pos));
+                EmitStmt(new DropStmt(new ValueRef(old, replace.Pos), replace.Pos));
+                if (!_cur.Terminated) EmitStmt(new ExprStmt(new MethodCallExpr(field, "poke", [], [replacement], replace.Pos), s.Pos));
+                break;
+            }
             case ExprStmt { Value: CallExpr { Name: "build_error", TypeArgs.Count: 0 } stop } when _c.FindFree("build_error", _env.File, stop.Pos) is null:
                 EmitBuildError(stop);
                 break;
@@ -2691,6 +2702,14 @@ public sealed partial class FunctionGen
                 throw new InvalidOperationException(s.GetType().Name);
         }
     }
+
+    /// The entity (or optional entity) a field keeps, when the type has no `replace` of its own: what `replace(value: new)` on it
+    /// ends and puts in.
+    private DType? EntityField(FieldExpr field) =>
+        InferQuiet(field) is PtrType { Pointee: { } held } && Entities.Holds(held)
+        && _c.FindMethod(held, "replace", _env.File, field.Pos) is null
+            ? held
+            : null;
 
     /// LLVM has no plain copy instruction; a named binding of an existing value is an identity op.
     private string Copy(Val v, DType t) => t.Repr switch
@@ -4229,7 +4248,9 @@ public sealed partial class FunctionGen
             foreach (var line in chain)
             {
                 if (_cur.Terminated) break;
-                EmitStmt(line);
+                // A when that is a value gives it through its arms (the when over conditions the stored when became).
+                if (frame is not null && line is WhenStmt conditions) EmitWhen(conditions, frame);
+                else EmitStmt(line);
             }
             return;
         }
@@ -4299,8 +4320,8 @@ public sealed partial class FunctionGen
                 if (arm.IsElse)
                 {
                     if (i != w.Arms.Count - 1) throw Err(Li.WhenArms, arm.Pos, "the else arm must come last");
+                    // Arm makes the edge from here into the arm's region.
                     string label = Arm(arm, null);
-                    MemEdge(_region, pos: arm.Pos);
                     Terminate($"br label %{label}");
                     break;
                 }

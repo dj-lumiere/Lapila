@@ -1,0 +1,35 @@
+### A when over conditions, as a statement and as a value, while a routine holds an entity from HEAP: the entity is
+### still held after the when and ends at the end of the routine.
+import Hosted
+
+entity Bat
+    wings: S64
+
+### A bat.
+### :param wings: The wing count.
+### :returns: The bat.
+common routine Bat.construct(wings: S64) -> Me
+    return Me(wings: wings)
+
+### Ends the bat.
+routine @Bat.destruct() -> None
+    Console.show("bat ends with {me.wings.peek()}")
+    return
+
+### A number the builder doesn't know.
+### :returns: Three.
+routine three() -> S64
+    return 3
+
+routine start() -> None
+    bat: &Bat <- .construct(wings: 2) from HEAP
+    n: S64 = three()
+    when
+        n == 3 => Console.show("three")
+        else => Console.show("not three")
+    wings: S64 = when
+        n == 2 => 0
+        n == 3 => bat.wings.peek()
+        else => -1
+    Console.show("wings {wings}")
+    return

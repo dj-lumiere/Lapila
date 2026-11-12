@@ -1,0 +1,78 @@
+### `replace(value: new)` on an entity's field that keeps an entity: the old one ends, then the new one goes in. It
+### works on a stored value of a protocol (`boss: Enemy`), on an optional one that is empty (`spare: Enemy?`), and on a
+### field of one entity type (`pet: Slime`).
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+
+entity Arena
+    boss: Enemy
+    spare: Enemy?
+    pet: Slime
+
+### Something with hit points.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### The hit points left.
+    ### :returns: The hit points.
+    routine @Me.health() -> S64
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### The slime's hit points.
+### :returns: The hit points.
+routine @Slime.health() -> S64
+    return me.hp.peek()
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### The goblin's hit points.
+### :returns: The hit points.
+routine @Goblin.health() -> S64
+    return me.hp.peek()
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.hp.peek()} ends")
+    return
+
+### An arena with its boss and its pet.
+### :param boss: The boss, taken over.
+### :param pet: The pet.
+### :returns: The arena.
+common routine Arena.construct(boss: Enemy, pet: Slime) -> Me
+    return Me(boss: steal boss, spare: none, pet: steal pet)
+
+routine start() -> None
+    first: &Goblin <- .construct(hp: 40) from HEAP
+    arena: &Arena <- .construct(boss: steal first, pet: .construct(hp: 1))
+    Console.show("boss {arena.boss.health()}")
+    next: &Slime <- .construct(hp: 9) from HEAP
+    arena.boss.replace(value: steal next)
+    Console.show("boss {arena.boss.health()}")
+    spare: &Goblin <- .construct(hp: 7) from HEAP
+    arena.spare.replace(value: steal spare)
+    arena.pet.replace(value: .construct(hp: 2))
+    Console.show("pet {arena.pet.health()}")
+    drop arena
+    Console.show("the end")
+    return

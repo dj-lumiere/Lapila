@@ -102,9 +102,6 @@ public sealed partial class FunctionGen
     private List<Stmt>? StoredWhen(WhenStmt w, ValueFrame? frame)
     {
         if (w.Value is not { } subject || InferQuiet(subject) is not { } st || Dispatch.PlaceThrough(st) is not { } place) return null;
-        if (frame is not null)
-            throw Err(Li.WhenValueArm, w.Pos, $"a when over a stored {place.Name} is a statement: bind the value in each arm, or "
-                + "write a routine that returns it");
         if (!w.Arms.Any(a => a.IsElse))
             throw Err(Li.NonExhaustiveWhen, w.Pos, $"{An(place.Name)} place may hold any type that obeys {place.Name}, so a when over "
                 + "one needs an else arm");
@@ -113,12 +110,15 @@ public sealed partial class FunctionGen
         var u64 = new TypeRef("U64", [], pos);
         List<Stmt> chain = [];
         List<Stmt>? tail = null;
+        // A when that is a value becomes a when over conditions, whose arms each give the value.
+        var conditionArms = new List<WhenArm>();
         for (int i = w.Arms.Count - 1; i >= 0; i--)
         {
             var arm = w.Arms[i];
             if (arm.IsElse)
             {
                 tail = arm.Body;
+                conditionArms.Insert(0, arm);
                 continue;
             }
             if (arm.Cases is not { Count: > 0 } cases || cases.Any(c => c is not IsPattern))
@@ -148,10 +148,16 @@ public sealed partial class FunctionGen
                 body.Add(new BindStmt(binding.Name, written, view, binding.Pos));
             }
             body.AddRange(arm.Body);
+            conditionArms.Insert(0, new WhenArm(cond!, null, body, arm.Pos));
             chain = [new IfStmt(cond!, body, tail ?? (chain.Count > 0 ? chain : null), arm.Pos)];
             tail = null;
         }
         if (tail is not null) chain = tail;
+        // The else arm goes last in a when over conditions.
+        var elseArm = conditionArms.First(a => a.IsElse);
+        conditionArms.Remove(elseArm);
+        conditionArms.Add(elseArm);
+        if (frame is not null) chain = [new WhenStmt(null, conditionArms, w.Pos)];
         return [new BindStmt(id, u64, new MethodCallExpr(subject, Dispatch.TypeIdRoutine, [], [], pos) { Builder = true }, pos), .. chain];
     }
 }
