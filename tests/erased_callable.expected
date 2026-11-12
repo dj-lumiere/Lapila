@@ -2,8 +2,8 @@ back 42
 fits true false
 try wrong: none
 check wrong: Callable[(), S64]
-restored 5 None
+restored 5 none
 bad input -4
 hello 0
 step 1: -2 14
-step 2: None 7
+step 2: none 7

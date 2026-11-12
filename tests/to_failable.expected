@@ -1,7 +1,7 @@
-200 None None
-200 None 300
-None 2
-None
-None A
+200 none none
+200 none 300
+none 2
+none
+none A
 IntegerOverflowError: Integer overflow: value does not fit in the target type.
 at line 39

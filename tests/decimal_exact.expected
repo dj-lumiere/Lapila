@@ -8,12 +8,12 @@
 0.1 + 0.2 == 0.3: true
 34 nines + 1: 1E+34, 34 nines - 1: 9999999999999999999999999999999998
 1 / 3 = 0.3333333333333333333333333333333333, times 3 exactly: 0.9999999999999999999999999999999999, 2 / 3 = 0.6666666666666666666666666666666667
-1e-20 + 1: 1.00000000000000000001, 1e-40 + 1: None
+1e-20 + 1: 1.00000000000000000001, 1e-40 + 1: none
 the product has more than 34 digits: NumericOverflowError
 rounding: -2 -3 -2 -2 -2
 compare: true, 0, -2.5, 1, 2.5, 2.5
 fixed: 2.68, diagnose: Decimal(1.5)
-to integers: -7, try 300 as U8: None
+to integers: -7, try 300 as U8: none
 from integers: 18446744073709551615, zero: 0, is_zero: true
 as D128: 1.5, back: 1.5
 inf: InvalidValueError

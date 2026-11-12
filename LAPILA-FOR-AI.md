@@ -1841,7 +1841,7 @@ routine start() -> None
 - A choice or variant without `@derive` derives Representable, Diagnosable, Equatable, Hashable, and Comparable (a flags type
   all but Comparable, a variant each only when every branch has it), skipping what it declares itself; `@derive(...)` lists exactly what
   to derive, `@derive()` nothing. A record derives only what it lists. A variant writes the held value as that value
-  writes itself (an `Optional[S64]` holding 4 prints `4`, an empty one `None`, diagnosed `none`), a pointer branch its
+  writes itself (an `Optional[S64]` holding 4 prints `4`, an empty one `none`, diagnosed `none`), a pointer branch its
   address. eq: same branch and equal values. compare: by branch in declaration order, then by value. hash: the
   branch position combined with the value's hash.
 

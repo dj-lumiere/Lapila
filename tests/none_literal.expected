@@ -8,4 +8,4 @@ pointer: true
 callable: true
 flags optional: none
 flags: none, true
-shown: None, diagnosed: none
+shown: none, diagnosed: none

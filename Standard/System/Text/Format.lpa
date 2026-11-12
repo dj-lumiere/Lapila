@@ -606,12 +606,12 @@ needs T obeys Writer
     me.diagnose_into(out)
     return
 
-### Writes the unit value as `Unit`: an absent `Optional` prints this way.
+### Writes the unit value as `none`, the way it is written: an absent `Optional` prints this way.
 ### :typeparam T: The type of the Writer that receives the text.
 ### :param out: The Writer the text is written to.
 routine None.represent_into[T](out: @T) -> None
 needs T obeys Writer
-    write_str(out, text: "None")
+    write_str(out, text: "none")
     return
 
 ### Writes the duration in its parts, largest first, each with its unit and only those that aren't 0: `1d 2h 30m`,

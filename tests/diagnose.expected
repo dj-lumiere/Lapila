@@ -6,7 +6,7 @@ Byte('\x41') Byte('\x27') Byte('\x0A') Byte('\x7F') Byte('\xE9')
 -42 255 1.0 true
 "hi" none
 7 "no"
-hi None 7 no
+hi none 7 no
 Point(x: 1, y: -2)
 Box(value: "in", items: [1, 2, 3])
 Box(value: "in", items: [1, 2, 3]) Point(x: 1, y: -2) RED

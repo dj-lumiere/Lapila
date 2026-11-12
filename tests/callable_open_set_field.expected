@@ -1,7 +1,7 @@
 ok 7
 plain 14
 lambda 8
-try None
+try none
 try ok 8
 another failure: TooBigError
 bad input -3
