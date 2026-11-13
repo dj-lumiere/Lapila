@@ -60,6 +60,7 @@ needs AnyType T
 ### An access a pausable routine's work was handed with `steal`, `f.to[Work](held: steal held)`: the routine's state
 ### record keeps its address and gives it back when the record ends, after the work. Zero for a view the caller still
 ### holds and gives back itself.
+@target(os: not "none")
 entity HandedAccess
     ### The address the access was taken at, or zero.
     at: Addr
@@ -70,6 +71,7 @@ entity HandedAccess
 ### A pausable routine's state record obeys it.
 ### :typeparam TStep: The step's type.
 ### :typeparam T: The step's result type.
+@target(os: not "none")
 protocol Eventual[TStep, T]
     ### Goes on with the step.
     ### :returns: The result, or `Pending` while it isn't there yet.
@@ -184,16 +186,19 @@ needs AnyType T
 ### An access to give back, or none (zero).
 ### :param at: The address the access was taken at, or zero.
 ### :returns: The value.
+@target(os: not "none")
 common routine HandedAccess.construct(at: Addr) -> Me
     return Me(at)
 
 ### Keeps the access taken at `at`, which the work was handed with steal, to give back when the record ends.
 ### :param at: The address the access was taken at.
+@target(os: not "none")
 routine @HandedAccess.keep(at: Addr) -> None
     me.at.poke(at)
     return
 
 ### Gives the access back, if the work was handed one.
+@target(os: not "none")
 routine @HandedAccess.destruct() -> None
     at: Addr = me.at.peek()
     if at.is_hollow()
@@ -254,6 +259,7 @@ secret routine wake_on_cancel() -> None
 ### The block of pausable work: room for the result, then the routine's state record.
 ### :typeparam T: The result type.
 ### :typeparam S: The state record.
+@target(os: not "none")
 entity PausingWork[T, S]
     ### The result, hollow until the routine returns and after `retrieve` takes it.
     result: T
@@ -264,10 +270,12 @@ entity PausingWork[T, S]
 ### :param result: Its `result`.
 ### :param state: Its `state`.
 ### :returns: The new value.
+@target(os: not "none")
 common routine PausingWork[T, S].construct(result: T, state: S) -> Me
     return Me(result: steal result, state: steal state)
 
 ### Ends the state record, if the work didn't end it, and the result nobody retrieved.
+@target(os: not "none")
 routine @PausingWork[T, S].destruct() -> None
     if not holds_nothing(me.state)
         drop me.state
@@ -277,6 +285,7 @@ routine @PausingWork[T, S].destruct() -> None
 
 ### Ends what the block at `raw`, a `PausingWork`, still holds: a ticket calls it before it gives the block back.
 ### :param raw: The block.
+@target(os: not "none")
 infallible routine discard_pausing[T, S](raw: Addr) -> None
     work: @PausingWork[T, S] = raw.to[@PausingWork[T, S]]()
     drop work.stride(0)
@@ -342,6 +351,7 @@ needs AnyType S
 ### time, a step whenever the work is woken, with no stack of its own: the routine's state record is all it keeps while
 ### the work waits. Its result is a `T` (`None` for none). Given back with `drop`.
 ### :typeparam T: The type of the work's result.
+@target(os: not "none")
 entity PausingFiber[T]
     fiber: @FiberState?
     ### The ticket's number: the fiber's until the ticket is given back.
@@ -351,6 +361,7 @@ entity PausingFiber[T]
 ### :param fiber: Its `fiber`.
 ### :param issued: Its `issued`.
 ### :returns: The new value.
+@target(os: not "none")
 common routine PausingFiber[T].construct(fiber: @FiberState, issued: U64) -> Me
     return Me(fiber, issued)
 
@@ -554,6 +565,7 @@ routine @PausingFiber[T].cancel() -> None
 
 ### The step `FIBERS.next_turn()` gives: the other ready work of the manager goes first, then the work goes on. With
 ### none ready it goes on at once.
+@target(os: not "none")
 record NextTurn
 obeys Eventual[NextTurn, None]
     manager: @CoroutineManager
@@ -561,6 +573,7 @@ obeys Eventual[NextTurn, None]
     yielded: Bool
 
 ### The step `Clock.after(d)` gives: it finishes once `d` has passed from when it was made.
+@target(os: not "none")
 record ClockStep
 obeys Eventual[ClockStep, None]
     ### When it finishes, in `Clock.monotonic()` time.
@@ -569,6 +582,7 @@ obeys Eventual[ClockStep, None]
 ### The step a ticket's `finish()` gives: it finishes when the ticket's work has, and gives its result, as `retrieve()`
 ### would (its failure and `CancelRequested` too).
 ### :typeparam T: The result type.
+@target(os: not "none")
 record Finish[T]
 obeys Eventual[Finish[T], T]
     slot: @WorkSlot
