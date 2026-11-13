@@ -19,7 +19,7 @@ dotnet run -- version                    # the builder's version; help prints ev
 ```
 
 `build` and `run` take files and nothing else: every setting is in config.toml (`[target] mode = "release"`,
-`triple`, `board`, `cpu`, `features`, `use-daemon`, `[debug] trace = false`, `race-check`, `heap-check`, `emit-llvm`). A flag
+`triple`, `board`, `cpu`, `features`, `use-daemon`, `[debug] trace = false`, `race-check`, `heap-check`, `emit-llvm`, `show-pausable`). A flag
 config.toml can say is an error that names the key ("`--mode` isn't an option: write `mode = \"release\"` under
 [target] in config.toml"). The output is named after the entry file (`build/main` for `executable = "main.lpa"`). A
 config.toml with no `executable` builds a library linked into another program: its `sources` files as LLVM IR,
@@ -2243,6 +2243,48 @@ several tickets at once.
   shadow stack, the builder calls its `trace_push` / `trace_at` / `trace_pop` out of line, so each finds the trace of
   the thread it runs on (a trace read from the stack is each fiber's own).
 
+**Pausable routines** (`Standard/Fiber/Pausing.lpa`, the builder's `src/Pausable.cs`). Two first-class ways run waiting
+work on one thread under a `CoroutineManager`: a pausable routine when every wait is in code you write (its memory is
+known at build time, its pauses are visible in its source, it runs on every target), a fiber when the work needs a stack
+of its own (deep recursion, calls into code that blocks or switches stacks). Threads compute in parallel.
+- `pausable routine f(a: A) -> R` (a free routine of the program, not generic, not `infallible`, at most four
+  parameters). `x: T = pauseuntil X carrying (b, c)` stops it until `X` has finished, and `X`'s result is the value. `X` is
+  a call of another pausable routine (`pauseuntil g(n: 3)`) or a step, a value whose type obeys `Eventual[T]`: `FIBERS.next_turn()`
+  (`NextTurn`, the other ready work goes first, none ready goes on at once), `Clock.after(d)` (`ClockStep`), `t.finish()`
+  on a `Thread`/`Fiber`/`PausingFiber` ticket (`Finish[T]`, gives what `retrieve()` would, its failure and
+  `CancelRequested` too). The builder reads the step's type from the source (a call's declared result, a record made by
+  its type's name, a typed value or global): anything else is `LP-S1467`. Arguments are computed before the pause.
+- Forms: `pauseuntil X` as a line, `x: T = pauseuntil X`, `x: T? = try pauseuntil X`, `try pauseuntil X` as a line,
+  `when [try|check] pauseuntil X` with arms, `x: T = when check pauseuntil X` with arms. Anything else is `LP-S1459` (inside an
+  expression, `x: Check[T] = check pauseuntil`, `x: &T <- pauseuntil`, a pause inside a `for` over an emitter, a pause in a
+  value `when`'s arm, `pauseuntil` outside a pausable routine). `if`, `when` arms and loops (`for` over a range, `until`,
+  `loop`, `with` values) may pause inside.
+- `carrying` lists every value bound before the pause that the lines after it use (a loop's `with` value only when the
+  round reads it before its `continue with`). Parameters are always kept and never listed, and missing one is `LP-S1460`. A
+  `<-` place of the frame listed there lives in the state record (`Carried[T]`), a place from a manager or a ticket is
+  kept as it is. A view of a frame place is `LP-S1461` (carry the place). A place not carried and not used after the
+  pause is dropped right before it, a carried one at the routine's end (or when its work fails or is cancelled), once.
+- Running: `t: PausingFiber[R] <- FIBERS.get_pausing_fiber[R]()`, `t.put_work(f.to[Work](a: 1))`, `t.retrieve()` (outside a
+  fiber it drives the manager on this thread), `t.cancel()`, `drop t`. A plain call of a pausable routine is `LP-S1462`
+  (outside: make work of it, inside: `pauseuntil`). Pausable work on a `Thread`/`Fiber` ticket runs alone to its end,
+  sleeping that flow between steps. A failure nothing receives ends the work and `retrieve()` throws it. `cancel()` wakes
+  the pause it waits at, which throws `CancelRequested` (a `try`/`check` on the pause receives it, and `retrieve()` of
+  cancelled work throws `CancelRequested` anyway). A wake from another thread goes through the manager's inbox.
+- Refused inside: taking an access with `<-` (`LP-S1463`: hand the view in, an access handed with
+  `f.to[Work](held: steal held)` is given back by the state record when the work ends), a call that may switch stacks,
+  found through the calls (`LP-S1465`, names the chain to `switch_stack`), `retrieve()` of a `Fiber`/`PausingFiber`
+  (`LP-S1466`, use `pauseuntil t.finish()`), pausable routines waiting for each other in a cycle (`LP-S1464`), `pausable` in
+  a protocol, `f.to[Callable]()`/`f.to[ErasedCallable]()` of one (`LP-S1458`). A thread ticket's `retrieve()` and
+  `waitfor(d)` are allowed with `LP-W1006`.
+- Lowering: `entity PausedF obeys Eventual[PausedF, R]` (parameters, carried values, `at: U32`, `room: StepRoom[max(sizeof[S1](), ...)]`,
+  one step at a time), `PausedF.construct(params)`, and `@generated routine @PausedF.resume() -> R | Pending` in blocks
+  (entry jumps to the pause `at` names, each pause is a block that puts the step in the room and one that polls it with
+  `poll_step[S, T]`, or the nested record's own `resume()`). The routine's declaration stays with no lines for its
+  signature. A step of your own: a type with `routine @S.resume() -> T | Pending` and `routine @S.wake_when_done(waiter:
+  Waiter) -> None` (wake at once when it can go on already), `obeys Eventual[S, T]`. `Pending()` is the one value of
+  `Pending`. `[debug] show-pausable = true` writes the generated declarations as Lapila source to
+  `build/<name>.pausable.lpa`.
+
 **Unbroken values.** `Unbroken[T]` (Core, `Unbroken.lpa`) is a record aligned to T's size whose every access is unbroken: the
 form for state a program shares between threads (thread work changes shared memory only through an exclusive access
 or an Unbroken, above) (`hits: Unbroken[U64]` in a shared record, `Unbroken[U64].construct(value:
@@ -3040,6 +3082,16 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S1455`: A command called without what it needs.
 - `LP-S1456`: A write through a %T or %[T], a view that only reads (the me of a @readonly routine is one), or such a view handed where a @T goes.
 - `LP-S1457`: An access handed over with steal to where nothing would give it back, or a place that gives one back handed a view.
+- `LP-S1458`: A pausable routine where none can be: in a protocol, generic, on a type, infallible, written with blocks, or taken as a Callable or ErasedCallable.
+- `LP-S1459`: A pauseuntil outside a pausable routine, or in a place a pause can't stand (inside an expression, a for over an emitter).
+- `LP-S1460`: A value used after a pauseuntil that its carrying list leaves out, or a carrying list naming something that isn't a local value.
+- `LP-S1461`: A view of STACK memory that a carrying list keeps across a pause, or a carried place the state record can't hold.
+- `LP-S1462`: A pausable routine called directly: inside a pausable routine through pauseuntil, elsewhere as work on a PausingFiber.
+- `LP-S1463`: An access taken with '<-' inside a pausable routine, which would be held across its pauses.
+- `LP-S1464`: Pausable routines that wait for each other in a cycle through pauseuntil.
+- `LP-S1465`: A routine that may switch stacks (a fiber's park, yield or wait) called inside a pausable routine.
+- `LP-S1466`: A retrieve() of work on this thread's CoroutineManager inside a pausable routine.
+- `LP-S1467`: What a pauseuntil waits for whose type the builder can't tell, or that doesn't obey Eventual.
 
 ### Warnings (`LP-W`)
 
@@ -3057,6 +3109,7 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-W1003`: Two names for the same memory, which is released once.
 - `LP-W1004`: A value shown as the cell itself instead of what it holds.
 - `LP-W1005`: A call to a routine marked #expensive on a loop, or a loop-carried cost.
+- `LP-W1006`: A call inside a pausable routine that puts the whole thread to sleep (a thread ticket's retrieve, waitfor).
 
 ## Tests
 

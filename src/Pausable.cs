@@ -658,7 +658,8 @@ public static class Pausable
                     + "to a name with its type on the line before, step: ClockStep = Clock.after(5ms), then pauseuntil step");
             var result = ResultOf(stepType)
                 ?? throw new CompileError(Li.PauseTarget, pause.Target.Pos, $"a pause waits for a pausable routine's call or an Eventual[T] step, "
-                    + $"and this gives {stepType}, which doesn't obey Eventual: a plain routine runs to its end, so call it without pauseuntil");
+                    + $"and this gives {stepType}, which doesn't obey Eventual: a plain routine runs to its end, so call it without pauseuntil, or, "
+                    + "when it waits the way a fiber does, run it as work on a Fiber ticket and pauseuntil t.finish()");
             _stepOf[pause] = (stepType, result, false);
             _steps.Add(_stepOf[pause]);
         }
@@ -800,7 +801,7 @@ public static class Pausable
                 }
                 if (_pauses.TryGetValue(s, out var pause))
                 {
-                    EmitPause(pause);
+                    if (!EmitPause(pause)) return false;
                     continue;
                 }
                 switch (s)
@@ -811,17 +812,25 @@ public static class Pausable
                         string? other = f.Else is null ? null : Label("else");
                         _cur.Add(new IfStmt(RewriteExpr(f.Cond), [Jump(then)], [Jump(other ?? join)], f.Pos));
                         StartBlock(then);
-                        if (EmitList(f.Then)) _cur.Add(Jump(join));
+                        bool goesOn = EmitList(f.Then);
+                        if (goesOn) _cur.Add(Jump(join));
                         if (other is not null)
                         {
                             StartBlock(other);
-                            if (EmitList(f.Else!)) _cur.Add(Jump(join));
+                            bool elseGoesOn = EmitList(f.Else!);
+                            if (elseGoesOn) _cur.Add(Jump(join));
+                            goesOn |= elseGoesOn;
                         }
                         StartBlock(join);
+                        if (!goesOn && other is not null)
+                        {
+                            _cur.Add(new UnreachableStmt(f.Pos));
+                            return false;
+                        }
                         break;
                     }
                     case WhenStmt w:
-                        EmitWhen(w, w.Value is null ? null : RewriteExpr(w.Value), [], null);
+                        if (!EmitWhen(w, w.Value is null ? null : RewriteExpr(w.Value), [], null)) return false;
                         break;
                     case LoopStmt l:
                         EmitLoop(l);
@@ -844,9 +853,10 @@ public static class Pausable
         };
 
         /// A `when` whose arms pause: each such arm goes on in a block of its own, taking the arm's value.
-        private void EmitWhen(WhenStmt w, Expr? subject, List<Stmt> armPrefix, WhenArm? first)
+        private bool EmitWhen(WhenStmt w, Expr? subject, List<Stmt> armPrefix, WhenArm? first)
         {
             string join = Label("join");
+            bool goesOn = false;
             var arms = new List<WhenArm>();
             if (first is not null) arms.Add(first);
             var later = new List<(string Block, WhenArm Arm, Param? Bound)>();
@@ -858,7 +868,11 @@ public static class Pausable
                     var lines = new List<Stmt>(armPrefix);
                     lines.AddRange(arm.Body.SelectMany(x => Rewrite(x, 0)));
                     if (BindsField(bound) is { } poke) lines.Insert(armPrefix.Count, poke);
-                    if (!AlwaysLeaves(arm.Body)) lines.Add(Jump(join));
+                    if (!AlwaysLeaves(arm.Body))
+                    {
+                        lines.Add(Jump(join));
+                        goesOn = true;
+                    }
                     arms.Add(arm with { Body = lines, OneLine = false });
                     continue;
                 }
@@ -870,14 +884,25 @@ public static class Pausable
             }
             _cur.Add(new WhenStmt(subject, arms, w.Pos) { ElseBinding = w.ElseBinding });
             // A when without an else over conditions may take no arm.
-            if (subject is null && !w.Arms.Any(a => a.IsElse)) _cur.Add(Jump(join));
+            if (subject is null && !w.Arms.Any(a => a.IsElse))
+            {
+                _cur.Add(Jump(join));
+                goesOn = true;
+            }
             foreach (var (block, arm, p) in later)
             {
                 StartBlock(block, p is null ? [] : [p]);
                 if (p is not null && _fields.ContainsKey(p.Name)) _cur.Add(PokeField(p.Name, new ValueRef(p.Name, _pos)));
-                if (EmitList(arm.Body)) _cur.Add(Jump(join));
+                if (EmitList(arm.Body))
+                {
+                    _cur.Add(Jump(join));
+                    goesOn = true;
+                }
             }
             StartBlock(join);
+            // Every arm left the routine: nothing gets here.
+            if (!goesOn) _cur.Add(new UnreachableStmt(w.Pos));
+            return goesOn;
         }
 
         /// The poke that keeps a when arm's value in its field, when the value is kept across a pause.
@@ -943,7 +968,7 @@ public static class Pausable
         }
 
         /// `pauseuntil X`: the block that puts X in the room and the block that asks it for its result.
-        private void EmitPause(Pause pause)
+        private bool EmitPause(Pause pause)
         {
             var (step, result, nested) = _stepOf[pause.Expr];
             var p = pause.Expr;
@@ -1014,10 +1039,11 @@ public static class Pausable
                 case WhenStmt w:
                 {
                     var subject = w.Value is UnaryExpr u ? u with { Operand = poll } : poll;
-                    EmitWhen(w, subject, [end], pending);
+                    if (!EmitWhen(w, subject, [end], pending)) return false;
                     break;
                 }
             }
+            return true;
         }
 
         /// The arms that take a pause's result: `is T as v => v`, and for a try the empty one, `is None => none`.
