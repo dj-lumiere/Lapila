@@ -469,6 +469,9 @@ public sealed class EscapeCheck
         private CompileError? StoredView(StoreFact s, HashSet<Atom> place, HashSet<Atom> value)
         {
             if (!s.HoldsView) return null;
+            // A pausable routine's state record holds its views the way a piece of work's block does: the work's own rules
+            // check them where the work is made and put on its ticket.
+            if (facts.Inst.Decl.AnnotationNamed(Pausable.StateMark) is not null && s.EntityField is not null) return null;
             var global = place.OfType<GlobalAtom>().FirstOrDefault();
             if (s.EntityField is null && global is null || Source(value) is not { } source) return null;
             string where = s.EntityField is { } entity

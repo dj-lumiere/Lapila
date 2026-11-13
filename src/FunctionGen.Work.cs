@@ -25,6 +25,13 @@ public sealed partial class FunctionGen
     /// it goes to one ticket with `t.put_work(steal work)` on every path, and is never copied or dropped.
     private readonly Dictionary<string, string?> _workNames = [];
 
+    /// The signature of the routine `f.to[Work](...)` names: a pausable routine's from its declaration, which is no
+    /// routine value.
+    private DType? WorkSignature(WorkExpr w) =>
+        _c.FreeCandidates(w.Routine.Name, _env.File, w.Routine.Pos, w.Routine.Path) is [{ IsPausable: true } pausable]
+            ? OwnCallable(_c.Signature(pausable, new Compiler.TypeEnv(pausable.File)))
+            : Infer(w.Routine);
+
     /// Whether `t` is the standard library's `Work[T]`.
     private static bool IsWorkType(DType? t) => t is RecordType { Decl.IsLibrary: true, Decl.Name: "Work" };
 
@@ -32,7 +39,7 @@ public sealed partial class FunctionGen
     /// when none does. A view (`@T`, `@[T]`) holds nothing, so work handed views is plain.
     private string? WorkOnce(WorkExpr w)
     {
-        if (Infer(w.Routine) is not CallableType ct) return null;
+        if (WorkSignature(w) is not CallableType ct) return null;
         var routine = WorkRoutine(w);
         var given = WorkArgs(w, routine);
         for (int i = 0; i < given.Count && i < routine.Params.Count; i++)
@@ -137,10 +144,20 @@ public sealed partial class FunctionGen
     /// `Work[T]`, T the routine's result (`None` for none), carrying what the routine can throw.
     private DType? WorkType(WorkExpr w)
     {
+        if (_c.FreeCandidates(w.Routine.Name, _env.File, w.Routine.Pos, w.Routine.Path) is [{ IsPausable: true } pausable]
+            && Pausable.StateOf(pausable) is { } pausing)
+        {
+            var result = _c.ResolveType(pausable.ReturnType, new Compiler.TypeEnv(pausable.File), allowVoid: true);
+            if (result is VoidType) result = Resolve(TypeRef.Simple("None", w.Pos));
+            var pausingWork = Resolve(new TypeRef("Work", [new TypeArgType(new TypeRef(result.Name, [], w.Pos) { Known = result })], w.Pos));
+            return pausingWork is RecordType pw ? pw.WithFails(PausableFails(pausable, pausing, w.Pos), $"'{pausable.DisplayName}'") : pausingWork;
+        }
         if (Infer(w.Routine) is not CallableType ct) return null;
         var plain = PlainWorkType(w, ct);
         var routine = WorkRoutine(w);
-        return plain is RecordType work ? work.WithFails(EntryFails(routine, w.Routine.TypeArgs, w.Pos, out _), $"'{routine.DisplayName}'") : plain;
+        var fails = Pausable.StateOf(routine) is { } state ? PausableFails(routine, state, w.Pos)
+            : EntryFails(routine, w.Routine.TypeArgs, w.Pos, out _);
+        return plain is RecordType work ? work.WithFails(fails, $"'{routine.DisplayName}'") : plain;
     }
 
     private DType PlainWorkType(WorkExpr w, CallableType ct)
@@ -312,6 +329,7 @@ public sealed partial class FunctionGen
     {
         var routine = WorkRoutine(w);
         var args = WorkArgs(w, routine);
+        if (Pausable.StateOf(routine) is { } pausing) return EvalPausingWork(w, routine, args, pausing);
         if (Infer(w.Routine) is not CallableType ct)
             throw Err(Li.WorkForm, w.Routine.Pos, $"'{w.Routine.Name}' has no one signature here: write its instance, {w.Routine.Name}[T].to[Work](...)");
         bool none = ct.Ret is VoidType;
@@ -385,5 +403,56 @@ public sealed partial class FunctionGen
                 }
         // The piece of work made here fails what its routine does: nothing when it fails nothing.
         return made.Type is RecordType work ? made with { Type = work.WithFails(fails, $"'{routine.DisplayName}'") } : made;
+    }
+
+    /// The `resume` of the state record a pausable routine's declaration names.
+    private RoutineDecl PausableResume(RoutineDecl routine, string state, Pos pos)
+    {
+        var stateType = _c.ResolveType(new TypeRef(state, [], pos), new Compiler.TypeEnv(routine.File));
+        return _c.FindMethod(stateType, "resume", routine.File, pos, anyModule: true)
+               ?? throw Err(Li.PausableForm, pos, $"'{routine.Name}' has no state record");
+    }
+
+    /// What a pausable routine's work can throw: what its state record's `resume` throws.
+    private List<DType> PausableFails(RoutineDecl routine, string state, Pos pos)
+    {
+        var resume = PausableResume(routine, state, pos);
+        if (!Emitting || !_c.CanRecover(resume)) return [];
+        var form = _c.RecoveringOf(resume);
+        var env = new Compiler.TypeEnv(form.File);
+        env.Bind("Me", _c.ResolveType(new TypeRef(state, [], pos), new Compiler.TypeEnv(routine.File)));
+        var inst = _c.RequireInstance(form, env);
+        _c.EnsureThrowsKnown(inst);
+        return _c.ThrowsOf(inst, _inst);
+    }
+
+    /// `f.to[Work](...)` of a pausable routine: its state record, made from the arguments, in a `PausingWork` block in a
+    /// frame slot, then `pausing_work_from[T, State](block)`. The work runs on a PausingFiber, a step whenever it is woken.
+    private Val EvalPausingWork(WorkExpr w, RoutineDecl routine, List<Expr> args, string state)
+    {
+        var env = new Compiler.TypeEnv(routine.File);
+        var stateType = _c.ResolveType(new TypeRef(state, [], w.Pos), env);
+        var result = _c.ResolveType(routine.ReturnType, env, allowVoid: true);
+        if (result is VoidType) result = Resolve(TypeRef.Simple("None", w.Pos));
+        TypeRef Known(DType t) => new(t.Name, [], w.Pos) { Known = t };
+        var blockRef = new TypeRef("PausingWork", [new TypeArgType(Known(result)), new TypeArgType(Known(stateType))], w.Pos) { Path = "Fiber" };
+        var blockType = Resolve(blockRef);
+        var made = new NsCallExpr(Known(stateType), "construct", [], args, w.Pos) { ArgNames = routine.Params.Select(p => (string?)p.Name).ToList() };
+        var ctor = new NsCallExpr(blockRef with { Known = blockType }, "construct", [],
+            [new ImplicitCallExpr("hollow", [], [], w.Pos), made], w.Pos) { ArgNames = ["result", "state"] };
+        string slot = $"$work{_works++}";
+        _workBlocks.Add(slot);
+        EmitStmtCore(new BindStmt(slot, new TypeRef("$work", [], w.Pos) { Known = new PtrType(blockType) },
+            new ClaimExpr(w.Pos) { Contents = ctor }, w.Pos));
+        var fails = PausableFails(routine, state, w.Pos);
+        // The runner is built for the routine's list, as a plain work's is, so it keeps the routine's failure for retrieve().
+        List<TypeRef> pair = [Known(result), Known(stateType)];
+        var call = new CallExpr("work_from", [Known(result), blockRef with { Known = blockType }],
+            [new ValueRef(slot, w.Pos),
+             new RoutineRef("run_pausing", null, w.Pos) { Path = "Fiber", TypeArgs = pair, Fails = Crashing.Union(fails) },
+             new RoutineRef("discard_pausing", null, w.Pos) { Path = "Fiber", TypeArgs = pair, Fails = Crashing.Union(fails) }], w.Pos)
+            { ArgNames = ["made", "runner", "discard"] };
+        var work = Eval(call, Resolve(new TypeRef("Work", [new TypeArgType(Known(result))], w.Pos)));
+        return work.Type is RecordType plain ? work with { Type = plain.WithFails(fails, $"'{routine.DisplayName}'") } : work;
     }
 }

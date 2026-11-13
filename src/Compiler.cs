@@ -140,7 +140,7 @@ public sealed partial class Compiler
         HeapCheck = heapCheck;
         RaceCheck = raceCheck;
         var targetForms = new Dictionary<string, RoutineDecl>();
-        var given = decls.ToList();
+        var given = Pausable.Lower(decls.ToList(), out _shownPausables);
         foreach (var d in Derive.Routines(given).Concat(Dispatch.Declarations(given)))
         {
             // A type's construct and destruct count on every target, even where only another target keeps them.
@@ -228,6 +228,13 @@ public sealed partial class Compiler
         CheckAliases();
         CheckLifecycle();
     }
+
+    /// The declarations the builder made of the program's pausable routines, as Lapila source (Pausable.Lower).
+    private readonly string _shownPausables;
+
+    /// The state records and resume routines the builder made of the program's pausable routines, as Lapila source:
+    /// what `[debug] show-pausable` writes.
+    public string ShownPausables() => _shownPausables;
 
     /// Every declared `construct` and `destruct`, whatever target it is kept for.
     private readonly List<RoutineDecl> _lifeRoutines = [];
@@ -721,6 +728,7 @@ public sealed partial class Compiler
         BuildDeclaredThrowsForms();
         FinishThrows();
         if (InlineRecursion() is [var recursive, ..]) throw recursive;
+        if (PausableStackSwitches() is [var switches, ..]) throw switches;
         if (VerifyFixedConformances() is [var first, ..]) throw first;
         if (VerifyThrows() is [var unlisted, ..]) throw unlisted;
         if (VerifyCrashPathsTakeNoMemory() is [var allocating, ..]) throw allocating;
@@ -875,6 +883,7 @@ public sealed partial class Compiler
         try { BuildDeclaredThrowsForms(); FinishThrows(); }
         catch (CompileError e) { errors.Add(e); }
         errors.AddRange(InlineRecursion());
+        errors.AddRange(PausableStackSwitches());
         errors.AddRange(VerifyFixedConformances());
         errors.AddRange(VerifyThrows());
         errors.AddRange(VerifyCrashPathsTakeNoMemory());
@@ -1843,6 +1852,46 @@ public sealed partial class Compiler
         if (Prechecking) return;
         if (!_calls.TryGetValue(caller.Symbol, out var callees)) _calls[caller.Symbol] = callees = [];
         callees.Add(callee.Symbol);
+    }
+
+    /// Where each call of a pausable routine's `resume` is, by caller and callee: the line a stack switch is reported at.
+    private readonly Dictionary<(string Caller, string Callee), Pos> _pausableCalls = [];
+
+    /// Records where a pausable routine's lines call `callee`.
+    public void NotePausableCall(Instance caller, Instance callee, Pos at)
+    {
+        if (!Prechecking && caller.Decl.AnnotationNamed(Pausable.StateMark) is not null) _pausableCalls.TryAdd((caller.Symbol, callee.Symbol), at);
+    }
+
+    /// A pausable routine runs on its manager's own stack between the manager's other work, so nothing it calls may switch
+    /// stacks (a fiber's park, yield or wait): one error per call that may, naming the routines down to the switch.
+    private List<CompileError> PausableStackSwitches()
+    {
+        var errors = new List<CompileError>();
+        foreach (var ((caller, callee), at) in _pausableCalls.OrderBy(kv => kv.Value.Line).ThenBy(kv => kv.Value.Col))
+        {
+            var from = new Dictionary<string, string> { [callee] = "" };
+            var queue = new Queue<string>([callee]);
+            string? found = null;
+            while (found is null && queue.Count > 0)
+            {
+                string here = queue.Dequeue();
+                if (_instances.TryGetValue(here, out var inst) && inst.Decl is { IsLibrary: true, Name: "switch_stack" or "switch_fiber" })
+                {
+                    found = here;
+                    break;
+                }
+                foreach (var next in _calls.GetValueOrDefault(here) ?? [])
+                    if (from.TryAdd(next, here)) queue.Enqueue(next);
+            }
+            if (found is null) continue;
+            var path = new List<string>();
+            for (string here = found; here != ""; here = from[here]) path.Insert(0, _instances[here].Decl.DisplayName);
+            errors.Add(new CompileError(Li.PausableSwitchesStacks, at, $"'{path[0]}' may switch stacks ({string.Join(" -> ", path)}), and a pausable "
+                + "routine runs on its manager's stack between the manager's other work, where no stack can be switched. Run it as a fiber of "
+                + $"its own, f.to[Work](...) on a Fiber ticket, and wait for that with pauseuntil t.finish()"));
+        }
+        return errors;
     }
 
     /// An @inline routine that calls itself, directly or through other routines, can't be inlined at every call: the

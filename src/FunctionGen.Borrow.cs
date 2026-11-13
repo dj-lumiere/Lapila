@@ -59,17 +59,17 @@ public sealed partial class FunctionGen
     /// work (`Work[T]`) is a plain value bound with `=`.
     private static bool IsBorrowedType(DType? t) =>
         t is RecordType { Decl.IsLibrary: true } r
-        && r.Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "FileStorage";
+        && r.Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "PausingFiber" or "FileStorage";
 
     /// Whether `t` (or a slot of it) is a borrowed thing the memory rules follow as one group that ends once: a thread,
     /// fiber, or passable fiber ticket, or a mapped file's storage. The accesses have their own check (Access).
     private static bool IsTicketLike(DType? t) =>
         (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType { Decl.IsLibrary: true } r
-        && r.Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "FileStorage";
+        && r.Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "PausingFiber" or "FileStorage";
 
     /// Whether `t` (or the place of one) is a thread, fiber, or passable fiber ticket, which work runs on.
     private static bool IsWorkTicket(DType? t) =>
-        (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType { Decl.IsLibrary: true, Decl.Name: "Thread" or "Fiber" or "PassableFiber" };
+        (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType { Decl.IsLibrary: true, Decl.Name: "Thread" or "Fiber" or "PassableFiber" or "PausingFiber" };
 
     /// Whether `t` is the standard library's `BorrowedCell[T]` (`&T`) or `BorrowedSlice[T]` (`&[T]`), not a type of the program that
     /// is named so.

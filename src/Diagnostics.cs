@@ -280,6 +280,16 @@ public static class Li
     public static readonly Code CommandUsage = S(1455, "CommandUsage", "A command called without what it needs.");
     public static readonly Code ReadOnlyViewWrite = S(1456, "ReadOnlyViewWrite", "A write through a %T or %[T], a view that only reads (the me of a @readonly routine is one), or such a view handed where a @T goes.");
     public static readonly Code AccessHandedOver = S(1457, "AccessHandedOver", "An access handed over with steal to where nothing would give it back, or a place that gives one back handed a view.");
+    public static readonly Code PausableForm = S(1458, "PausableForm", "A pausable routine where none can be: in a protocol, generic, on a type, infallible, written with blocks, or taken as a Callable or ErasedCallable.");
+    public static readonly Code PauseForm = S(1459, "PauseForm", "A pauseuntil outside a pausable routine, or in a place a pause can't stand (inside an expression, a for over an emitter).");
+    public static readonly Code CarryingMissing = S(1460, "CarryingMissing", "A value used after a pauseuntil that its carrying list leaves out, or a carrying list naming something that isn't a local value.");
+    public static readonly Code CarryingStackView = S(1461, "CarryingStackView", "A view of STACK memory that a carrying list keeps across a pause, or a carried place the state record can't hold.");
+    public static readonly Code PausableCall = S(1462, "PausableCall", "A pausable routine called directly: inside a pausable routine through pauseuntil, elsewhere as work on a PausingFiber.");
+    public static readonly Code PausableAccess = S(1463, "PausableAccess", "An access taken with '<-' inside a pausable routine, which would be held across its pauses.");
+    public static readonly Code PausableCycle = S(1464, "PausableCycle", "Pausable routines that wait for each other in a cycle through pauseuntil.");
+    public static readonly Code PausableSwitchesStacks = S(1465, "PausableSwitchesStacks", "A routine that may switch stacks (a fiber's park, yield or wait) called inside a pausable routine.");
+    public static readonly Code PausableRetrieve = S(1466, "PausableRetrieve", "A retrieve() of work on this thread's CoroutineManager inside a pausable routine.");
+    public static readonly Code PauseTarget = S(1467, "PauseTarget", "What a pauseuntil waits for whose type the builder can't tell, or that doesn't obey Eventual.");
 
     // Warning, numbers shared with Revare and Mielia
     public static readonly Code UnusedLoopName = W(10, "UnusedLoopName", "A loop named but not used by any break or continue.", shared: true);
@@ -298,6 +308,7 @@ public static class Li
     public static readonly Code MemoryReleasedOnce = W(1003, "MemoryReleasedOnce", "Two names for the same memory, which is released once.");
     public static readonly Code ShowsCell = W(1004, "ShowsCell", "A value shown as the cell itself instead of what it holds.");
     public static readonly Code ExpensiveCallInLoop = W(1005, "ExpensiveCallInLoop", "A call to a routine marked #expensive on a loop, or a loop-carried cost.");
+    public static readonly Code PausableBlocksThread = W(1006, "PausableBlocksThread", "A call inside a pausable routine that puts the whole thread to sleep (a thread ticket's retrieve, waitfor).");
 
     /// All codes, in the order of the fields.
     public static IReadOnlyList<Code> All { get; } = typeof(Li)

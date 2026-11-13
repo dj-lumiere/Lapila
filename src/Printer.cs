@@ -342,6 +342,9 @@ public sealed class Printer
                 return Unary(u.Op, u.Operand, parentPrec);
             case StealExpr st:
                 return $"steal {Expr(st.Value, 9)}";
+            case PauseExpr pause:
+                return $"pauseuntil {Expr(pause.Target, 9)}"
+                       + (pause.CarryingWritten ? $" carrying ({string.Join(", ", pause.Carrying.Select(c => Name(c.Name)))})" : "");
             case RangeExpr r:
             {
                 string text = $"{Expr(r.From, 4)} {(r.Inclusive ? "to" : "til")} {Expr(r.To, 4)}";
@@ -367,6 +370,8 @@ public sealed class Printer
             }
             case AtExpr at:
                 return $"{Expr(at.Value)} from {Expr(at.Manager, 9)}";
+            case WorkExpr w:
+                return $"{Expr(w.Routine)}.to[Work]({Args(w.Args, w.ArgNames)})";
             case WhenExpr:
                 throw new InvalidOperationException("a when value is written by the statement that binds it");
             default:

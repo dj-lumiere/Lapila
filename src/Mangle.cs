@@ -309,6 +309,9 @@ public sealed partial class Compiler
                 Register(key);
                 return;
             }
+            // `T | Pending` as a template writes it: the standard library's union of that many branches, in the written order.
+            if (t.Path is null && t.Name == Lapila.TypeRef.UnionName)
+                t = t with { Name = $"Union{t.Args.Count}", Path = SystemModule };
             if (t.Path is null or SystemModule && t.Name == "Callable")
             {
                 // `PF <ret> <params> E`, each written the way the routine declares it.

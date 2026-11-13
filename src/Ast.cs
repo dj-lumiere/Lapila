@@ -159,6 +159,10 @@ public sealed record RoutineDecl(
     /// `infallible routine`: a promise not to fail. A failure inside it stops the program there, even under `try`.
     public bool IsInfallible { get; init; }
 
+    /// `pausable routine`: it may wait with `pauseuntil`. The builder turns it into a state record and its `resume()`
+    /// (Pausable.cs), and keeps this declaration, with no lines, for the routine's name, parameters and result.
+    public bool IsPausable { get; init; }
+
     /// The recovering form of a routine, made by the builder (Compiler.RecoveringOf): a `try` or `check` above a call
     /// reaches it, and every call in it that fails passes its failure on to the caller instead of stopping.
     public bool IsRecovering { get; init; }
@@ -179,7 +183,7 @@ public sealed record RoutineDecl(
 
     /// The header up to the parameters, as written: `routine Point.scaled`, `routine @Point.move`,
     /// `common routine Point.origin`, `routine gcd`.
-    public string Header => (IsInfallible ? "infallible " : "") + (IsCommon ? "common routine " : "routine ") + (TakesAddress ? "@" : "")
+    public string Header => (IsPausable ? "pausable " : "") + (IsInfallible ? "infallible " : "") + (IsCommon ? "common routine " : "routine ") + (TakesAddress ? "@" : "")
         + (Owner is null ? Name : $"{OwnerAsWritten}.{Name}");
 
     /// The owner as a header writes it: `PointedCell[Cell]` for a routine on the pointer type, since `@Cell.read` would take a
@@ -680,6 +684,14 @@ public sealed record ArrayLit(List<Expr> Elements, Pos Pos) : Expr(Pos)
 /// `f.to[Work](param: value, ...)`: the routine `f` with its arguments, named by its parameters, as a piece of work
 /// (`Work[T]`, T the routine's result) not started yet.
 public sealed record WorkExpr(RoutineRef Routine, List<Expr> Args, List<string?>? ArgNames, Pos Pos) : Expr(Pos);
+
+/// `pauseuntil X carrying (a, b)`: the pausable routine stops until X (a call or an `Eventual[T]` value) has finished,
+/// and X's result is the value. Carrying lists the local values the routine uses after the pause.
+public sealed record PauseExpr(Expr Target, List<ValueRef> Carrying, Pos Pos) : Expr(Pos)
+{
+    /// Whether `carrying (...)` was written: a pause with nothing to carry may leave it out.
+    public bool CarryingWritten { get; init; }
+}
 
 /// `[0] * n from manager` (a `BorrowedSlice[T]`) or `(value: 1, next: .hollow()) from manager` (a `BorrowedCell[T]`): the literal in memory
 /// taken from the manager, which `drop` gives back. A repeat count here may be known only while running.

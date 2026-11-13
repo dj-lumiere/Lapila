@@ -713,13 +713,15 @@ public static class Formatter
     private static int RoutineWord(string line)
     {
         int i = line.StartsWith("secret ", StringComparison.Ordinal) ? "secret ".Length : 0;
+        if (string.CompareOrdinal(line, i, "pausable ", 0, "pausable ".Length) == 0) i += "pausable ".Length;
         if (string.CompareOrdinal(line, i, "infallible ", 0, "infallible ".Length) == 0) i += "infallible ".Length;
         if (string.CompareOrdinal(line, i, "common ", 0, "common ".Length) == 0) i += "common ".Length;
         return string.CompareOrdinal(line, i, "routine ", 0, "routine ".Length) == 0 ? i : -1;
     }
 
     private static bool StartsDeclaration(string line) =>
-        line.StartsWith("routine ") || line.StartsWith("common routine ") || line.StartsWith("infallible ") || line.StartsWith("record ")
+        line.StartsWith("routine ") || line.StartsWith("common routine ") || line.StartsWith("infallible ") || line.StartsWith("pausable ")
+        || line.StartsWith("record ")
         || line.StartsWith("crashable ") || line.StartsWith("choice ") || line.StartsWith("flags ") ||
         line.StartsWith("variant ") || line.StartsWith("protocol ") || line.StartsWith("#") || IsAnnotation(line);
 
@@ -928,7 +930,7 @@ public static class Formatter
         "return", "becomes", "and", "or", "not", "if", "until", "loop", "then", "else", "elseif", "in", "to", "til", "by", "with",
         "when", "jump", "is", "as", "needs", "obeys", "claim", "drop", "steal", "throw", "try", "check", "for", "expand", "todo",
         "routine", "record", "entity", "choice", "variant", "preset", "global", "protocol", "define", "block", "common",
-        "secret", "infallible", "crashable", "continue", "break", "unreachable",
+        "secret", "infallible", "crashable", "continue", "break", "unreachable", "pausable", "pauseuntil", "carrying",
     ];
 
     /// One line, with its first chain of more than three calls broken before the dot of each call after the first, or the
@@ -1103,6 +1105,7 @@ public static class Formatter
     {
         if (line.Length == 0 || line[0] == ' ') return null;
         string s = line.StartsWith("secret ") ? line[7..] : line;
+        if (s.StartsWith("pausable ", StringComparison.Ordinal)) s = s["pausable ".Length..];
         if (s.StartsWith("infallible ", StringComparison.Ordinal)) s = s["infallible ".Length..];
         if (s.StartsWith("common routine ", StringComparison.Ordinal)) s = s["common ".Length..];
         int space = s.IndexOf(' ');

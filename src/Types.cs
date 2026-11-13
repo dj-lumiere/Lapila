@@ -302,13 +302,13 @@ public sealed class RecordType(RecordDecl decl, List<DType> args, Func<RecordTyp
         list.Count == 0 ? Plain : new RecordType(Decl, Args, transparentField, list, from);
 
     /// Whether values of a record declaration carry their entry routine's crashables: the standard library's tickets,
-    /// `Work[T]`, and the blocks of work its tickets run.
+    /// `Work[T]`, the blocks of work its tickets run, and the `Finish[T]` step a ticket's `finish()` gives.
     public static bool FailureCarrier(RecordDecl d) =>
-        d.IsLibrary && d.Name is "Thread" or "Fiber" or "PassableFiber" or "Work" or "Work0" or "Work1" or "Work2" or "Work3"
+        d.IsLibrary && d.Name is "Thread" or "Fiber" or "PassableFiber" or "PausingFiber" or "Finish" or "Work" or "Work0" or "Work1" or "Work2" or "Work3"
             or "Work4" or "VoidWork0" or "VoidWork1" or "VoidWork2" or "VoidWork3" or "VoidWork4";
 
     /// Whether this is a ticket of the standard library: `Thread[T]`, `Fiber[T]` or `PassableFiber[T]`.
-    public bool IsTicket => Decl.IsLibrary && Decl.Name is "Thread" or "Fiber" or "PassableFiber";
+    public bool IsTicket => Decl.IsLibrary && Decl.Name is "Thread" or "Fiber" or "PassableFiber" or "PausingFiber";
     public override string Name =>
         IsTuple ? $"({string.Join(", ", Args.Select(a => a.Name))})"
         : Decl is { Name: "PointedSlice", Module: Compiler.SystemModule } && Args is [var elem] ? $"@[{elem.Name}]"

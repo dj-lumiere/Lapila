@@ -537,6 +537,7 @@ static partial class Cli
         bool? trace = null, bool heapCheck = false, bool raceCheck = false, int? traceFrames = null, int? failureTraces = null,
         bool? deadlockCheck = null, bool? accessOrder = null, int? crashMessageSize = null,
         TextWriter? destructs = null, IReadOnlyList<string>? linkArguments = null, bool framePointers = false,
+        TextWriter? pausables = null,
         LibraryBase.Split? split = null)
     {
         var inputs = files.ToList();
@@ -621,6 +622,7 @@ static partial class Cli
         }
         else ir = compiler.Output();
         destructs?.Write(compiler.ShownDestructs());
+        pausables?.Write(compiler.ShownPausables());
         if (lint) Lint(decls, inputs, [compiler]);
         if (executable && !compiler.HasStart)
             throw compiler.MainRoutine is { } main
@@ -950,11 +952,14 @@ static partial class Cli
             return m.LibraryPath;
         }
         var split = new LibraryBase.Split();
+        var pausables = m.ShowPausable ? new StringWriter() : null;
         string ir = Compile(m.Sources, m.Target, roots: m.Roots, mode: m.Mode, trace: m.Traced,
             heapCheck: m.HeapCheck, raceCheck: m.RaceCheck, traceFrames: m.TraceFrames, failureTraces: m.FailureTraces,
             deadlockCheck: m.DeadlockCheck, accessOrder: m.AccessOrder,
-            crashMessageSize: m.CrashMessageSize, linkArguments: LibraryArguments(m), split: split);
+            crashMessageSize: m.CrashMessageSize, linkArguments: LibraryArguments(m), split: split, pausables: pausables);
         Directory.CreateDirectory(m.OutputDirectory);
+        // `[debug] show-pausable`: the state records and resume routines made of the program's pausable routines.
+        if (pausables is not null) File.WriteAllText(Path.Combine(m.OutputDirectory, m.Executable + ".pausable.lpa"), pausables.ToString());
         if (m.EmitLlvm) File.WriteAllText(Path.ChangeExtension(m.ExecutablePath, ".ll"), ir);
         m.WriteLinkScript();
         Link(ir, m.ExecutablePath, m.Target, m.Mode, m.LinkArguments().Concat(RaceLink(m.RaceCheck)), split);

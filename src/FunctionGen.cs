@@ -5675,6 +5675,10 @@ public sealed partial class FunctionGen
         if (r.TypeArgs.Count > 0) return GenericRoutineValue(r, set, expected);
         var routine = set.Count == 1 ? set[0] : OverloadForValue(r, set, expected);
         if (Recorded) _c.CallUses.TryAdd((r.Pos, r.Name), new Compiler.CallUse(routine, []));
+        if (routine.IsPausable)
+            throw Err(Li.PausableForm, r.Pos, $"'{r.Name}' is pausable, so it can't be a routine value: each pausable routine keeps a state "
+                + "record of its own size while it waits, which a call through a Callable or an ErasedCallable couldn't hold. Make work of it "
+                + $"with {r.Name}.to[Work](...), or wait for it with pauseuntil {r.Name}(...) in a pausable routine");
         // An @inline routine is inlined at every call, so there's no call of its own for a pointer to name.
         if (routine.AnnotationNamed("inline") is not null)
             throw Err(Li.RoutineValue, r.Pos, $"'{r.Name}' is @inline, so it can't be a Callable value: it's inlined at every call, "
@@ -7099,6 +7103,11 @@ public sealed partial class FunctionGen
 
     private Val EmitCall(CallPlan plan)
     {
+        if (plan.Decl.IsPausable)
+            throw Err(Li.PausableCall, plan.Pos, _decl.AnnotationNamed(Pausable.StateMark) is not null
+                ? $"'{plan.Decl.Name}' is pausable, so a pausable routine waits for it: pauseuntil {plan.Decl.Name}(...) carrying (...)"
+                : $"'{plan.Decl.Name}' is pausable, so it runs as work on a PausingFiber, which keeps its state record while it waits: "
+                  + $"t: PausingFiber[T] <- FIBERS.get_pausing_fiber[T](), then t.put_work({plan.Decl.Name}.to[Work](...)) and t.retrieve()");
         if (plan.Decl is { IsLibrary: true, Module: Compiler.SystemModule, Owner.Name: "Crash", Name: "report_with" } && !_reportingArgument)
         {
             _reportingArgument = true;
@@ -7195,6 +7204,7 @@ public sealed partial class FunctionGen
 
         var inst = _c.RequireInstance(plan.Decl, plan.Env);
         _c.RecordCall(_inst, inst);
+        _c.NotePausableCall(_inst, inst, plan.Pos);
         if (!_c.Prechecking) _c.MadeBy.TryAdd(inst.Symbol, (plan.Pos, _inst));
         RecordCall(plan, inst);
         NoteAccessCall(plan, inst);

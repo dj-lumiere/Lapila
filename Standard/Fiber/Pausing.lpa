@@ -1,0 +1,645 @@
+# Lapila stdlib: pausable routines, the steps they wait for, and the pausing fiber that runs them
+#
+# A `pausable routine` waits with `pauseuntil X carrying (a, b)`: it stops there, its thread goes on with other work, and
+# it goes on once X has finished, with X's result as the value of the expression. The builder turns the routine into a
+# state record: its parameters, the values `carrying` lists, `at` (which pause it stopped at), and room for the step it
+# waits for, as large as the largest of its steps. The record's `resume()` runs from `at` until the next pause or the
+# end. So a pausable routine has no stack of its own: the record is all that is kept while it waits.
+#
+# What a pause waits for obeys `Eventual[T]`: `resume()` gives the result, or `Pending` when it isn't there yet, and
+# `wake_when_done(waiter)` asks to wake the waiting work once it is. A pausable routine's state record obeys it, and so
+# do the steps at the bottom, which the managers give: `FIBERS.next_turn()` (the other ready work goes first),
+# `Clock.after(d)` (at least `d` passes) and a ticket's `finish()` (its work has finished, the result is the
+# ticket's). Code of your own may write more steps: a record with those two routines and `obeys Eventual[Me, T]`.
+#
+# The work runs on a `PausingFiber[T]` ticket from a CoroutineManager, `FIBERS.get_pausing_fiber[T]()`, made from the
+# routine with `f.to[Work](...)` and put on with `put_work`, the flow every ticket has. The manager calls the record's
+# `resume()` on its own thread whenever the work is woken, between its fibers. A wake from another thread goes through
+# the manager's inbox, which is safe between threads.
+
+module Fiber
+
+import Collections
+import Hosted
+
+### The waiter of the pausing work running on this thread, put there by its CoroutineManager for each step, or a hollow
+### Waiter outside one. A step that isn't there yet asks to wake this waiter.
+@threadlocal
+@target(os: not "none")
+global RUNNING_PAUSING: &Waiter
+
+### When the step that just said `Pending` finishes by itself, in `Clock.monotonic()` time: a clock step sets it, so pausing
+### work that runs alone on a thread or a fiber sleeps until then. `Duration.MAX` for none.
+@threadlocal
+@target(os: not "none")
+global PAUSING_DEADLINE: &Duration
+
+### The value a step gives while its result isn't there yet: the waiting work stops and is woken later.
+record Pending
+    nothing
+
+### A step that finishes eventually and gives a `T`: what `pauseuntil` waits for. `resume()` goes on with the step and gives
+### its result, or `Pending` while it isn't there yet. After `Pending`, the waiting work calls `wake_when_done` with its
+### waiter, and the step wakes that waiter once `resume()` would give more than `Pending` (at once when it would already).
+### A pausable routine's state record obeys it.
+### :typeparam TStep: The step's type.
+### :typeparam T: The step's result type.
+protocol Eventual[TStep, T]
+    ### Goes on with the step.
+    ### :returns: The result, or `Pending` while it isn't there yet.
+    routine @TStep.resume() -> T | Pending
+
+    ### Asks to wake `waiter` once the step can give its result: at once when it can already.
+    ### :param waiter: The waiting work's waiter.
+    routine @TStep.wake_when_done(waiter: Waiter) -> None
+
+### Room for the step a pausable routine waits for, `SIZE` bytes or a little more, aligned for any value. The builder
+### sizes it for the largest step of the routine. One step at a time is in it: `hold` puts one in, `end` ends it.
+### :typeparam SIZE: The size of the largest step in bytes.
+entity StepRoom[SIZE]
+needs U64 SIZE
+    ### The step's bytes.
+    words: Items[U128, (SIZE + 15) // 16]
+    ### Ends the step in the room through its type's destruct, or None for an empty room.
+    ends: Callable[(Addr,), None]?
+
+### An empty room.
+### :returns: The room.
+common routine StepRoom[SIZE].construct() -> Me
+needs U64 SIZE
+    lateinit room: &Me
+    room.zeroinit(1)
+    return room
+
+### Ends the step in the room, if there is one.
+routine @StepRoom[SIZE].destruct() -> None
+needs U64 SIZE
+    me.end()
+    return
+
+### Ends the step in the room, if there is one, and leaves the room empty.
+routine @StepRoom[SIZE].end() -> None
+needs U64 SIZE
+    when me.ends.peek()
+        is Callable[(Addr,), None] as ends =>
+            me.ends.poke(none)
+            ends.call(me.words.to[Addr]())
+        is None => nothing
+    return
+
+### Puts `step` in the room, after ending the one there.
+### :typeparam S: The step's type.
+### :param step: The step.
+### :returns: Its place in the room.
+routine @StepRoom[SIZE].hold[S](step: S) -> @S
+needs U64 SIZE, AnyType S
+    me.end()
+    place: @S = me.words.to[Addr]().to[@S]()
+    place.poke(steal step)
+    me.ends.poke(end_step[S].to[Callable]())
+    return place
+
+### The place of the step in the room, an `S`.
+### :typeparam S: The step's type.
+### :returns: Its place.
+routine @StepRoom[SIZE].place[S]() -> @S
+needs U64 SIZE, AnyType S
+    return me.words.to[Addr]().to[@S]()
+
+### Ends the step at `at`, an `S`, through its type's destruct.
+### :typeparam S: The step's type.
+### :param at: The step.
+infallible routine end_step[S](at: Addr) -> None
+needs AnyType S
+    place: @S = at.to[@S]()
+    drop place.stride(0)
+    place.zeroinit(1)
+    return
+
+### Whether every byte of the value at `at` is zero: a place that holds nothing.
+### :typeparam T: The value's type.
+### :param at: The value.
+### :returns: True when every byte is zero.
+secret routine holds_nothing[T](at: @T) -> Bool
+needs AnyType T
+    place: Addr = at
+    bytes: @Byte = place.to[@Byte]()
+
+    for i in 0 til sizeof[T]()
+        if bytes.stride(i).peek() != 0x00
+            return false
+    then
+        return true
+
+### A place a pausable routine keeps in its state record across its pauses: a `<-` name that `carrying` lists, or a
+### parameter that takes a value over. It starts empty, holds the value from its line on, and ends it once: with `end`,
+### or when the record ends.
+### :typeparam T: The value's type.
+entity Carried[T]
+needs AnyType T
+    ### The value, all zero while the place holds none.
+    value: T
+
+### An empty place.
+### :returns: The place.
+common routine Carried[T].construct() -> Me
+needs AnyType T
+    lateinit made: &Me
+    made.zeroinit(1)
+    return made
+
+### Ends the value the place holds, if it holds one.
+routine @Carried[T].destruct() -> None
+needs AnyType T
+    if holds_nothing(me.value)
+        return
+    drop me.value
+    return
+
+### Ends the value the place holds, if it holds one, and leaves the place empty.
+routine @Carried[T].end() -> None
+needs AnyType T
+    if holds_nothing(me.value)
+        return
+    drop me.value
+    me.value.zeroinit(1)
+    return
+
+### Puts `value` in the place, after ending the one there.
+### :param value: The value.
+routine @Carried[T].fill(value: T) -> None
+needs AnyType T
+    me.end()
+    place: @T = me.value
+    place.poke(steal value)
+    return
+
+# -- pausing ------------------------------------------------------------------------------------------------------
+
+### The waiter of the pausing work running on this thread: the one a step that isn't there yet wakes.
+### :returns: The waiter, or the running flow's own outside pausing work run by a manager.
+@target(os: not "none")
+routine pausing_waiter() -> Waiter
+    waiter: Waiter = RUNNING_PAUSING.load()
+    if waiter.is_fiber()
+        return waiter
+    return current_waiter()
+
+### Goes on with `step`, a step at the bottom of a pausable routine (not another pausable routine's record): throws
+### `CancelRequested` when the running work was asked to stop, and after `Pending` asks the step to wake the running
+### work. The builder calls it at each `pauseuntil`.
+### :typeparam S: The step's type.
+### :typeparam T: The step's result type.
+### :param step: The step.
+### :returns: The result, or `Pending`.
+### :throws: Throws `CancelRequested` when the running work's ticket was cancelled, and what the step throws.
+@target(os: not "none")
+routine poll_step[S, T](step: @S) -> T | Pending
+needs S obeys Eventual[T]
+    if cancel_requested()
+        throw CancelRequested()
+    when step.resume()
+        is Pending =>
+            step.wake_when_done(pausing_waiter())
+            wake_on_cancel()
+            return Pending()
+        is T as value => return value
+
+### Makes the running work's ticket wake it while it waits at a pause, so a `cancel()` reaches it: the pause then throws
+### `CancelRequested`.
+@target(os: not "none")
+secret routine wake_on_cancel() -> None
+    running: @WorkSlot? = RUNNING_WORK.load().to[@WorkSlot?]()
+    if running.is_absent()
+        return
+    slot: @WorkSlot = running.unwrap()
+    waiter: Waiter = pausing_waiter()
+    held: @U8 <- slot.guard.get_exclusive_access()
+    slot.blocked.poke(waiter)
+    drop held
+    if slot.is_cancelled()
+        waiter.wake()
+    return
+
+# -- the work of a pausing fiber ----------------------------------------------------------------------------------
+
+### The block of pausable work: room for the result, then the routine's state record.
+### :typeparam T: The result type.
+### :typeparam S: The state record.
+entity PausingWork[T, S]
+    ### The result, hollow until the routine returns and after `retrieve` takes it.
+    result: T
+    ### The routine's state record.
+    state: S
+
+### Makes a `PausingWork` from its fields.
+### :param result: Its `result`.
+### :param state: Its `state`.
+### :returns: The new value.
+common routine PausingWork[T, S].construct(result: T, state: S) -> Me
+    return Me(result: steal result, state: steal state)
+
+### Ends the state record, if the work didn't end it, and the result nobody retrieved.
+routine @PausingWork[T, S].destruct() -> None
+    if not holds_nothing(me.state)
+        drop me.state
+    if not holds_nothing(me.result)
+        drop me.result
+    return
+
+### Ends what the block at `raw`, a `PausingWork`, still holds: a ticket calls it before it gives the block back.
+### :param raw: The block.
+infallible routine discard_pausing[T, S](raw: Addr) -> None
+    work: @PausingWork[T, S] = raw.to[@PausingWork[T, S]]()
+    drop work.stride(0)
+    return
+
+### Runs the pausable work in the block at `raw`, a `PausingWork`: one step when a CoroutineManager runs it a step at a
+### time (the slot's `paused` says whether it stopped at a pause), else to its end on this thread or fiber, sleeping
+### while it waits. Its result goes in the block, its failure in `slot` for `retrieve()` to throw.
+### :param raw: The block.
+### :param slot: The ticket's slot.
+@target(os: not "none")
+infallible routine run_pausing[T, S](raw: Addr, slot: @WorkSlot) -> None
+needs S obeys Eventual[T]
+    work: @PausingWork[T, S] = raw.to[@PausingWork[T, S]]()
+    state: @S = work.state
+
+    if slot.stepping.peek() == 1
+        slot.paused.poke(0)
+        when check state.resume()
+            is Pending =>
+                slot.paused.poke(1)
+                return
+            is T as value =>
+                result: @T = work.result
+                result.poke(steal value)
+            is Crashables as failure => slot.keep_failure(failure)
+        end_state(state)
+        return
+    # Alone on a thread or a fiber: the running flow is the waiter, and it sleeps between steps.
+    outer: Waiter = RUNNING_PAUSING.load()
+    waiter: Waiter = current_waiter()
+    RUNNING_PAUSING.store(waiter)
+    loop
+        PAUSING_DEADLINE.store(Duration.MAX)
+        when check state.resume()
+            is Pending =>
+                waiter.park_until(PAUSING_DEADLINE.load())
+                continue
+            is T as value =>
+                result: @T = work.result
+                result.poke(steal value)
+                break
+            is Crashables as failure =>
+                slot.keep_failure(failure)
+                break
+    RUNNING_PAUSING.store(outer)
+    end_state(state)
+    return
+
+### Ends a pausable routine's state record once its work is over, its result given or its failure kept: what it
+### still holds (the places its carrying lists keep, the step it waited for when it failed) ends with it.
+### :typeparam S: The state record.
+### :param state: The state record.
+infallible routine end_state[S](state: @S) -> None
+needs AnyType S
+    drop state.stride(0)
+    state.zeroinit(1)
+    return
+
+# -- the pausing fiber -------------------------------------------------------------------------------------------
+
+### A ticket for a pausing fiber, from {CoroutineManager.get_pausing_fiber}: it runs one piece of pausable work at a
+### time, a step whenever the work is woken, with no stack of its own: the routine's state record is all it keeps while
+### the work waits. Its result is a `T` (`None` for none). Given back with `drop`.
+### :typeparam T: The type of the work's result.
+entity PausingFiber[T]
+    fiber: @FiberState?
+    ### The ticket's number: the fiber's until the ticket is given back.
+    issued: U64
+
+### Makes a `PausingFiber` from its fields.
+### :param fiber: Its `fiber`.
+### :param issued: Its `issued`.
+### :returns: The new value.
+common routine PausingFiber[T].construct(fiber: @FiberState, issued: U64) -> Me
+    return Me(fiber, issued)
+
+### Gives the ticket back: the manager keeps the fiber for the next ticket. A ticket given back already gives nothing
+### back. Written `drop t`. A result nobody retrieved is destructed first.
+### :throws: Crashes with `TicketBusyError` while the work runs.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].destruct() -> None
+    given: @FiberState? = me.fiber.peek()
+    if given.is_absent()
+        return
+    fiber: @FiberState = given.unwrap()
+    if fiber.slot.issued.peek() != me.issued.peek()
+        return
+    fiber.slot.give_back()
+    manager: @CoroutineManager = fiber.manager.peek().unwrap()
+    held: @U8 <- manager.inbox_guard.get_exclusive_access()
+    fiber.next_idle.poke(manager.idle_pausing.peek())
+    manager.idle_pausing.poke(fiber.to[Addr]())
+    drop held
+    return
+
+### A ticket for one of the manager's pausing fibers: one given back, or a new one. A pausing fiber has no stack: it
+### runs pausable work, made with `f.to[Work](...)` from a `pausable routine`.
+### :typeparam T: The type of the work's result, `None` for none.
+### :returns: The ticket, with no work yet.
+### :throws: Crashes with `OutOfMemoryError` when there is no memory for the fiber.
+@target(os: not "none")
+@track_caller
+routine @CoroutineManager.get_pausing_fiber[T]() -> PausingFiber[T]
+needs AnyType T
+    me.ensure()
+    held: @U8 <- me.inbox_guard.get_exclusive_access()
+    idle_or_none: @FiberState? = me.idle_pausing.peek().to[@FiberState?]()
+    if idle_or_none.is_absent()
+        drop held
+        fiber: @FiberState = me.make_pausing_fiber()
+        return PausingFiber[T](fiber, issued: 0)
+    idle: @FiberState = idle_or_none.unwrap()
+    me.idle_pausing.poke(idle.next_idle.peek())
+    drop held
+    idle.next_idle.poke(Addr.zero())
+    idle.slot.state.poke_unbroken(TICKET_EMPTY)
+    return PausingFiber[T](fiber: idle, issued: idle.slot.issued.peek())
+
+### A new pausing fiber: a fiber record with no stack.
+### :returns: The fiber.
+@target(os: not "none")
+@track_caller
+secret routine @CoroutineManager.make_pausing_fiber() -> @FiberState
+    fiber_at: Addr = allocate[FiberState](count: 1, manager: me.manager.peek())
+    if fiber_at.is_hollow()
+        throw OutOfMemoryError()
+    fiber: @FiberState = fiber_at.to[@FiberState]()
+    fiber.poke(FiberState(stack: StackManager(bottom: Addr.zero(), top: Addr.zero(), sp: Addr.zero()),
+        manager: me, slot: .construct(manager: me.manager.peek()), work: fiber.slot.to[Addr](),
+        then: requeue.to[Callable](), wake_state: FIBER_RUNNING, timer: 0, trace_depth: 0, access: none,
+        race: Addr.zero(), next_idle: Addr.zero(), next_all: me.all.peek(), pool: none, mold: Addr.zero()))
+    fiber.slot.stepping.poke(1)
+    me.all.poke(fiber.to[Addr]())
+    return fiber
+
+### Runs one step of a pausing fiber's work on the manager's own stack: until the work's next pause or its end.
+### Work that stopped at a pause waits until something wakes it, or is queued again when a wake came while it ran.
+### :param fiber: The pausing fiber.
+@target(os: not "none")
+secret routine @CoroutineManager.step_pausing(fiber: @FiberState) -> None
+    slot: @WorkSlot = fiber.work.peek().to[@WorkSlot]()
+    outer_work: Addr = RUNNING_WORK.load()
+    outer_pausing: Waiter = RUNNING_PAUSING.load()
+
+    RUNNING_WORK.store(fiber.work.peek())
+    RUNNING_PAUSING.store(Waiter(fiber, manager: me, park_fn: none, wake_fn: wake_hook.to[Callable]()))
+    fiber.timer.poke_unbroken(0)
+    slot.paused.poke(0)
+    slot.runner.peek().call(slot.work.peek(), slot)
+    RUNNING_PAUSING.store(outer_pausing)
+    RUNNING_WORK.store(outer_work)
+    if slot.paused.peek() == 1
+        # Parked, unless a wake came while the step ran: then it goes behind the other ready work.
+        if compare_exchange(at: fiber.wake_state, expected: FIBER_RUNNING, new: FIBER_PARKED)
+            return
+        fiber.wake_state.poke_unbroken(FIBER_RUNNING)
+        me.ready.add_last(fiber)
+        return
+    slot.complete()
+    me.busy.fetch_sub_unbroken(1)
+    fiber.wake_state.poke_unbroken(FIBER_RUNNING)
+    return
+
+### Wakes `fiber`, one of this manager's waiting pausing fibers, once `deadline` has passed. On the manager's thread.
+### :param fiber: The pausing fiber.
+### :param deadline: When, in `Clock.monotonic()` time.
+@target(os: not "none")
+secret routine @CoroutineManager.wake_at(fiber: @FiberState, deadline: Duration) -> None
+    seq: U64 = me.timer_seq.peek() + 1
+    me.timer_seq.poke(seq)
+    fiber.timer.poke_unbroken(seq)
+    me.timers.add(priority: TimerKey(deadline, seq), element: fiber)
+    return
+
+### The slot the ticket's work lives in.
+### :returns: The slot.
+### :throws: Crashes with `TicketGivenBackError` for a ticket given back.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].work_slot() -> @WorkSlot
+    fiber: @FiberState = me.fiber.peek().unwrap()
+    fiber.slot.check_ticket(me.issued.peek())
+    return fiber.slot
+
+### Starts `work`, made with `f.to[Work](...)` from a pausable routine, on the ticket: the manager runs its first step
+### at its next turn. Work with an argument that has something to give back runs once: it is handed over with steal,
+### `t.put_work(steal work)`.
+### :param work: The work.
+### :throws: Crashes with `TicketBusyError` while the last work runs, with `TicketGivenBackError` for a ticket given
+###     back, and with `OutOfMemoryError` when the manager has no memory for the work.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].put_work(work: Work[T]) -> None
+    slot: @WorkSlot = me.work_slot()
+    slot.check_free()
+    fiber: @FiberState = me.fiber.peek().unwrap()
+    manager: @CoroutineManager = fiber.manager.peek().unwrap()
+    slot.put(runner: work.runner, discard: work.discard, work: work.copy_for(slot))
+    manager.busy.fetch_add_unbroken(1)
+    manager.place_ready(fiber)
+    return
+
+### Whether the work has finished, without waiting.
+### :returns: True unless the work runs.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].check_finished() -> Bool
+    return me.work_slot().is_finished()
+
+### Makes the next `retrieve()` wait at most `timeout`.
+### :param timeout: The longest wait, from now.
+### :returns: The ticket, for its `retrieve()`.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].waitfor(timeout: Duration) -> @Me
+    me.work_slot().set_deadline(timeout)
+    return me
+
+### The wait of `retrieve()`: on the thread that drives the manager, outside a fiber, the manager runs its work until this
+### work is done or the deadline `waitfor` set has passed, elsewhere the slot's wait.
+### :returns: `WAITED_FINISHED`, `WAITED_TIMED_OUT` or `WAITED_CANCELLED`.
+@target(os: not "none")
+@track_caller
+secret routine @PausingFiber[T].wait_to_retrieve() -> U32
+    slot: @WorkSlot = me.work_slot()
+    fiber: @FiberState = me.fiber.peek().unwrap()
+    manager: @CoroutineManager = fiber.manager.peek().unwrap()
+
+    if not manager.drives_here()
+        return slot.wait_to_retrieve()
+    deadline: Duration = slot.deadline.peek()
+    slot.deadline.poke(Duration.MAX)
+    manager.drive(awaited: slot, deadline, idle_only: false)
+    if slot.is_finished()
+        return WAITED_FINISHED
+    return WAITED_TIMED_OUT
+
+### Waits until the work has finished, and gives its result. Outside a fiber, on the thread that drives the manager,
+### the manager runs its work until this work is done. Inside a pausable routine, wait with `pauseuntil t.finish()`.
+### :returns: The result.
+### :throws: Crashes with `NoWorkError` when there was none. Throws `TaskTimeoutError` when the deadline `waitfor` set
+###     passed first, `CancelRequested` when `cancel()` asked the work to stop before it finished, and the failure of the
+###     work's routine.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].retrieve() -> T
+    waited: U32 = me.wait_to_retrieve()
+    slot: @WorkSlot = me.work_slot()
+    if waited == WAITED_TIMED_OUT
+        throw TaskTimeoutError()
+    if waited == WAITED_CANCELLED
+        throw CancelRequested()
+    place: @T = slot.result_place[T]()
+    if slot.is_cancelled()
+        throw CancelRequested()
+    if slot.has_failure()
+        throw_failure_from(room: slot.failure.peek())
+    taken: &T <- steal place.stride(0)
+    slot.result_taken[T]()
+    return taken
+
+### Asks the work to stop: the pause it waits at throws `CancelRequested`, which a `try` or `check` on it receives.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].cancel() -> None
+    me.work_slot().request_cancel()
+    return
+
+# -- the steps at the bottom --------------------------------------------------------------------------------------
+
+### The step `FIBERS.next_turn()` gives: the other ready work of the manager goes first, then the work goes on. With
+### none ready it goes on at once.
+record NextTurn
+obeys Eventual[NextTurn, None]
+    manager: @CoroutineManager
+    ### True once the step has let the others go first.
+    yielded: Bool
+
+### The step of letting the manager's other ready work go first: `pauseuntil FIBERS.next_turn()`.
+### :returns: The step.
+@target(os: not "none")
+routine @CoroutineManager.next_turn() -> NextTurn
+    me.ensure()
+    return NextTurn(manager: me, yielded: false)
+
+### Goes on at once with no other work ready, or after the others had their turn.
+### :returns: None once the work may go on, else `Pending`.
+@target(os: not "none")
+routine @NextTurn.resume() -> None | Pending
+    if me.yielded.peek()
+        return none
+    manager: @CoroutineManager = me.manager.peek()
+    manager.take_inbox()
+    if manager.ready.is_empty()
+        return none
+    me.yielded.poke(true)
+    return Pending()
+
+### Wakes `waiter` at once: it goes behind the other ready work.
+### :param waiter: The waiting work's waiter.
+@target(os: not "none")
+routine @NextTurn.wake_when_done(waiter: Waiter) -> None
+    waiter.wake()
+    return
+
+### The step `Clock.after(d)` gives: it finishes once `d` has passed from when it was made.
+record ClockStep
+obeys Eventual[ClockStep, None]
+    ### When it finishes, in `Clock.monotonic()` time.
+    deadline: Duration
+
+### The step of waiting at least `duration`: `pauseuntil Clock.after(20ms)`. Only this work waits, and the thread goes
+### on with the other work.
+### :param duration: The least time to wait.
+### :returns: The step.
+@target(os: not "none")
+common routine Clock.after(duration: Duration) -> ClockStep
+    return ClockStep(deadline: Clock.monotonic() +^ duration)
+
+### Finishes once its deadline has passed.
+### :returns: None once it has, else `Pending`.
+@target(os: not "none")
+routine @ClockStep.resume() -> None | Pending
+    if Clock.monotonic() >= me.deadline.peek()
+        return none
+    return Pending()
+
+### Wakes `waiter` at the deadline: a manager's pausing work through the manager's timers, any other waiter when it
+### next sleeps (PAUSING_DEADLINE).
+### :param waiter: The waiting work's waiter.
+@target(os: not "none")
+routine @ClockStep.wake_when_done(waiter: Waiter) -> None
+    deadline: Duration = me.deadline.peek()
+    if waiter.is_fiber() and waiter.park_fn.is_absent()
+        manager: @CoroutineManager = waiter.manager.to[@CoroutineManager]()
+        manager.wake_at(fiber: waiter.fiber.to[@FiberState](), deadline)
+        return
+    PAUSING_DEADLINE.store(PAUSING_DEADLINE.load().min(deadline))
+    return
+
+### The step a ticket's `finish()` gives: it finishes when the ticket's work has, and gives its result, as `retrieve()`
+### would (its failure and `CancelRequested` too).
+### :typeparam T: The result type.
+record Finish[T]
+obeys Eventual[Finish[T], T]
+    slot: @WorkSlot
+
+### Gives the work's result once it has finished.
+### :returns: The result, or `Pending` while the work runs.
+### :throws: What the ticket's `retrieve()` throws.
+@target(os: not "none")
+routine @Finish[T].resume() -> T | Pending
+    slot: @WorkSlot = me.slot.peek()
+    if not slot.is_finished()
+        return Pending()
+    place: @T = slot.result_place[T]()
+    if slot.is_cancelled()
+        throw CancelRequested()
+    if slot.has_failure()
+        throw_failure_from(room: slot.failure.peek())
+    taken: &T <- steal place.stride(0)
+    slot.result_taken[T]()
+    return taken
+
+### Wakes `waiter` once the work has finished: at once when it has.
+### :param waiter: The waiting work's waiter.
+@target(os: not "none")
+routine @Finish[T].wake_when_done(waiter: Waiter) -> None
+    if me.slot.peek().register(waiter)
+        waiter.wake()
+    return
+
+### The step of waiting for the ticket's work to finish: `r: T = pauseuntil t.finish()` in a pausable routine.
+### :returns: The step.
+@target(os: not "none")
+@track_caller
+routine @Thread[T].finish() -> Finish[T]
+    return Finish[T](slot: me.work_slot())
+
+### The step of waiting for the ticket's work to finish: `r: T = pauseuntil t.finish()` in a pausable routine.
+### :returns: The step.
+@target(os: not "none")
+@track_caller
+routine @Fiber[T].finish() -> Finish[T]
+    return Finish[T](slot: me.work_slot())
+
+### The step of waiting for the ticket's work to finish: `r: T = pauseuntil t.finish()` in a pausable routine.
+### :returns: The step.
+@target(os: not "none")
+@track_caller
+routine @PausingFiber[T].finish() -> Finish[T]
+    return Finish[T](slot: me.work_slot())

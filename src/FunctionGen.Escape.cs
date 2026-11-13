@@ -674,6 +674,7 @@ public sealed partial class FunctionGen
             || !_heldRoots.ContainsKey(ResolveRoot(holder.Name))
             || InferQuiet(value) is not { } stored || !HoldsView(PlacedValue(stored))) return;
         string? entity = EntityOfField(into);
+        if (entity is not null && _decl.AnnotationNamed(Pausable.StateMark) is not null) return;
         string? global = entity is null && _escape is not null
             ? AtomsOf(into).OfType<GlobalAtom>().Select(g => g.Name).FirstOrDefault()
             : null;
@@ -841,7 +842,7 @@ public sealed partial class FunctionGen
 
     /// Whether a routine is a ticket's (`Thread[T]`, `Fiber[T]`, `PassableFiber[T]` of the standard library).
     private static bool IsTicketRoutine(RoutineDecl d) =>
-        d.IsLibrary && d.Owner is { Name: "Thread" or "Fiber" or "PassableFiber" };
+        d.IsLibrary && d.Owner is { Name: "Thread" or "Fiber" or "PassableFiber" or "PausingFiber" };
 
     /// A ticket's work runs on, after `put_work` returns, until it is waited for: the ticket holds what its work was
     /// handed. Storing or returning the ticket takes that along (the escape check), work handed a view of the frame

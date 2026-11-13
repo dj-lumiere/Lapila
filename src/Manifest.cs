@@ -45,6 +45,8 @@ namespace Lapila;
 ///                                     # with a crash naming them (default: on in debug, off in the release modes)
 /// access-order = true                 # two accesses taken in opposite orders stop the program before they wait
 ///                                     # on each other (default: off, it costs time on every access taken)
+/// show-pausable = true                # write the state records and resume routines the builder makes of the
+///                                     # program's pausable routines, as Lapila source, to build/<name>.pausable.lpa
 ///
 /// [crash]
 /// message-size = 256                  # the bytes a crash's message is written into before it is reported (the rest
@@ -109,6 +111,10 @@ public sealed record Manifest(
     /// manifest turns it on.
     public bool? AccessOrder { get; init; }
 
+    /// `[debug] show-pausable`: write the declarations the builder makes of the program's pausable routines, as Lapila
+    /// source, next to the output (`build/<name>.pausable.lpa`).
+    public bool ShowPausable { get; init; }
+
     /// `[debug] trace-frames`: the frames a crash trace and a failure's trace keep (a power of two), or null for 32.
     public int? TraceFrames { get; init; }
 
@@ -153,7 +159,7 @@ public sealed record Manifest(
         ["target"] = ["executable", "triple", "cpu", "features", "mode", "module-paths", "sources", "c-libraries", "library-paths", "board",
             "use-daemon"],
         ["debug"] = ["emit-llvm", "trace", "heap-check", "race-check", "trace-frames", "failure-traces",
-            "deadlock-check", "access-order"],
+            "deadlock-check", "access-order", "show-pausable"],
         ["crash"] = ["message-size"],
     };
 
@@ -276,6 +282,7 @@ public sealed record Manifest(
             RaceCheckSetting = Bool(debug, "race-check", path),
             DeadlockCheck = Bool(debug, "deadlock-check", path),
             AccessOrder = Bool(debug, "access-order", path),
+            ShowPausable = Bool(debug, "show-pausable", path) ?? false,
             TraceFrames = TraceSize(debug, "trace-frames", path, powerOfTwo: true),
             FailureTraces = TraceSize(debug, "failure-traces", path, powerOfTwo: false),
             CrashMessageSize = MessageSize(Section(root, "crash", path), path),

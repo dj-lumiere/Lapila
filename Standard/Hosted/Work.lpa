@@ -95,6 +95,11 @@ entity WorkSlot
     failure: Addr
     ### 1 when the last work's routine failed: `failure` holds its failure, which `retrieve()` throws.
     failed: U32
+    ### 1 while a CoroutineManager runs the work a step at a time (a pausing fiber's work), 0 when the runner runs it to
+    ### its end.
+    stepping: U32
+    ### 1 when the last step of pausing work stopped at a `pauseuntil`: the work goes on in a later step.
+    paused: U32
 
 ### What `retrieve` throws for work that was asked to stop with `cancel()` before it finished, and in work that is
 ### asked to stop while it waits.
@@ -127,7 +132,8 @@ needs TWriter obeys Writer
 common routine WorkSlot.construct(manager: @MemoryManager) -> Me
     return Me(state: TICKET_EMPTY, runner: no_run.to[Callable](), discard: no_work.to[Callable](),
         work: Addr.zero(), manager, cancel: 0, guard: 0, waiter: Waiter.none(),
-        blocked: Waiter.none(), issued: 0, deadline: Duration.MAX, failure: Addr.zero(), failed: 0)
+        blocked: Waiter.none(), issued: 0, deadline: Duration.MAX, failure: Addr.zero(), failed: 0, stepping: 0,
+        paused: 0)
 
 ### Ends what the last work's block still holds and gives the block back, and the room of a failure.
 routine @WorkSlot.destruct() -> None

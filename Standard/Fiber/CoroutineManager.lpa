@@ -131,6 +131,8 @@ entity CoroutineManager
     busy: U64
     ### The fibers given back, waiting for the next ticket.
     idle: Addr
+    ### The pausing fibers given back, waiting for the next ticket: they have no stack.
+    idle_pausing: Addr
     ### Every fiber the manager made.
     all: Addr
     ### The fibers waiting with a deadline. Only the manager's thread touches it.
@@ -262,7 +264,7 @@ common routine CoroutineManager.construct(stack_size: ByteSize, stack_manager: @
         home_race: Addr.zero(), current: Addr.zero(),
         ready: RotatableList[@FiberState].construct(manager), inbox_guard: 0,
         inbox: RotatableList[@FiberState].construct(manager), epoch: 0, alert: Addr.zero(), busy: 0,
-        idle: Addr.zero(), all: Addr.zero(),
+        idle: Addr.zero(), idle_pausing: Addr.zero(), all: Addr.zero(),
         timers: PriorityQueue[TimerKey, @FiberState].construct(manager), timer_seq: 0)
 
 ### Frees every fiber with its stack, and the queues. The fibers whose work never finished are dropped where they
@@ -277,7 +279,9 @@ routine @CoroutineManager.destruct() -> None
         fiber.destruct()
         AccessManager.end_flow(fiber.access)
         race_stack_free(fiber.race.peek())
-        give_back_stack(stack: fiber.stack, pages: me.stack_manager.peek())
+        # A pausing fiber has no stack.
+        if not fiber.stack.top.peek().is_hollow()
+            give_back_stack(stack: fiber.stack, pages: me.stack_manager.peek())
         deallocate(data: fiber, manager: me.manager.peek())
         continue with at: next
     me.ready.destruct()
@@ -854,6 +858,9 @@ secret routine @CoroutineManager.drive(awaited: @WorkSlot?, deadline: Duration,
 ### :param fiber: The fiber to run.
 @target(os: not "none")
 secret routine @CoroutineManager.resume(fiber: @FiberState) -> None
+    if fiber.stack.top.peek().is_hollow()
+        me.step_pausing(fiber)
+        return
     me.current.poke(fiber.to[Addr]())
     outer_fiber: Waiter = RUNNING_FIBER.load()
     outer_work: Addr = RUNNING_WORK.load()

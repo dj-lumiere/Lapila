@@ -102,13 +102,20 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
             if (isPrivate) Next();
             if (!isLate && IsIdent("lateinit") && PeekTok(1) is { Kind: TokenKind.Ident, Text: "global" }) { Next(); isLate = true; }
             if (FailableNext()) throw Error(Li.FailableRemoved, FailableRemoved);
+            bool isPausable = PausableNext();
+            if (isPausable) Next();
             bool isInfallible = InfallibleNext();
             if (isInfallible) Next();
+            if (isPausable && isInfallible)
+                throw Error(Li.PausableForm, "a pausable routine passes the failures of its pauses to its caller, so it can't be infallible: "
+                    + "write pausable routine name(...) -> T");
             bool isCommon = IsIdent("common") && PeekTok(1) is { Kind: TokenKind.Ident, Text: "routine" };
             if (isCommon) Next();
+            if (isPausable && !IsIdent("routine"))
+                throw Error(Li.RoutineHeaderSyntax, "pausable marks a routine: pausable routine name(...) -> T");
             if (isInfallible && !IsIdent("routine"))
                 throw Error(Li.RoutineHeaderSyntax, "infallible marks a routine: infallible routine name(...) -> T, or infallible common routine Owner.name(...)");
-            if (annotations.Count == 0 && !isPrivate && !isCommon && !isInfallible && Cur.Pos.Col == 1
+            if (annotations.Count == 0 && !isPrivate && !isCommon && !isInfallible && !isPausable && Cur.Pos.Col == 1
                 && (!IsKeyword(Cur) || !DeclKeywords.Contains(Cur.Text)) && !FlagsNext() && !isLibrary)
             {
                 ParseScriptLines();
@@ -120,7 +127,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
             Decl d = Cur.Text switch
             {
                 "flags" => ParseFlags(annotations),
-                "routine" => Failability(ParseRoutine(annotations, inConcept: false, isCommon: isCommon), isInfallible, isLibrary),
+                "routine" => Failability(ParseRoutine(annotations, inConcept: false, isCommon: isCommon), isInfallible, isLibrary)
+                    with { IsPausable = isPausable },
                 "record" or "entity" or "crashable" => ParseRecord(annotations),
                 "choice" => ParseChoice(annotations),
                 "variant" => ParseVariant(annotations),
@@ -302,7 +310,7 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
         Is(TokenKind.Eof) || (AtAnnotation() && Cur.Pos.Col == 1)
         || (IsKeyword(Cur) && (DeclKeywords.Contains(Cur.Text) || Cur.Text is "secret") && Cur.Pos.Col == 1)
         || (IsIdent("common") && PeekTok(1) is { Kind: TokenKind.Ident, Text: "routine" } && Cur.Pos.Col == 1)
-        || ((FailableNext() || InfallibleNext()) && Cur.Pos.Col == 1)
+        || ((FailableNext() || InfallibleNext() || PausableNext()) && Cur.Pos.Col == 1)
         || (FlagsNext() && Cur.Pos.Col == 1);
 
     /// Whether `flags` at the cursor starts a flags declaration, `flags Name`: elsewhere `flags` is an ordinary name
@@ -319,6 +327,10 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
 
     /// Whether `infallible` at the cursor starts a routine's header: `infallible routine` or `infallible common routine`.
     private bool InfallibleNext() => WordBeforeRoutine("infallible");
+
+    /// Whether `pausable` at the cursor starts a routine's header: `pausable routine`, also before `infallible` (an error).
+    private bool PausableNext() => WordBeforeRoutine("pausable")
+        || IsIdent("pausable") && PeekTok(1) is { Kind: TokenKind.Ident, Escaped: false, Text: "infallible" };
 
     private bool WordBeforeRoutine(string word) => IsIdent(word)
         && (PeekTok(1) is { Kind: TokenKind.Ident, Escaped: false, Text: "routine" }
@@ -1305,6 +1317,10 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
     private (bool IsRoutine, bool Common, bool Infallible) ConceptRoutineNext(List<string> typeParams)
     {
         if (FailableNext()) throw Error(Li.FailableRemoved, FailableRemoved);
+        if (PausableNext())
+            throw Error(Li.PausableForm, "a protocol's routine can't be pausable: each pausable routine has a state record of its own size, "
+                + "so a call through the protocol couldn't hold it. Make the routine give an Eventual[T] step instead, or call a pausable "
+                + "routine of the type itself");
         bool failable = InfallibleNext();
         int f = failable ? 1 : 0;
         bool common = PeekTok(f) is { Kind: TokenKind.Ident, Escaped: false, Text: "common" }
@@ -1973,6 +1989,13 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
             return new DestructureStmt(names, value, pos);
         }
 
+        // `pauseuntil X carrying (...)` as a line waits for X and leaves its result unread.
+        if (IsWordOp("pauseuntil"))
+        {
+            var paused = ParseUnary();
+            ExpectLineEnd();
+            return new ExprStmt(paused, pos);
+        }
         // `try f(x)` as a line runs the call and lets a failure go: the Optional it gives is left unread.
         if (RecoveryNext() && Cur.Text == "try")
         {
@@ -2691,6 +2714,29 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
         {
             var op = Next();
             return new StealExpr(ParsePostfix(), op.Pos);
+        }
+        if (IsWordOp("pauseuntil"))
+        {
+            // `pauseuntil X carrying (a, b)`: X is the call or the Eventual[T] value waited for, and the carrying list names
+            // the local values used after the pause.
+            var op = Next();
+            var target = ParsePostfix();
+            var carried = new List<ValueRef>();
+            bool written = false;
+            if (IsWordOp("carrying"))
+            {
+                Next();
+                written = true;
+                Expect(TokenKind.LParen, "'(' after carrying");
+                while (!Is(TokenKind.RParen))
+                {
+                    var n = ValueName("a value name");
+                    carried.Add(new ValueRef(n.Text, n.Pos));
+                    if (!Accept(TokenKind.Comma)) break;
+                }
+                Expect(TokenKind.RParen, "')'");
+            }
+            return new PauseExpr(target, carried, op.Pos) { CarryingWritten = written };
         }
         if (RecoveryNext())
         {
