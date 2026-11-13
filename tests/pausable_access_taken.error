@@ -1,0 +1,1 @@
+'held' takes an access with '<-' in pausable routine 'holds', which would hold it across its pauses: work that waits for the same access on this thread would never go on. Take the access outside, and hand the routine a view of it (held: @T), or take it in a routine that doesn't pause and give it back there

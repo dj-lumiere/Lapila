@@ -1,0 +1,1 @@
+'let_others_go' may switch stacks (let_others_go -> CoroutineManager.yield -> switch_stack), and a pausable routine runs on its manager's stack between the manager's other work, where no stack can be switched. Run it as a fiber of its own, f.to[Work](...) on a Fiber ticket, and wait for that with pauseuntil t.finish()

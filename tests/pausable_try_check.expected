@@ -1,0 +1,4 @@
+receives: try: 4 and none
+check: failed, more than 10
+4
+passes_on failed: more than 10

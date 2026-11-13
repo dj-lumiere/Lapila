@@ -1,0 +1,13 @@
+# A pausable routine called directly outside a pausable routine is a build error that points to a PausingFiber.
+
+import Fiber
+import Hosted
+
+pausable routine later() -> S64
+    pauseuntil FIBERS.next_turn()
+    return 1
+
+routine start() -> None
+    n: S64 = later()
+    Console.show("{n}")
+    return

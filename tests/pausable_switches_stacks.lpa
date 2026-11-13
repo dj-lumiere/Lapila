@@ -1,0 +1,21 @@
+# A pausable routine runs on its manager's stack, so a call that may switch stacks (a fiber's yield, park or wait),
+# however deep, is a build error that names the routines down to the switch.
+
+import Fiber
+import Hosted
+
+routine let_others_go() -> None
+    FIBERS.yield()
+    return
+
+pausable routine yields() -> None
+    let_others_go()
+    pauseuntil FIBERS.next_turn()
+    return
+
+routine start() -> None
+    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    work: Work[None] = yields.to[Work]()
+    t.put_work(work)
+    t.retrieve()
+    return

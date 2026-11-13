@@ -3101,6 +3101,8 @@ public sealed partial class FunctionGen
                 return InferPresetRef(r);
             case WorkExpr work:
                 return WorkType(work);
+            case PauseExpr pause:
+                throw NotPausable(pause);
             case RoutineRef rr:
                 // An overloaded routine's value is the overload the Callable it goes to names.
                 return rr.Callable is null && _c.FreeCandidates(rr.Name, _env.File, rr.Pos, rr.Path)
@@ -3353,6 +3355,7 @@ public sealed partial class FunctionGen
             PresetRef r => EvalPresetRef(r, expected),
             RoutineRef rr => RoutineValue(rr, expected),
             WorkExpr work => EvalWork(work, expected),
+            PauseExpr pause => throw NotPausable(pause),
             LambdaExpr l => EvalLambda(l, expected),
             StealExpr s => EvalSteal(s, expected),
             CallExpr or NsCallExpr or MethodCallExpr => EvalCall(e, expected),
@@ -5668,6 +5671,11 @@ public sealed partial class FunctionGen
 
     /// `name.to[Callable]()`: the routine as a function pointer, typed by its own signature, or by the Callable
     /// written, which then has to match it.
+    /// A `pauseuntil` the builder didn't turn into a pause of a state record: one outside a pausable routine.
+    private CompileError NotPausable(PauseExpr pause) =>
+        Err(Li.PauseForm, pause.Pos, $"'{_decl.DisplayName}' isn't pausable, so it can't wait with pauseuntil: declare it pausable routine, "
+            + "or wait the way the code running it does (a ticket's retrieve(), waitfor(d))");
+
     private Val RoutineValue(RoutineRef r, DType? expected)
     {
         var set = _c.FreeCandidates(r.Name, _env.File, r.Pos, r.Path);

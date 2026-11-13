@@ -1,0 +1,10 @@
+# A protocol's routine can't be pausable: each pausable routine has a state record of its own size.
+
+import Fiber
+import Hosted
+
+protocol Source[T]
+    pausable routine @T.next_value() -> S64
+
+routine start() -> None
+    return

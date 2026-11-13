@@ -1,0 +1,15 @@
+# Pausable routines that wait for each other through pauseuntil are a build error that names the cycle.
+
+import Fiber
+import Hosted
+
+pausable routine ping(n: S64) -> S64
+    got: S64 = pauseuntil pong(n: n - 1)
+    return got
+
+pausable routine pong(n: S64) -> S64
+    got: S64 = pauseuntil ping(n: n - 1)
+    return got
+
+routine start() -> None
+    return

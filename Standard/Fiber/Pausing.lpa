@@ -38,6 +38,32 @@ global PAUSING_DEADLINE: &Duration
 record Pending
     nothing
 
+### Room for the step a pausable routine waits for, `SIZE` bytes or a little more, aligned for any value. The builder
+### sizes it for the largest step of the routine. One step at a time is in it: `hold` puts one in, `end` ends it.
+### :typeparam SIZE: The size of the largest step in bytes.
+entity StepRoom[SIZE]
+needs U64 SIZE
+    ### The step's bytes.
+    words: Items[U128, (SIZE + 15) // 16]
+    ### Ends the step in the room through its type's destruct, or None for an empty room.
+    ends: Callable[(Addr,), None]?
+
+### A place a pausable routine keeps in its state record across its pauses: a `<-` name that `carrying` lists, or a
+### parameter that takes a value over. It starts empty, holds the value from its line on, and ends it once: with `end`,
+### or when the record ends.
+### :typeparam T: The value's type.
+entity Carried[T]
+needs AnyType T
+    ### The value, all zero while the place holds none.
+    value: T
+
+### An access a pausable routine's work was handed with `steal`, `f.to[Work](held: steal held)`: the routine's state
+### record keeps its address and gives it back when the record ends, after the work. Zero for a view the caller still
+### holds and gives back itself.
+entity HandedAccess
+    ### The address the access was taken at, or zero.
+    at: Addr
+
 ### A step that finishes eventually and gives a `T`: what `pauseuntil` waits for. `resume()` goes on with the step and gives
 ### its result, or `Pending` while it isn't there yet. After `Pending`, the waiting work calls `wake_when_done` with its
 ### waiter, and the step wakes that waiter once `resume()` would give more than `Pending` (at once when it would already).
@@ -52,16 +78,6 @@ protocol Eventual[TStep, T]
     ### Asks to wake `waiter` once the step can give its result: at once when it can already.
     ### :param waiter: The waiting work's waiter.
     routine @TStep.wake_when_done(waiter: Waiter) -> None
-
-### Room for the step a pausable routine waits for, `SIZE` bytes or a little more, aligned for any value. The builder
-### sizes it for the largest step of the routine. One step at a time is in it: `hold` puts one in, `end` ends it.
-### :typeparam SIZE: The size of the largest step in bytes.
-entity StepRoom[SIZE]
-needs U64 SIZE
-    ### The step's bytes.
-    words: Items[U128, (SIZE + 15) // 16]
-    ### Ends the step in the room through its type's destruct, or None for an empty room.
-    ends: Callable[(Addr,), None]?
 
 ### An empty room.
 ### :returns: The room.
@@ -131,15 +147,6 @@ needs AnyType T
     then
         return true
 
-### A place a pausable routine keeps in its state record across its pauses: a `<-` name that `carrying` lists, or a
-### parameter that takes a value over. It starts empty, holds the value from its line on, and ends it once: with `end`,
-### or when the record ends.
-### :typeparam T: The value's type.
-entity Carried[T]
-needs AnyType T
-    ### The value, all zero while the place holds none.
-    value: T
-
 ### An empty place.
 ### :returns: The place.
 common routine Carried[T].construct() -> Me
@@ -172,6 +179,27 @@ needs AnyType T
     me.end()
     place: @T = me.value
     place.poke(steal value)
+    return
+
+### An access to give back, or none (zero).
+### :param at: The address the access was taken at, or zero.
+### :returns: The value.
+common routine HandedAccess.construct(at: Addr) -> Me
+    return Me(at)
+
+### Keeps the access taken at `at`, which the work was handed with steal, to give back when the record ends.
+### :param at: The address the access was taken at.
+routine @HandedAccess.keep(at: Addr) -> None
+    me.at.poke(at)
+    return
+
+### Gives the access back, if the work was handed one.
+routine @HandedAccess.destruct() -> None
+    at: Addr = me.at.peek()
+    if at.is_hollow()
+        return
+    me.at.poke(Addr.zero())
+    at.to[@Byte]().end_handed_access()
     return
 
 # -- pausing ------------------------------------------------------------------------------------------------------
@@ -378,10 +406,12 @@ secret routine @CoroutineManager.make_pausing_fiber() -> @FiberState
     if fiber_at.is_hollow()
         throw OutOfMemoryError()
     fiber: @FiberState = fiber_at.to[@FiberState]()
-    fiber.poke(FiberState(stack: StackManager(bottom: Addr.zero(), top: Addr.zero(), sp: Addr.zero()),
-        manager: me, slot: .construct(manager: me.manager.peek()), work: fiber.slot.to[Addr](),
-        then: requeue.to[Callable](), wake_state: FIBER_RUNNING, timer: 0, trace_depth: 0, access: none,
-        race: Addr.zero(), next_idle: Addr.zero(), next_all: me.all.peek(), pool: none, mold: Addr.zero()))
+    fiber.poke(FiberState(
+        stack: StackManager(bottom: Addr.zero(), top: Addr.zero(), sp: Addr.zero()), manager: me,
+        slot: .construct(manager: me.manager.peek()), work: fiber.slot.to[Addr](),
+        then: requeue.to[Callable](), wake_state: FIBER_RUNNING, timer: 0, trace_depth: 0,
+        access: none, race: Addr.zero(), next_idle: Addr.zero(), next_all: me.all.peek(),
+        pool: none, mold: Addr.zero()))
     fiber.slot.stepping.poke(1)
     me.all.poke(fiber.to[Addr]())
     return fiber
@@ -396,7 +426,8 @@ secret routine @CoroutineManager.step_pausing(fiber: @FiberState) -> None
     outer_pausing: Waiter = RUNNING_PAUSING.load()
 
     RUNNING_WORK.store(fiber.work.peek())
-    RUNNING_PAUSING.store(Waiter(fiber, manager: me, park_fn: none, wake_fn: wake_hook.to[Callable]()))
+    RUNNING_PAUSING.store(Waiter(fiber, manager: me, park_fn: none,
+        wake_fn: wake_hook.to[Callable]()))
     fiber.timer.poke_unbroken(0)
     slot.paused.poke(0)
     slot.runner.peek().call(slot.work.peek(), slot)
@@ -529,6 +560,19 @@ obeys Eventual[NextTurn, None]
     ### True once the step has let the others go first.
     yielded: Bool
 
+### The step `Clock.after(d)` gives: it finishes once `d` has passed from when it was made.
+record ClockStep
+obeys Eventual[ClockStep, None]
+    ### When it finishes, in `Clock.monotonic()` time.
+    deadline: Duration
+
+### The step a ticket's `finish()` gives: it finishes when the ticket's work has, and gives its result, as `retrieve()`
+### would (its failure and `CancelRequested` too).
+### :typeparam T: The result type.
+record Finish[T]
+obeys Eventual[Finish[T], T]
+    slot: @WorkSlot
+
 ### The step of letting the manager's other ready work go first: `pauseuntil FIBERS.next_turn()`.
 ### :returns: The step.
 @target(os: not "none")
@@ -556,19 +600,13 @@ routine @NextTurn.wake_when_done(waiter: Waiter) -> None
     waiter.wake()
     return
 
-### The step `Clock.after(d)` gives: it finishes once `d` has passed from when it was made.
-record ClockStep
-obeys Eventual[ClockStep, None]
-    ### When it finishes, in `Clock.monotonic()` time.
-    deadline: Duration
-
 ### The step of waiting at least `duration`: `pauseuntil Clock.after(20ms)`. Only this work waits, and the thread goes
 ### on with the other work.
 ### :param duration: The least time to wait.
 ### :returns: The step.
 @target(os: not "none")
 common routine Clock.after(duration: Duration) -> ClockStep
-    return ClockStep(deadline: Clock.monotonic() +^ duration)
+    return ClockStep(deadline: Me.monotonic() +^ duration)
 
 ### Finishes once its deadline has passed.
 ### :returns: None once it has, else `Pending`.
@@ -590,13 +628,6 @@ routine @ClockStep.wake_when_done(waiter: Waiter) -> None
         return
     PAUSING_DEADLINE.store(PAUSING_DEADLINE.load().min(deadline))
     return
-
-### The step a ticket's `finish()` gives: it finishes when the ticket's work has, and gives its result, as `retrieve()`
-### would (its failure and `CancelRequested` too).
-### :typeparam T: The result type.
-record Finish[T]
-obeys Eventual[Finish[T], T]
-    slot: @WorkSlot
 
 ### Gives the work's result once it has finished.
 ### :returns: The result, or `Pending` while the work runs.

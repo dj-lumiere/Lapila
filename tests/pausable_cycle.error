@@ -1,0 +1,1 @@
+these pausable routines wait for each other through pauseuntil: ping -> pong -> ping. A routine waiting for itself would hold its own state record inside it, which has no size: wait in a loop instead, or start the inner one as work of its own with f.to[Work](...) on a PausingFiber and pauseuntil its finish()

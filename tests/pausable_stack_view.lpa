@@ -1,0 +1,14 @@
+# A view of a place in the routine's frame (STACK) kept across a pause is a build error: the frame goes away while the
+# routine waits. Carrying the place itself puts it in the state record.
+
+import Fiber
+import Hosted
+
+pausable routine views() -> S64
+    cell: &S64 <- 5
+    seen: @S64 = cell.getview()
+    pauseuntil FIBERS.next_turn() carrying (seen)
+    return seen.peek()
+
+routine start() -> None
+    return

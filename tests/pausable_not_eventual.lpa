@@ -1,0 +1,14 @@
+# A pause waits for a pausable routine's call or a step that obeys Eventual: a plain routine runs to its end.
+
+import Fiber
+import Hosted
+
+routine plain() -> S64
+    return 1
+
+pausable routine waits() -> S64
+    n: S64 = pauseuntil plain()
+    return n
+
+routine start() -> None
+    return

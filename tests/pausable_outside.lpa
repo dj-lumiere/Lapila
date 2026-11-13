@@ -1,0 +1,8 @@
+# pauseuntil only stands in a pausable routine.
+
+import Fiber
+import Hosted
+
+routine start() -> None
+    pauseuntil FIBERS.next_turn()
+    return

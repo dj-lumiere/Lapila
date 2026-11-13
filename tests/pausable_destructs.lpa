@@ -1,0 +1,48 @@
+# What a pausable routine holds ends exactly once: a place it doesn't carry ends right before the pause, a carried one at
+# the routine's end, and one carried by work that fails or is cancelled when that work ends.
+
+import Fiber
+import Hosted
+
+entity Noisy
+    n: S64
+
+crashable StopError
+    nothing
+
+common routine Noisy.construct(n: S64) -> Me
+    return Me(n)
+
+routine @Noisy.destruct() -> None
+    Console.show("noisy {me.n.peek()} ends")
+    return
+
+routine StopError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("stopped")
+    return
+
+pausable routine holds(fail: Bool) -> S64
+    left: &Noisy <- .construct(n: 1)
+    kept: &Noisy <- .construct(n: 2)
+    Console.show("before the pause: {left.n.peek()}")
+    pauseuntil FIBERS.next_turn() carrying (kept)
+    Console.show("after the pause: {kept.n.peek()}")
+    if fail
+        throw StopError()
+    return kept.n.peek()
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    finishing: Work[S64] = holds.to[Work](fail: false)
+    t.put_work(finishing)
+    result: S64 = t.retrieve()
+    Console.show("result {result}")
+    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    failing: Work[S64] = holds.to[Work](fail: true)
+    u.put_work(failing)
+    when check u.retrieve()
+        is S64 as v => Console.show("result {v}")
+        is StopError => Console.show("failed")
+    Console.show("end")
+    return

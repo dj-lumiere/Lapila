@@ -1,0 +1,27 @@
+# pauseuntil Clock.after(d) stops only this routine for at least d: the other work of the thread goes on meanwhile.
+
+import Fiber
+import Hosted
+
+pausable routine sleeper(pause: Duration) -> Duration
+    began: Duration = Clock.monotonic()
+    pauseuntil Clock.after(pause) carrying (began)
+    return Clock.monotonic() - began
+
+pausable routine ticker(rounds: S64) -> S64
+    for i in 0 til rounds
+        pauseuntil FIBERS.next_turn()
+    return rounds
+
+routine start() -> None
+    s: PausingFiber[Duration] <- FIBERS.get_pausing_fiber[Duration]()
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    sleeping: Work[Duration] = sleeper.to[Work](pause: 20ms)
+    ticking: Work[S64] = ticker.to[Work](rounds: 50)
+    s.put_work(sleeping)
+    t.put_work(ticking)
+    ticks: S64 = t.retrieve()
+    Console.show("the ticker finished first: {not s.check_finished()}")
+    slept: Duration = s.retrieve()
+    Console.show("ticks {ticks}, slept at least 20ms: {slept >= 20ms}")
+    return

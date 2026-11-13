@@ -1,0 +1,1 @@
+'later' is pausable, so it can't be a routine value: each pausable routine keeps a state record of its own size while it waits, which a call through a Callable or an ErasedCallable couldn't hold. Make work of it with later.to[Work](...), or wait for it with pauseuntil later(...) in a pausable routine

@@ -1,0 +1,35 @@
+# A pausable routine starts work on a thread and waits for it with pauseuntil t.finish(): its thread's other work goes
+# on meanwhile, and the thread wakes it through the CoroutineManager's wake queue when the work is done.
+
+import Fiber
+import Hosted
+
+routine slow_square(n: S64) -> S64
+    waitfor(10ms)
+    return n * n
+
+pausable routine square_on_thread(n: S64) -> S64
+    t: Thread[S64] <- get_thread[S64]()
+    work: Work[S64] = slow_square.to[Work](n: n)
+    t.put_work(work)
+    squared: S64 = pauseuntil t.finish() carrying (t)
+    return squared + 1
+
+pausable routine meanwhile() -> S64
+    until done with done: Bool = false, rounds: S64 = 0
+        pauseuntil Clock.after(1ms) carrying (rounds)
+        continue with done: rounds >= 3, rounds: rounds + 1
+    then
+        return rounds
+
+routine start() -> None
+    a: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    b: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    squaring: Work[S64] = square_on_thread.to[Work](n: 12)
+    other: Work[S64] = meanwhile.to[Work]()
+    a.put_work(squaring)
+    b.put_work(other)
+    rounds: S64 = b.retrieve()
+    squared: S64 = a.retrieve()
+    Console.show("squared {squared}, the other work ran {rounds} rounds meanwhile")
+    return

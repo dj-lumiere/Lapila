@@ -1,0 +1,46 @@
+# cancel() wakes the pause the work waits at, which throws CancelRequested: a try there receives it, and without one the
+# work ends there. The ticket's retrieve() of cancelled work throws it either way. What the routine carries ends once.
+
+import Fiber
+import Hosted
+
+entity Noisy
+    n: S64
+
+common routine Noisy.construct(n: S64) -> Me
+    return Me(n)
+
+routine @Noisy.destruct() -> None
+    Console.show("noisy {me.n.peek()} ends")
+    return
+
+pausable routine waits_long(n: S64) -> None
+    keep: &Noisy <- .construct(n: n)
+    loop
+        pauseuntil Clock.after(1ms) carrying (keep)
+
+pausable routine notices() -> S64
+    when check pauseuntil Clock.after(1h)
+        is None => Console.show("an hour passed")
+        is CancelRequested => Console.show("the pause was cancelled")
+    return 7
+
+routine start() -> None
+    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    work: Work[None] = waits_long.to[Work](n: 1)
+    t.put_work(work)
+    FIBERS.waitfor(5ms)
+    t.cancel()
+    when check t.retrieve()
+        is None => Console.show("finished")
+        is CancelRequested => Console.show("cancelled")
+    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    other: Work[S64] = notices.to[Work]()
+    u.put_work(other)
+    FIBERS.waitfor(2ms)
+    u.cancel()
+    # The routine received the cancel and returned, and the ticket's retrieve() still says the work was cancelled.
+    when check u.retrieve()
+        is S64 as v => Console.show("notices: {v}")
+        is CancelRequested => Console.show("notices: cancelled")
+    return

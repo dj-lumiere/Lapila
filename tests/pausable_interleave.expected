@@ -1,0 +1,10 @@
+a 0
+b 0
+sum at 0
+a 1
+b 1
+sum at 1
+a 2
+sum at 2
+sum at 3
+a 3, b 2, sum 6

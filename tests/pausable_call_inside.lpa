@@ -1,0 +1,19 @@
+# Inside a pausable routine, another pausable routine is waited for with pauseuntil, never called directly.
+
+import Fiber
+import Hosted
+
+pausable routine later() -> S64
+    pauseuntil FIBERS.next_turn()
+    return 1
+
+pausable routine calls() -> S64
+    n: S64 = later()
+    return n
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = calls.to[Work]()
+    t.put_work(work)
+    Console.show("{t.retrieve()}")
+    return

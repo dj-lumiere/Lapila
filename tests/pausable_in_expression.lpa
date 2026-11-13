@@ -1,0 +1,16 @@
+# pauseuntil stands at the start of a line, as a binding's value, or as what a when looks at, never inside an
+# expression.
+
+import Fiber
+import Hosted
+
+pausable routine later() -> S64
+    pauseuntil FIBERS.next_turn()
+    return 1
+
+pausable routine adds() -> S64
+    n: S64 = 1 + pauseuntil later()
+    return n
+
+routine start() -> None
+    return

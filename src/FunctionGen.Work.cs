@@ -437,13 +437,33 @@ public sealed partial class FunctionGen
         TypeRef Known(DType t) => new(t.Name, [], w.Pos) { Known = t };
         var blockRef = new TypeRef("PausingWork", [new TypeArgType(Known(result)), new TypeArgType(Known(stateType))], w.Pos) { Path = "Fiber" };
         var blockType = Resolve(blockRef);
+        // An access handed in with steal goes to the state record, which gives it back when it ends: the steal hands it over
+        // here, its address is kept, and the record's construct is given the view.
+        var handed = new List<(string Field, string Addr)>();
+        string slot = $"$work{_works++}";
+        args = [.. args];
+        for (int i = 0; i < args.Count; i++)
+            if (routine.Params[i].Type is { Name: "PointedCell" or "PointedSlice", Path: null } && StealsAccess(args[i])
+                && Pausable.HandedField(routine, routine.Params[i].Name) is { } field)
+            {
+                var stolen = (StealExpr)args[i];
+                string at = $"{slot} access {i}", view = $"{slot} view {i}";
+                EmitStmtCore(new BindStmt(at, TypeRef.Simple("Addr", w.Pos),
+                    new MethodCallExpr(stolen.Value, "to", [TypeRef.Simple("Addr", w.Pos)], [], w.Pos), w.Pos));
+                _accessSteals.Add(stolen);
+                _values[view] = EvalAny(stolen);
+                args[i] = new ValueRef(view, stolen.Pos);
+                handed.Add((field, at));
+            }
         var made = new NsCallExpr(Known(stateType), "construct", [], args, w.Pos) { ArgNames = routine.Params.Select(p => (string?)p.Name).ToList() };
         var ctor = new NsCallExpr(blockRef with { Known = blockType }, "construct", [],
             [new ImplicitCallExpr("hollow", [], [], w.Pos), made], w.Pos) { ArgNames = ["result", "state"] };
-        string slot = $"$work{_works++}";
         _workBlocks.Add(slot);
         EmitStmtCore(new BindStmt(slot, new TypeRef("$work", [], w.Pos) { Known = new PtrType(blockType) },
             new ClaimExpr(w.Pos) { Contents = ctor }, w.Pos));
+        foreach (var (field, at) in handed)
+            EmitStmtCore(new ExprStmt(new MethodCallExpr(new FieldExpr(new FieldExpr(new ValueRef(slot, w.Pos), "state", w.Pos), field, w.Pos), "keep", [],
+                [new ValueRef(at, w.Pos)], w.Pos), w.Pos));
         var fails = PausableFails(routine, state, w.Pos);
         // The runner is built for the routine's list, as a plain work's is, so it keeps the routine's failure for retrieve().
         List<TypeRef> pair = [Known(result), Known(stateType)];

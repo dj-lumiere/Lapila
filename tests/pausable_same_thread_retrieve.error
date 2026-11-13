@@ -1,0 +1,1 @@
+'t' is a PausingFiber of this thread's CoroutineManager, and its retrieve() inside pausable routine 'waits_wrongly' would run the manager inside one of its own steps: wait for it with pauseuntil t.finish(), which lets the manager run it

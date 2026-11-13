@@ -1,0 +1,30 @@
+# A chain of pausable routines, each waiting for the next: every state record holds the next one in its room, so the
+# whole chain is one record with no stack of its own.
+
+import Fiber
+import Hosted
+
+pausable routine level4(n: S64) -> S64
+    pauseuntil FIBERS.next_turn()
+    return n + 1
+
+pausable routine level3(n: S64) -> S64
+    got: S64 = pauseuntil level4(n: n * 10)
+    return got + 1
+
+pausable routine level2(n: S64) -> S64
+    got: S64 = pauseuntil level3(n: n * 10)
+    return got + 1
+
+pausable routine level1(n: S64) -> S64
+    got: S64 = pauseuntil level2(n: n * 10)
+    return got + 1
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = level1.to[Work](n: 1)
+    t.put_work(work)
+    result: S64 = t.retrieve()
+    Console.show("result {result}")
+    Console.show("the state of level1 holds level2's: {sizeof[PausedLevel1]() > sizeof[PausedLevel2]()}")
+    return

@@ -1,0 +1,12 @@
+# A pausable routine can't be a Callable value.
+
+import Fiber
+import Hosted
+
+pausable routine later() -> S64
+    pauseuntil FIBERS.next_turn()
+    return 1
+
+routine start() -> None
+    f: Callable[(), S64] = later.to[Callable]()
+    return

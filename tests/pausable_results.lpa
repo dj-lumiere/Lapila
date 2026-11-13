@@ -1,0 +1,37 @@
+# Results of pauses and of pausable work: a value, a record, and a routine that gives none.
+
+import Fiber
+import Hosted
+
+record Point
+    x: S64
+    y: S64
+
+pausable routine point_later(x: S64) -> Point
+    pauseuntil FIBERS.next_turn()
+    return Point(x: x, y: x * x)
+
+pausable routine announce(times: S64) -> None
+    for i in 0 til times
+        Console.show("announce {i}")
+        pauseuntil FIBERS.next_turn()
+    return
+
+pausable routine sum_points() -> S64
+    a: Point = pauseuntil point_later(x: 2)
+    b: Point = pauseuntil point_later(x: 3) carrying (a)
+    pauseuntil announce(times: 2) carrying (a, b)
+    return a.y + b.y
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = sum_points.to[Work]()
+    t.put_work(work)
+    sum: S64 = t.retrieve()
+    Console.show("sum {sum}")
+    n: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    quiet: Work[None] = announce.to[Work](times: 1)
+    n.put_work(quiet)
+    n.retrieve()
+    Console.show("done")
+    return

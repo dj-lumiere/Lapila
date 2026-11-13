@@ -1,0 +1,45 @@
+# try and check on a pause whose step fails: try gives none, check gives the failure to observe, and a failure no one
+# receives inside the work goes to the ticket's retrieve().
+
+import Fiber
+import Hosted
+
+crashable TooLargeError
+    limit: S64
+
+routine TooLargeError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("more than {me.limit}")
+    return
+
+pausable routine at_most_ten(n: S64) -> S64
+    pauseuntil FIBERS.next_turn()
+    if n > 10
+        throw TooLargeError(limit: 10)
+    return n
+
+pausable routine receives() -> S64
+    small: S64? = try pauseuntil at_most_ten(n: 4)
+    large: S64? = try pauseuntil at_most_ten(n: 40) carrying (small)
+    Console.show("try: {small} and {large}")
+    when check pauseuntil at_most_ten(n: 50) carrying (small)
+        is S64 as v => Console.show("check: {v}")
+        is TooLargeError as e => Console.show("check: failed, {e}")
+    return small.unwrap()
+
+pausable routine passes_on() -> S64
+    got: S64 = pauseuntil at_most_ten(n: 99)
+    return got
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = receives.to[Work]()
+    t.put_work(work)
+    Console.show("receives: {t.retrieve()}")
+    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    failing: Work[S64] = passes_on.to[Work]()
+    u.put_work(failing)
+    when check u.retrieve()
+        is S64 as v => Console.show("passes_on: {v}")
+        is TooLargeError as e => Console.show("passes_on failed: {e}")
+    return

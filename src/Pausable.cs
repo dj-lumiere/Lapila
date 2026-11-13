@@ -29,6 +29,11 @@ public static class Pausable
     /// The state record a pausable routine's declaration names (StateMark), or null for any other routine.
     public static string? StateOf(RoutineDecl r) => r.IsPausable ? r.AnnotationNamed(StateMark)?.First : null;
 
+    /// The field of a pausable routine's state record that keeps an access its view parameter `param` is handed with
+    /// steal, or null.
+    public static string? HandedField(RoutineDecl r, string param) =>
+        r.AnnotationNamed(StateMark)?.Args.FirstOrDefault(a => a.Key == param)?.Value;
+
     /// Replaces each pausable routine in `decls` with its declaration (no lines) and the declarations made from it.
     /// `shown` is what was made, as Lapila source, for `[debug] show-pausable`.
     public static List<Decl> Lower(List<Decl> decls, out string shown)
@@ -56,7 +61,7 @@ public static class Pausable
         }
         world.States = pausables.ToDictionary(r => r.Name + "@" + r.Module, r => (r, names[r]));
         var lowered = pausables.Select(r => new Lowering(r, names[r], world).Run()).ToList();
-        CheckCycles(lowered, world);
+        CheckCycles(lowered);
         var result = new List<Decl>();
         foreach (var d in decls)
         {
@@ -65,7 +70,8 @@ public static class Pausable
                 var low = lowered.First(l => ReferenceEquals(l.Routine, r));
                 result.Add(r with
                 {
-                    Annotations = [.. r.Annotations, new Annotation(StateMark, [new AnnotationArg(null, names[r], false)], r.Pos)],
+                    Annotations = [.. r.Annotations, new Annotation(StateMark,
+                        [new AnnotationArg(null, names[r], false), .. low.Handed.Select(h => new AnnotationArg(h.Key, h.Value, false))], r.Pos)],
                     Blocks = [new BlockDecl("entry", [], [new UnreachableStmt(r.Pos)], r.Pos)],
                 });
                 result.AddRange(low.Made);
@@ -98,9 +104,10 @@ public static class Pausable
     }
 
     /// A pausable routine waiting on itself through other pausable routines would need a state record inside itself.
-    private static void CheckCycles(List<Lowering> lowered, World world)
+    private static void CheckCycles(List<Lowering> lowered)
     {
-        var edges = lowered.ToDictionary(l => l.Routine, l => l.Waits, ReferenceEqualityComparer.Instance);
+        var edges = new Dictionary<RoutineDecl, List<(RoutineDecl, Pos)>>(ReferenceEqualityComparer.Instance);
+        foreach (var l in lowered) edges[l.Routine] = l.Waits;
         var state = new Dictionary<RoutineDecl, int>(ReferenceEqualityComparer.Instance);
         var path = new List<(RoutineDecl R, Pos At)>();
         void Visit(RoutineDecl r)
@@ -211,6 +218,19 @@ public static class Pausable
         private readonly HashSet<string> _hidden = [];
         private string _at = "at", _room = "room";
 
+        /// The field that keeps an access handed in for each view parameter, by the parameter's name.
+        private readonly Dictionary<string, string> _handed = [];
+
+        private string AccessField(string param)
+        {
+            string name = $"{param}_access";
+            while (_locals.ContainsKey(name)) name = "pause_" + name;
+            return name;
+        }
+
+        /// The fields that keep an access a view parameter may be handed with steal, by the parameter's name.
+        public IReadOnlyDictionary<string, string> Handed => _handed;
+
         public Lowering Run()
         {
             var body = r.Blocks![0].Stmts;
@@ -224,6 +244,9 @@ public static class Pausable
             while (_locals.ContainsKey(_room)) _room = "pause_" + _room;
             foreach (var p in r.Params)
                 _fields[p.Name] = new Field(p.Name, p.Type, world.IsEntity(p.Type) ? FieldKind.Cell : FieldKind.Value, Param: true);
+            // A view parameter may be an access the work was handed with steal: the record gives it back when it ends.
+            foreach (var p in r.Params.Where(p => p.Type is { Name: "PointedCell" or "PointedSlice", Path: null }))
+                _handed[p.Name] = AccessField(p.Name);
             Analyze(body, new Ctx([], () => []));
             foreach (var pause in _pauses.Values) ResolveStep(pause.Expr);
             CheckCarrying();
@@ -357,8 +380,8 @@ public static class Pausable
             foreach (var top in Bodies.Exprs(s))
                 if (s is not BindStmt { Value: WhenExpr } && ExprTree.All(top).OfType<PauseExpr>().FirstOrDefault() is { } deep)
                     throw new CompileError(Li.PauseForm, deep.Pos, "pauseuntil stands at the start of a line, as a binding's value, or as what a "
-                        + "when looks at, with try or check in front of it if you like: the routine can't stop in the middle of an "
-                        + "expression. Bind the result to a name first: x: T = pauseuntil ...");
+                        + "when looks at (try or check may go in front of it): the routine can't stop in the middle of an expression. "
+                        + "Bind the result first: x: T = pauseuntil ...");
         }
 
         private static bool HasPause(Stmt s) => Bodies.All([s]).Any(x => PauseIn(x) is not null);
@@ -415,9 +438,22 @@ public static class Pausable
                         var round = new HashSet<string>(seen);
                         foreach (var c in l.With) round.Add(c.Name);
                         if (l.Var is { } v) round.Add(v);
+                        // A round that ends in `continue with` every carried value gives the next round, and the then
+                        // lines after the loop's own end, the new values: those uses don't read this round's.
+                        var with = l.With.Select(c => c.Name).ToHashSet();
+                        bool rebinds = with.Count > 0 && AlwaysLeaves(l.Body)
+                                       && Bodies.All(l.Body).OfType<ContinueStmt>().All(c => c.Target is not null || c.With is { } w && with.All(n => w.Any(x => x.Name == n)));
+                        bool breaks = Bodies.All(l.Body).Any(x => x is BreakStmt);
                         HashSet<string>? again = null;
-                        HashSet<string> Again() => again ??= [.. l.Cond is null ? [] : Names(l.Cond),
-                            .. UsedFrom(l.Body, 0, l.Var is null ? [] : [l.Var]), .. l.Then is null ? [] : UsedFrom(l.Then, 0, []), .. AfterHere()];
+                        HashSet<string> Again()
+                        {
+                            if (again is not null) return again;
+                            var next = new HashSet<string>([.. l.Cond is null ? [] : Names(l.Cond), .. UsedFrom(l.Body, 0, l.Var is null ? [] : [l.Var])]);
+                            var after = l.Then is null ? [] : UsedFrom(l.Then, 0, []);
+                            if (rebinds) next.ExceptWith(with);
+                            if (rebinds && !breaks) after.ExceptWith(with);
+                            return again = [.. next, .. after, .. AfterHere()];
+                        }
                         Analyze(l.Body, new Ctx(round, Again));
                         if (l.Then is not null)
                         {
@@ -622,7 +658,7 @@ public static class Pausable
                     + "to a name with its type on the line before, step: ClockStep = Clock.after(5ms), then pauseuntil step");
             var result = ResultOf(stepType)
                 ?? throw new CompileError(Li.PauseTarget, pause.Target.Pos, $"a pause waits for a pausable routine's call or an Eventual[T] step, "
-                    + $"and this is a {stepType}, which doesn't obey Eventual: a plain routine runs to its end, so call it without pauseuntil");
+                    + $"and this gives {stepType}, which doesn't obey Eventual: a plain routine runs to its end, so call it without pauseuntil");
             _stepOf[pause] = (stepType, result, false);
             _steps.Add(_stepOf[pause]);
         }
@@ -958,16 +994,19 @@ public static class Pausable
                 }
                 case BindStmt b:
                 {
+                    if (b.Value is UnaryExpr { Op: "check" })
+                        throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a check of a pause, and a Check comes only from the check "
+                            + "that makes it, while a pause gives its result after it waits: observe the failures with when check pauseuntil ... "
+                            + "and its arms, or take an Optional with try pauseuntil ...");
                     if (b.Borrows)
                         throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a pause's result with '<-': a pause gives a value bound with "
                             + "'=' for now, so a step whose result is an entity can't be waited for yet");
-                    var (subject, (arms, rest)) = b.Value switch
+                    var (subject, arms) = b.Value switch
                     {
                         UnaryExpr { Op: "try" } u => ((Expr)(u with { Operand = poll }), ValueArms(b.Type is { Question: true, Args: [TypeArgType t] } ? t.Type : null, b, orNone: true)),
-                        UnaryExpr { Op: "check" } u => (u with { Operand = poll }, ValueArms(b.Type is { Name: "Check", Args: [TypeArgType t] } ? t.Type : null, b, orNone: false)),
                         _ => (poll, ValueArms(b.Type, b, orNone: false)),
                     };
-                    var value = new WhenExpr(new WhenStmt(subject, [pending, .. arms], p.Pos) { ElseBinding = rest }, p.Pos);
+                    var value = new WhenExpr(new WhenStmt(subject, [pending, .. arms], p.Pos), p.Pos);
                     BindValue(b, value);
                     _cur.Add(end);
                     break;
@@ -981,26 +1020,18 @@ public static class Pausable
             }
         }
 
-        /// The arms that take a pause's result: `is T as v => v`, and for a try the empty one, `is None => none`, and for
-        /// a check the failure, `else as failure => failure`.
-        private (List<WhenArm> Arms, ValueRef? Else) ValueArms(TypeRef? value, BindStmt b, bool orNone)
+        /// The arms that take a pause's result: `is T as v => v`, and for a try the empty one, `is None => none`.
+        private List<WhenArm> ValueArms(TypeRef? value, BindStmt b, bool orNone)
         {
             if (value is null)
-                throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a pause with {(orNone ? "try" : "check")}, so its type is "
-                    + (orNone ? "T? (what try gives)" : "Check[T] (what check gives)"));
+                throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a pause with try, so its type is T?, what try gives");
             string got = Hidden("pause_value");
             var arms = new List<WhenArm>
             {
                 new(null, [new IsPattern(value, new ValueRef(got, b.Pos), b.Pos)], [new BecomesStmt(new ValueRef(got, b.Pos), b.Pos)], b.Pos),
             };
             if (orNone) arms.Add(new WhenArm(null, [new IsPattern(TypeRef.Simple("None", b.Pos), null, b.Pos)], [new BecomesStmt(Compiler.NoneValue(b.Pos), b.Pos)], b.Pos));
-            else if (b.Value is UnaryExpr { Op: "check" })
-            {
-                var failure = new ValueRef(Hidden("pause_failure"), b.Pos);
-                arms.Add(new WhenArm(null, null, [new BecomesStmt(failure, b.Pos)], b.Pos));
-                return (arms, failure);
-            }
-            return (arms, null);
+            return arms;
         }
 
         /// `name: T = value` in the block, and in the record too when the name is kept across a pause.
@@ -1252,6 +1283,8 @@ public static class Pausable
                 string type = f.Kind == FieldKind.Value ? P(f.Type) : $"Fiber/Carried[{P(f.Type)}]";
                 src.Append($"    {f.Name}: {type}\n");
             }
+            foreach (var (param, field) in _handed)
+                src.Append($"    ### The access handed in as `{param}` with steal, given back when the record ends.\n    {field}: Fiber/HandedAccess\n");
             src.Append($"    ### The pause it stopped at, 0 before its first line.\n    {_at}: U32\n");
             src.Append($"    ### The step it waits for.\n    {_room}: Fiber/StepRoom[{size}]\n\n");
             string ps = string.Join(", ", r.Params.Select(p => $"{Printer.Name(p.Name)}: {P(p.Type)}"));

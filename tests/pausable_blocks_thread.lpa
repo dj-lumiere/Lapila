@@ -1,0 +1,23 @@
+# A thread ticket's retrieve() and waitfor inside a pausable routine put the whole thread to sleep: allowed, with a
+# warning that points to pauseuntil.
+
+import Fiber
+import Hosted
+
+routine square(n: S64) -> S64
+    return n * n
+
+pausable routine sleeps() -> S64
+    t: Thread[S64] <- get_thread[S64]()
+    work: Work[S64] = square.to[Work](n: 6)
+    t.put_work(work)
+    waitfor(1ms)
+    return t.retrieve()
+
+routine start() -> None
+    p: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = sleeps.to[Work]()
+    p.put_work(work)
+    result: S64 = p.retrieve()
+    Console.show("{result}")
+    return

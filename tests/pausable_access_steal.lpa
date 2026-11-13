@@ -1,0 +1,23 @@
+# An access handed to pausable work with steal is the work's: its state record gives it back when the work ends, so the
+# routine that took it doesn't drop it.
+
+import Fiber
+import Hosted
+
+global COUNT: &S64
+
+pausable routine bump_twice(held: @S64) -> None
+    (held.peek() + 1).poke_into(held)
+    pauseuntil FIBERS.next_turn()
+    (held.peek() + 1).poke_into(held)
+    return
+
+routine start() -> None
+    held: @S64 <- COUNT.get_exclusive_access()
+    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    work: Work[None] = bump_twice.to[Work](held: steal held)
+    t.put_work(steal work)
+    t.retrieve()
+    again: @S64 <- COUNT.get_exclusive_access()
+    Console.show("count {again.peek()}")
+    return

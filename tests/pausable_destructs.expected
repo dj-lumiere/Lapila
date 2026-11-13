@@ -1,0 +1,11 @@
+before the pause: 1
+noisy 1 ends
+after the pause: 2
+noisy 2 ends
+result 2
+before the pause: 1
+noisy 1 ends
+after the pause: 2
+noisy 2 ends
+failed
+end

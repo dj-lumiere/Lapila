@@ -1,0 +1,14 @@
+# Taking an access with '<-' inside a pausable routine is a build error: it would be held across the routine's pauses.
+
+import Fiber
+import Hosted
+
+global COUNT: &S64
+
+pausable routine holds() -> None
+    held: @S64 <- COUNT.get_exclusive_access()
+    pauseuntil FIBERS.next_turn()
+    return
+
+routine start() -> None
+    return

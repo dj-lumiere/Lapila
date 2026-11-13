@@ -1,0 +1,1 @@
+'seen' views 'cell', a place in the routine's frame (STACK), and carrying keeps the view across this pause, while the frame goes away: carry 'cell' itself, which puts it in the state record, carrying (seen, cell)

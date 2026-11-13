@@ -132,8 +132,8 @@ needs TWriter obeys Writer
 common routine WorkSlot.construct(manager: @MemoryManager) -> Me
     return Me(state: TICKET_EMPTY, runner: no_run.to[Callable](), discard: no_work.to[Callable](),
         work: Addr.zero(), manager, cancel: 0, guard: 0, waiter: Waiter.none(),
-        blocked: Waiter.none(), issued: 0, deadline: Duration.MAX, failure: Addr.zero(), failed: 0, stepping: 0,
-        paused: 0)
+        blocked: Waiter.none(), issued: 0, deadline: Duration.MAX, failure: Addr.zero(), failed: 0,
+        stepping: 0, paused: 0)
 
 ### Ends what the last work's block still holds and gives the block back, and the room of a failure.
 routine @WorkSlot.destruct() -> None

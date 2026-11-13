@@ -1,0 +1,1 @@
+a protocol's routine can't be pausable: each pausable routine has a state record of its own size, so a call through the protocol couldn't hold it. Make the routine give an Eventual[T] step instead, or call a pausable routine of the type itself

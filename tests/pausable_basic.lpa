@@ -1,0 +1,28 @@
+# A pausable routine with two pauses: a value it binds and a `<-` place it changes are carried across them, and the
+# parameter is kept without being listed.
+
+import Fiber
+import Hosted
+
+pausable routine doubled_later(n: S64) -> S64
+    pauseuntil FIBERS.next_turn()
+    return n * 2
+
+pausable routine add_up(start: S64) -> S64
+    label: @[Byte] = "total"
+    total: &S64 <- start
+    first: S64 = pauseuntil doubled_later(n: 3) carrying (label, total)
+    total <- total.load() + first
+    Console.show("{label} after the first pause: {total.load()}")
+    second: S64 = pauseuntil doubled_later(n: 10) carrying (label, total)
+    total <- total.load() + second
+    Console.show("{label} after the second pause: {total.load()}, start was {start}")
+    return total.load()
+
+routine start() -> None
+    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    work: Work[S64] = add_up.to[Work](start: 100)
+    t.put_work(work)
+    result: S64 = t.retrieve()
+    Console.show("result {result}")
+    return
