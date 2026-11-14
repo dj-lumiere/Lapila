@@ -1,0 +1,32 @@
+# A conversion or a generic routine without its type argument takes the type its value goes to, and that type flows
+# inward: through an operator's sides, down calls that give back their receiver's type, across a comparison, into an
+# argument and a return.
+
+import Hosted
+
+routine seven[T]() -> T
+    s: S64 = 7
+    return s.to[T]()
+
+routine half(x: B64) -> B64
+    return x / 2.0
+
+routine widened(n: S64) -> B64
+    return n.to()
+
+routine start() -> None
+    n: S64 = 9
+    a: B64 = n.to()
+    sum: B64 = n.to() * n.to() + a
+    root: B64 = n.to().sqrt()
+    negated: B64 = -n.to()
+    total: &B128 <- 0x0p0
+    total.store(total.load() + n.to() * n.to().sqrt().sin())
+    Console.show("{a} {sum} {root} {negated} {total.load()}")
+    if n.to() < sum
+        Console.show("less")
+    if a == n.to()
+        Console.show("equal")
+    doubled: B64 = seven() * 2.0
+    Console.show("{half(n.to())} {widened(n)} {doubled} {a * n.to()}")
+    return

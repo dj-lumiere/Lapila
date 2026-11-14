@@ -1156,6 +1156,14 @@ routine start() -> None
   it goes to as a type argument, so `x.to[T]()` works in generic code. Every integer type converts to itself with
   `to`, `to_wrap` and `to_clamp` (`to_wrap[T]` / `to_clamp[T]` on any `T` that obeys `WrappingArithmetic[T]` /
   `ClampingArithmetic[T]`, in `System/Conversions`), so `v.to_wrap[T]()` on a `U64` takes `T = U64` too.
+- `[T]` may be left out of `to` / `to_wrap` / `to_clamp`, and of a generic routine whose one type parameter only its
+  result names (`seven[T]() -> T`), where the value's place says the type. That type flows inward, never from a later
+  use of a name: a binding's written type, a parameter, a return type, the receiver of a call that gives back the
+  receiver's type (an operator is such a call: `b: B64 = n.to() * n.to() + a`, `c: B64 = n.to().sqrt()`, `-n.to()`),
+  and the other side of a comparison (`if n.to() < a`; a comparison's `Bool` says nothing of its sides). An argument
+  binds a type parameter before the place does (`e: B64 = pick(n)` with `n: S64` is `expected B64, found S64`). Where
+  nothing gives it, a conversion is LP-S458 ("S64.to takes the type it goes to, and nothing here gives one (...)") and
+  a generic routine LP-S161, both listing the places looked at.
 - **A conversion to a narrower float fails when a finite value rounds to an infinity**: `B64.to[B32]()`,
   `to[B16]()`, `to[BF16]()`, `B32.to[B16]()` / `to[BF16]()`, `BF16.to[B16]()`, `B128.to[B64]()` .. `to[BF16]()`, and
   `U128.to[B32]()` (from 2^128 - 2^103 up) are failable and throw `NumericOverflowError`. An infinity stays

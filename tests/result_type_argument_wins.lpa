@@ -1,0 +1,9 @@
+# An argument binds a type parameter before the type the value goes to: pick(n) is an S64, which a B64 doesn't take.
+
+routine pick[T](x: T) -> T
+    return x
+
+routine start() -> None
+    n: S64 = 9
+    e: B64 = pick(n)
+    return

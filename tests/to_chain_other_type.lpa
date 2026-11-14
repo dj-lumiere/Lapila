@@ -1,0 +1,7 @@
+# The type a call goes to reaches its receiver only when the call gives back its receiver's type: is_nan gives a Bool
+# on a B64, so the Bool says nothing of the conversion's type.
+
+routine start() -> None
+    n: S64 = 9
+    odd: Bool = n.to().is_nan()
+    return

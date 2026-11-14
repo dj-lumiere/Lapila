@@ -1,0 +1,10 @@
+# A generic routine whose type parameter only its result names, where nothing gives that type (a comparison gives a
+# Bool whatever its sides are, and the other side is a bare number).
+
+routine seven[T]() -> T
+    s: S64 = 7
+    return s.to[T]()
+
+routine start() -> None
+    same: Bool = seven() == 1
+    return

@@ -5421,6 +5421,8 @@ public sealed partial class FunctionGen
         {
             case BinaryExpr { Op: "and" or "or" }:
                 return e;
+            case BinaryExpr b when ComparisonWithResultType(b) is { } typedComparison:
+                return Desugar(typedComparison);
             case BinaryExpr b:
             {
                 string name = Operators.Routine(b.Op) ?? throw Err(Li.OperatorUse, b.Pos, $"'{b.Op}' is not an operator Lapila has");
@@ -5911,7 +5913,8 @@ public sealed partial class FunctionGen
     /// (`fn: Callable[…] = table.borrow_fn.peek()`); calling the field directly would hide that load.
     private (Expr Callee, CallableType Callable, List<Expr> Args)? IndirectCall(Expr e)
     {
-        if (e is not MethodCallExpr m) return null;
+        // A receiver that takes its type from where the call goes (`n.to().sqrt()`) is no Callable value.
+        if (e is not MethodCallExpr m || NeedsResultType(m.Receiver)) return null;
         var rt = Infer(m.Receiver);
         if (m.Name == "call" && rt is CallableType ct) return (m.Receiver, ct, m.Args);
         RecordType? s = rt switch
@@ -5994,6 +5997,9 @@ public sealed partial class FunctionGen
                 var env = new Compiler.TypeEnv(r.File);
                 BindExplicit(r, env, c.TypeArgs, c.Pos);
                 InferTypeArgs(r, env, c.Args, expected, 0);
+                if (c.TypeArgs.Count == 0 && ResultOnlyTypeParam(c) is { } fromResult && !env.Has(fromResult))
+                    throw Err(Li.CannotInferTypeArgument, c.Pos, $"'{c.Name}' takes its type parameter '{fromResult}' from where "
+                        + $"its value goes, and nothing here gives one ({ResultTypePlaces}): pass it, {c.Name}[S64](...)");
                 return new CallPlan(r, env, null, c.Args, c.Pos);
             }
             case ImplicitCallExpr ic:
@@ -6500,6 +6506,12 @@ public sealed partial class FunctionGen
         if (m is { Name: "to" or "to_wrap" or "to_clamp", TypeArgs.Count: 0, Args.Count: 0 } && expected is not null)
             m = m with { TypeArgs = [new TypeRef(expected.Name, [], m.Pos) { Known = expected }] };
 
+        // `n.to().sqrt()` where a B64 goes: the receiver takes the type when this call gives it back.
+        // A comparison gives a Bool whatever its sides are, so the Bool it goes to says nothing of them.
+        if (expected is not null && !IsComparisonName(m.Name) && NeedsResultType(m.Receiver)
+            && WithResultType(m, expected) is MethodCallExpr typedChain)
+            m = typedChain;
+
         var rt = Infer(m.Receiver);
         if (rt is null)
         {
@@ -6656,7 +6668,7 @@ public sealed partial class FunctionGen
                         + $"{spelled}.{read}().{m.Name}[{string.Join(", ", m.TypeArgs)}]()");
                 }
                 throw Err(Li.MethodNotFound, m.Pos, m.TypeArgs.Count == 0
-                    ? $"{owner}.{m.Name} takes the type it goes to: {forms}"
+                    ? $"{owner}.{m.Name} takes the type it goes to, and nothing here gives one ({ResultTypePlaces}): {forms}"
                     : $"{owner} has no {m.Name}[{string.Join(", ", m.TypeArgs)}]; it has {forms}");
             }
         if (typewise is not null)
