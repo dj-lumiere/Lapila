@@ -49,10 +49,10 @@ routine start() -> None
     Console.show("thread dropped")
     drop t
 
-    f: Fiber[Noisy] <- FIBERS.get_fiber[Noisy]()
+    f: Fiber[Noisy] <- COROUTINES.get_fiber[Noisy]()
     third: Work[Noisy] = make.to[Work](n: 3)
     f.put_work(third)
-    FIBERS.run()
+    COROUTINES.run()
     Console.show("fiber dropped")
     drop f
 
@@ -85,11 +85,11 @@ routine start() -> None
 
     fs: &List[Fiber[Noisy]] <- .construct(HEAP)
     for i: S64 in 7 til 9
-        g: Fiber[Noisy] <- FIBERS.get_fiber[Noisy]()
+        g: Fiber[Noisy] <- COROUTINES.get_fiber[Noisy]()
         made: Work[Noisy] = make.to[Work](n: i)
         g.put_work(made)
         fs.add_last(steal g)
-    FIBERS.run()
+    COROUTINES.run()
     Console.show("fiber list dropped")
     drop fs
     return

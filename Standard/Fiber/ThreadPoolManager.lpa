@@ -1,6 +1,6 @@
 # Lapila stdlib: ThreadPoolManager, fibers over many threads
 #
-# A ThreadPoolManager runs work on a number of threads, each with a CoroutineManager of its own (its FIBERS). A
+# A ThreadPoolManager runs work on a number of threads, each with a CoroutineManager of its own (its COROUTINES). A
 # passable fiber is a fiber the pool's threads hand between them, and its ticket, `PassableFiber[T]`, goes the same
 # way as a thread's or a fiber's (Work.lpa): `pool.get_passable_fiber[T]()`, `put_work`, `retrieve`, `drop`. Work put on
 # a passable fiber waits in the pool's queue until a thread of the pool is free, and that thread runs it on a fiber the
@@ -9,7 +9,7 @@
 # While a passable fiber waits, it belongs to no thread: the wake that ends the wait puts it in the pool's queue of
 # woken fibers, and whichever thread of the pool is free first goes on with it (the thread it waited on, or one that had
 # nothing to do). A passable fiber therefore may wake on another thread than the one it waited on, so it doesn't rely on
-# a `@threadlocal` global across a wait. Fibers a passable fiber makes with FIBERS stay on their thread, as every
+# a `@threadlocal` global across a wait. Fibers a passable fiber makes with COROUTINES stay on their thread, as every
 # manager's fibers do.
 #
 # A passable fiber's work may itself put work on more passable fibers and wait for them: the waiting passable fiber
@@ -317,19 +317,19 @@ secret routine @ThreadPoolManager.take_fiber() -> @FiberState
     me.fibers.poke(fiber.to[Addr]())
     return fiber
 
-### Makes `fiber` one of this thread's: it counts among FIBERS' busy fibers instead of its last manager's, and goes in
-### FIBERS' ready queue.
+### Makes `fiber` one of this thread's: it counts among COROUTINES' busy fibers instead of its last manager's, and goes in
+### COROUTINES' ready queue.
 ### :param fiber: A pool's fiber, ready to run.
 @target(os: not "none")
 secret routine adopt(fiber: @FiberState) -> None
     from: @CoroutineManager? = fiber.manager.peek_unbroken()
-    if from.is_absent() or from.unwrap() !== FIBERS
-        FIBERS.busy.fetch_add_unbroken(1)
-        fiber.manager.poke_unbroken(FIBERS)
+    if from.is_absent() or from.unwrap() !== COROUTINES
+        COROUTINES.busy.fetch_add_unbroken(1)
+        fiber.manager.poke_unbroken(COROUTINES)
         when from
             is @CoroutineManager as previous => previous.busy.fetch_sub_unbroken(1)
             is None => nothing
-    FIBERS.ready.add_last(fiber)
+    COROUTINES.ready.add_last(fiber)
     return
 
 ### A pool thread's work: runs this thread's fibers until none is ready, goes on with a woken passable fiber or starts
@@ -337,21 +337,21 @@ secret routine adopt(fiber: @FiberState) -> None
 ### :param pool: The pool.
 @target(os: not "none")
 secret infallible routine pool_thread(pool: @ThreadPoolManager) -> None
-    FIBERS.wake_through(pool.epoch)
+    COROUTINES.wake_through(pool.epoch)
 
     # Reads the epoch before looking, so work or a wake that comes in between changes it and the sleep returns.
     loop
         seen: U32 = pool.epoch.peek_unbroken()
-        FIBERS.run_until_idle()
+        COROUTINES.run_until_idle()
         woken: @FiberState? = pool.take_woken()
         if woken.is_present()
             adopt(woken.unwrap())
             continue
         taken: @PassableFiberSlot? = pool.take()
         if taken.is_absent()
-            if pool.stopping.peek_unbroken() == 1 and FIBERS.busy.peek_unbroken() == 0
+            if pool.stopping.peek_unbroken() == 1 and COROUTINES.busy.peek_unbroken() == 0
                 break
-            wait: Duration = FIBERS.idle_wait()
+            wait: Duration = COROUTINES.idle_wait()
             if wait == Duration.MAX
                 wait_on(at: pool.epoch, expected: seen)
                 continue

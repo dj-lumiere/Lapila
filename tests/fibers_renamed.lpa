@@ -1,0 +1,9 @@
+# Each thread's CoroutineManager is COROUTINES: the old name is a build error that says so.
+
+import Fiber
+import Hosted
+
+routine start() -> None
+    f: Fiber[None] <- FIBERS.get_fiber[None]()
+    drop f
+    return

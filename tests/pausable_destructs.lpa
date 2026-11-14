@@ -26,19 +26,19 @@ pausable routine holds(fail: Bool) -> S64
     left: &Noisy <- .construct(n: 1)
     kept: &Noisy <- .construct(n: 2)
     Console.show("before the pause: {left.n.peek()}")
-    pauseuntil FIBERS.next_turn() carrying (kept)
+    pauseuntil COROUTINES.next_turn() carrying (kept)
     Console.show("after the pause: {kept.n.peek()}")
     if fail
         throw StopError()
     return kept.n.peek()
 
 routine start() -> None
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     finishing: Work[S64] = holds.to[Work](fail: false)
     t.put_work(finishing)
     result: S64 = t.retrieve()
     Console.show("result {result}")
-    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    u: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     failing: Work[S64] = holds.to[Work](fail: true)
     u.put_work(failing)
     when check u.retrieve()

@@ -43,22 +43,22 @@ routine pass_on(item: Noisy) -> Noisy
 
 routine start() -> None
     a: &Noisy <- Noisy.construct(1)
-    f: Fiber[None] <- FIBERS.get_fiber[None]()
+    f: Fiber[None] <- COROUTINES.get_fiber[None]()
     first: Work[None] = look.to[Work](item: steal a)
     f.put_work(steal first)
     f.cancel()
-    FIBERS.run()
+    COROUTINES.run()
     when check f.retrieve()
         is None => Console.show("not cancelled")
         is CancelRequested => Console.show("retrieve: cancelled")
     drop f
 
     b: &Noisy <- Noisy.construct(2)
-    g: Fiber[Noisy] <- FIBERS.get_fiber[Noisy]()
+    g: Fiber[Noisy] <- COROUTINES.get_fiber[Noisy]()
     second: Work[Noisy] = pass_on.to[Work](item: steal b)
     g.put_work(steal second)
     g.cancel()
-    FIBERS.run()
+    COROUTINES.run()
     Console.show("fiber dropped")
     drop g
     return

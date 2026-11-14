@@ -8,9 +8,9 @@
 # until it yields, parks, sleeps, or its work finishes. (A ThreadPoolManager's passable fibers are fibers the pool
 # keeps, which a wake hands to whichever of its threads is free, see ThreadPoolManager.lpa.) Nothing cuts in between, so
 # fibers of one manager share values without an exclusive access between those points. Each thread has a manager of its
-# own, FIBERS, made on first use. A program that wants more cores takes thread tickets and drives a manager on each.
+# own, COROUTINES, made on first use. A program that wants more cores takes thread tickets and drives a manager on each.
 #
-#     f: Fiber[S64] <- FIBERS.get_fiber[S64]()
+#     f: Fiber[S64] <- COROUTINES.get_fiber[S64]()
 #     counting: Work[S64] = count.to[Work](limit: 100)
 #     f.put_work(counting)
 #     n: S64 = f.retrieve()   # outside a fiber, on the manager's thread: runs the manager's fibers until f's work is done
@@ -39,7 +39,7 @@ import Hosted
 ### This thread's coroutine manager, made on first use with DEFAULT_FIBER_STACK stacks of pages from PAGES.
 @threadlocal
 @target(os: not "none")
-lateinit global FIBERS: &CoroutineManager
+lateinit global COROUTINES: &CoroutineManager
 
 # A fiber's wake_state. A wake turns RUNNING or PARKING into NOTIFIED, and PARKED back into RUNNING (and queues the
 # fiber). park turns RUNNING into PARKING (or takes a NOTIFIED back to RUNNING and returns), and its manager, once the
@@ -49,7 +49,7 @@ secret preset FIBER_RUNNING: U32 = 0
 secret preset FIBER_NOTIFIED: U32 = 1
 secret preset FIBER_PARKING: U32 = 2
 secret preset FIBER_PARKED: U32 = 3
-### The stack size of a fiber of FIBERS, the manager each thread makes on first use: 64 KiB.
+### The stack size of a fiber of COROUTINES, the manager each thread makes on first use: 64 KiB.
 preset DEFAULT_FIBER_STACK: ByteSize = 64kib
 
 ### One fiber: a stack and the work on it, from the first ticket that takes it until its manager goes. A pointer to it
@@ -290,22 +290,22 @@ routine @CoroutineManager.destruct() -> None
     me.zeroinit(1)
     return
 
-### Makes the manager on first use, if it is a hollow one (FIBERS starts hollow).
+### Makes the manager on first use, if it is a hollow one (COROUTINES starts hollow).
 @target(os: not "none")
 secret routine @CoroutineManager.ensure() -> None
     if me.manager.peek().to[Addr]().is_hollow()
-        # A thread worker releases its FIBERS before it takes the next ticket's work.
+        # A thread worker releases its COROUTINES before it takes the next ticket's work.
         me.poke(Me.construct(stack_size: DEFAULT_FIBER_STACK, stack_manager: PAGES, manager: HEAP))
-        if me !== FIBERS
+        if me !== COROUTINES
             return
         THREAD_CLEANUP.store(release_fibers.to[Callable]())
         return
     return
 
-### Releases this thread's FIBERS: what a thread worker calls once a ticket's work is over.
+### Releases this thread's COROUTINES: what a thread worker calls once a ticket's work is over.
 @target(os: not "none")
 secret routine release_fibers() -> None
-    drop FIBERS
+    drop COROUTINES
     return
 
 ### A ticket for one of the manager's fibers: one given back, or a new one with a stack of its own.

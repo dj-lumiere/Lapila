@@ -84,10 +84,10 @@ routine start() -> None
     drop shared
 
     between: &Channel[U64] <- .construct(capacity: 1)
-    f: Fiber[U64] <- FIBERS.get_fiber[U64]()
+    f: Fiber[U64] <- COROUTINES.get_fiber[U64]()
     work_f: Work[U64] = fiber_produce.to[Work](ch: between)
     f.put_work(work_f)
-    g: Fiber[U64] <- FIBERS.get_fiber[U64]()
+    g: Fiber[U64] <- COROUTINES.get_fiber[U64]()
     work_g: Work[U64] = sum_all.to[Work](ch: between)
     g.put_work(work_g)
     out.write("fibers: {g.retrieve()}\n")
@@ -117,5 +117,5 @@ routine start() -> None
     out.write("finished before the cancel: {early}, the wait ended with {got.load()}\n")
     drop w
     drop empty
-    drop FIBERS
+    drop COROUTINES
     return

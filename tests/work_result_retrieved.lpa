@@ -42,7 +42,7 @@ routine start() -> None
     drop one
     drop two
 
-    f: Fiber[Noisy] <- FIBERS.get_fiber[Noisy]()
+    f: Fiber[Noisy] <- COROUTINES.get_fiber[Noisy]()
     third: Work[Noisy] = make.to[Work](n: 3)
     f.put_work(third)
     three: &Noisy <- f.retrieve()

@@ -15,7 +15,7 @@ pausable routine sleeps() -> S64
     return t.retrieve()
 
 routine start() -> None
-    p: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    p: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work: Work[S64] = sleeps.to[Work]()
     p.put_work(work)
     result: S64 = p.retrieve()

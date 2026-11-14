@@ -70,13 +70,13 @@ routine said(c: Check[S64]) -> @[Byte]
 ### :returns: How many of its failures it got back as its own.
 routine fail_in_turns(id: S64) -> S64
     kept: Check[S64] = check half(0 - id)
-    FIBERS.yield()
+    COROUTINES.yield()
     for round in 0 til 3 with own: S64 = 0
         got: S64 = when check quarter(1000 + id)
             is S64 => 0
             is TooLargeError as e => e.value
             is NegativeError => 0
-        FIBERS.yield()
+        COROUTINES.yield()
         hit: S64 = when
             got == 1000 + id => 1
             else => 0
@@ -113,8 +113,8 @@ routine start() -> None
     b: Optional[S64] = try half(-8)
     Console.show("try: {a.is_present()} {b.is_present()}")
 
-    one: Fiber[S64] <- FIBERS.get_fiber[S64]()
-    two: Fiber[S64] <- FIBERS.get_fiber[S64]()
+    one: Fiber[S64] <- COROUTINES.get_fiber[S64]()
+    two: Fiber[S64] <- COROUTINES.get_fiber[S64]()
     one_work: Work[S64] = fail_in_turns.to[Work](id: 1)
     two_work: Work[S64] = fail_in_turns.to[Work](id: 2)
     one.put_work(one_work)

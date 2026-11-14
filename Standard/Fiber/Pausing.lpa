@@ -8,11 +8,11 @@
 #
 # What a pause waits for obeys `Eventual[T]`: `resume()` gives the result, or `Pending` when it isn't there yet, and
 # `wake_when_done(waiter)` asks to wake the waiting work once it is. A pausable routine's state record obeys it, and so
-# do the steps at the bottom, which the managers give: `FIBERS.next_turn()` (the other ready work goes first),
+# do the steps at the bottom, which the managers give: `COROUTINES.next_turn()` (the other ready work goes first),
 # `Clock.after(d)` (at least `d` passes) and a ticket's `finish()` (its work has finished, the result is the
 # ticket's). Code of your own may write more steps: a record with those two routines and `obeys Eventual[Me, T]`.
 #
-# The work runs on a `PausingFiber[T]` ticket from a CoroutineManager, `FIBERS.get_pausing_fiber[T]()`, made from the
+# The work runs on a `PausingFiber[T]` ticket from a CoroutineManager, `COROUTINES.get_pausing_fiber[T]()`, made from the
 # routine with `f.to[Work](...)` and put on with `put_work`, the flow every ticket has. The manager calls the record's
 # `resume()` on its own thread whenever the work is woken, between its fibers. A wake from another thread goes through
 # the manager's inbox, which is safe between threads.
@@ -563,7 +563,7 @@ routine @PausingFiber[T].cancel() -> None
 
 # -- the steps at the bottom --------------------------------------------------------------------------------------
 
-### The step `FIBERS.next_turn()` gives: the other ready work of the manager goes first, then the work goes on. With
+### The step `COROUTINES.next_turn()` gives: the other ready work of the manager goes first, then the work goes on. With
 ### none ready it goes on at once.
 @target(os: not "none")
 record NextTurn
@@ -587,7 +587,7 @@ record Finish[T]
 obeys Eventual[Finish[T], T]
     slot: @WorkSlot
 
-### The step of letting the manager's other ready work go first: `pauseuntil FIBERS.next_turn()`.
+### The step of letting the manager's other ready work go first: `pauseuntil COROUTINES.next_turn()`.
 ### :returns: The step.
 @target(os: not "none")
 routine @CoroutineManager.next_turn() -> NextTurn

@@ -5,7 +5,7 @@ import Fiber
 import Hosted
 
 pausable routine level4(n: S64) -> S64
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return n + 1
 
 pausable routine level3(n: S64) -> S64
@@ -21,7 +21,7 @@ pausable routine level1(n: S64) -> S64
     return got + 1
 
 routine start() -> None
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work: Work[S64] = level1.to[Work](n: 1)
     t.put_work(work)
     result: S64 = t.retrieve()

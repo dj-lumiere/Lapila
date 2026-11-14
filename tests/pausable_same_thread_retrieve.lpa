@@ -5,11 +5,11 @@ import Fiber
 import Hosted
 
 pausable routine later() -> S64
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return 1
 
 pausable routine waits_wrongly() -> S64
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work: Work[S64] = later.to[Work]()
     t.put_work(work)
     return t.retrieve()

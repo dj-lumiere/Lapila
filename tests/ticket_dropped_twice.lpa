@@ -3,7 +3,7 @@
 import Fiber
 
 routine start() -> None
-    f: Fiber[None] <- FIBERS.get_fiber[None]()
+    f: Fiber[None] <- COROUTINES.get_fiber[None]()
     drop f
     drop f
     return

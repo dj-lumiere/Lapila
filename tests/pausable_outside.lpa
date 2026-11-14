@@ -4,5 +4,5 @@ import Fiber
 import Hosted
 
 routine start() -> None
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return

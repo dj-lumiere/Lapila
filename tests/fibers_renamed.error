@@ -1,0 +1,1 @@
+'FIBERS' is not defined: each thread's CoroutineManager, which runs its fibers and its pausable work, is COROUTINES

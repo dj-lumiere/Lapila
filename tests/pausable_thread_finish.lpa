@@ -23,8 +23,8 @@ pausable routine meanwhile() -> S64
         return rounds
 
 routine start() -> None
-    a: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
-    b: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    a: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
+    b: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     squaring: Work[S64] = square_on_thread.to[Work](n: 12)
     other: Work[S64] = meanwhile.to[Work]()
     a.put_work(squaring)

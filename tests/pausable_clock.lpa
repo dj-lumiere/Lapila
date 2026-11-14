@@ -10,12 +10,12 @@ pausable routine sleeper(pause: Duration) -> Duration
 
 pausable routine ticker(rounds: S64) -> S64
     for i in 0 til rounds
-        pauseuntil FIBERS.next_turn()
+        pauseuntil COROUTINES.next_turn()
     return rounds
 
 routine start() -> None
-    s: PausingFiber[Duration] <- FIBERS.get_pausing_fiber[Duration]()
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    s: PausingFiber[Duration] <- COROUTINES.get_pausing_fiber[Duration]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     sleeping: Work[Duration] = sleeper.to[Work](pause: 20ms)
     ticking: Work[S64] = ticker.to[Work](rounds: 50)
     s.put_work(sleeping)

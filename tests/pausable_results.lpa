@@ -8,13 +8,13 @@ record Point
     y: S64
 
 pausable routine point_later(x: S64) -> Point
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return Point(x: x, y: x * x)
 
 pausable routine announce(times: S64) -> None
     for i in 0 til times
         Console.show("announce {i}")
-        pauseuntil FIBERS.next_turn()
+        pauseuntil COROUTINES.next_turn()
     return
 
 pausable routine sum_points() -> S64
@@ -24,12 +24,12 @@ pausable routine sum_points() -> S64
     return a.y + b.y
 
 routine start() -> None
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work: Work[S64] = sum_points.to[Work]()
     t.put_work(work)
     sum: S64 = t.retrieve()
     Console.show("sum {sum}")
-    n: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    n: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
     quiet: Work[None] = announce.to[Work](times: 1)
     n.put_work(quiet)
     n.retrieve()

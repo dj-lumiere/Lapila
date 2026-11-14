@@ -1,4 +1,4 @@
-# wait_all_finished on the lists of fiber tickets: a List[Fiber[U64]] on the thread that drives FIBERS runs the fibers
+# wait_all_finished on the lists of fiber tickets: a List[Fiber[U64]] on the thread that drives COROUTINES runs the fibers
 # until their work is done, and a List[PassableFiber[None]] waits until the pool's threads have run every piece of
 # work. The results stay in the tickets until give_back_all ends them.
 
@@ -31,7 +31,7 @@ routine start() -> None
     adding: Work[None] = add_one.to[Work](tally: tally)
     fibers: &List[Fiber[U64]] <- .construct(manager: HEAP)
     for i in 1 to 3 with step: U64 = 1
-        f: Fiber[U64] <- FIBERS.get_fiber[U64]()
+        f: Fiber[U64] <- COROUTINES.get_fiber[U64]()
         work: Work[U64] = add_one_and_give.to[Work](tally: tally, step: step)
         f.put_work(work)
         fibers.add_last(steal f)

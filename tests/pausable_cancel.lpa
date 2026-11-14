@@ -26,18 +26,18 @@ pausable routine notices() -> S64
     return 7
 
 routine start() -> None
-    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    t: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
     work: Work[None] = waits_long.to[Work](n: 1)
     t.put_work(work)
-    FIBERS.waitfor(5ms)
+    COROUTINES.waitfor(5ms)
     t.cancel()
     when check t.retrieve()
         is None => Console.show("finished")
         is CancelRequested => Console.show("cancelled")
-    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    u: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     other: Work[S64] = notices.to[Work]()
     u.put_work(other)
-    FIBERS.waitfor(2ms)
+    COROUTINES.waitfor(2ms)
     u.cancel()
     # The routine received the cancel and returned, and the ticket's retrieve() still says the work was cancelled.
     when check u.retrieve()

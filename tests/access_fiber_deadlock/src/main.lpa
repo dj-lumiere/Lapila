@@ -11,7 +11,7 @@ record Pair
 
 routine forward(pair: @Pair) -> None
     first: @U64 <- pair.first.get_exclusive_access()
-    FIBERS.waitfor(10ms)
+    COROUTINES.waitfor(10ms)
     second: @U64 <- pair.second.get_exclusive_access()
     drop second
     drop first
@@ -19,7 +19,7 @@ routine forward(pair: @Pair) -> None
 
 routine backward(pair: @Pair) -> None
     second: @U64 <- pair.second.get_exclusive_access()
-    FIBERS.waitfor(10ms)
+    COROUTINES.waitfor(10ms)
     first: @U64 <- pair.first.get_exclusive_access()
     drop first
     drop second
@@ -29,8 +29,8 @@ routine start() -> None
     pair: &Pair <- Pair(first: 0, second: 0)
 
     Console.show("starting")
-    f: Fiber[None] <- FIBERS.get_fiber[None]()
-    g: Fiber[None] <- FIBERS.get_fiber[None]()
+    f: Fiber[None] <- COROUTINES.get_fiber[None]()
+    g: Fiber[None] <- COROUTINES.get_fiber[None]()
     work_f: Work[None] = forward.to[Work](pair: pair)
     f.put_work(work_f)
     work_g: Work[None] = backward.to[Work](pair: pair)
@@ -39,6 +39,6 @@ routine start() -> None
     g.retrieve()
     drop f
     drop g
-    drop FIBERS
+    drop COROUTINES
     Console.show("not reached")
     return

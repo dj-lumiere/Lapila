@@ -172,9 +172,8 @@ routine start() -> None
         drop lone
         Console.show("lone joined")
 
-        for i2: U64 in 0 til 8
-            drop sleeper_fibers.getslot(i2)
-        drop players.getslot(0)
-        drop players.getslot(1)
+        # The tickets go back before their manager: each one's drop reads the fiber it holds, which the manager frees.
+        drop sleeper_fibers
+        drop players
         drop sched
         return

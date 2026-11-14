@@ -2951,7 +2951,7 @@ public sealed partial class FunctionGen
             return;
         if (BoundInRoutine(owner.Name))
             throw Err(Li.UnknownName, owner.Pos, NotVisible(owner.Name, fromNextLine: true));
-        throw Err(Li.UnknownName, owner.Pos, ScriptBinding(owner.Name) ?? OldConsoleName(owner.Name) ?? $"'{owner.Name}' is not defined in '{_decl.DisplayName}'; bind it or claim it first");
+        throw Err(Li.UnknownName, owner.Pos, ScriptBinding(owner.Name) ?? OldConsoleName(owner.Name) ?? OldSpellings.OldName(owner.Name) ?? $"'{owner.Name}' is not defined in '{_decl.DisplayName}'; bind it or claim it first");
     }
 
     /// Whether some body of this routine binds `name`: a parameter, a block parameter, a carried value, or a binding.
@@ -5666,7 +5666,8 @@ public sealed partial class FunctionGen
             throw Err(Li.UnknownName, r.Pos, hosted);
         if (r.Owner is null && FlagsOf(expected) is { } flags)
             throw Err(Li.ChoiceMemberNotFound, r.Pos, $"{flags.Name} has no member '{r.Name}': its members are {string.Join(", ", flags.Decl.Members.Select(m => m.Name))}");
-        throw Err(Li.UnknownName, r.Pos, $"unknown name '{(r.Owner is null ? r.Name : $"{r.Owner}.{r.Name}")}'");
+        throw Err(Li.UnknownName, r.Pos, (r.Owner is null ? OldSpellings.OldName(r.Name) : null)
+            ?? $"unknown name '{(r.Owner is null ? r.Name : $"{r.Owner}.{r.Name}")}'");
     }
 
     /// `name.to[Callable]()`: the routine as a function pointer, typed by its own signature, or by the Callable
@@ -7115,7 +7116,7 @@ public sealed partial class FunctionGen
             throw Err(Li.PausableCall, plan.Pos, _decl.AnnotationNamed(Pausable.StateMark) is not null
                 ? $"'{plan.Decl.Name}' is pausable, so a pausable routine waits for it: pauseuntil {plan.Decl.Name}(...) carrying (...)"
                 : $"'{plan.Decl.Name}' is pausable, so it runs as work on a PausingFiber, which keeps its state record while it waits: "
-                  + $"t: PausingFiber[T] <- FIBERS.get_pausing_fiber[T](), then t.put_work({plan.Decl.Name}.to[Work](...)) and t.retrieve()");
+                  + $"t: PausingFiber[T] <- COROUTINES.get_pausing_fiber[T](), then t.put_work({plan.Decl.Name}.to[Work](...)) and t.retrieve()");
         if (plan.Decl is { IsLibrary: true, Module: Compiler.SystemModule, Owner.Name: "Crash", Name: "report_with" } && !_reportingArgument)
         {
             _reportingArgument = true;

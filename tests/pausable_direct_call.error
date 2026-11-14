@@ -1,1 +1,1 @@
-'later' is pausable, so it runs as work on a PausingFiber, which keeps its state record while it waits: t: PausingFiber[T] <- FIBERS.get_pausing_fiber[T](), then t.put_work(later.to[Work](...)) and t.retrieve()
+'later' is pausable, so it runs as work on a PausingFiber, which keeps its state record while it waits: t: PausingFiber[T] <- COROUTINES.get_pausing_fiber[T](), then t.put_work(later.to[Work](...)) and t.retrieve()

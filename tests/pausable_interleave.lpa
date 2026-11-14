@@ -1,4 +1,4 @@
-# Several pausable works on one thread's CoroutineManager take turns at each pauseuntil FIBERS.next_turn(): the other
+# Several pausable works on one thread's CoroutineManager take turns at each pauseuntil COROUTINES.next_turn(): the other
 # ready work goes first, then each goes on where it stopped.
 
 import Fiber
@@ -7,21 +7,21 @@ import Hosted
 pausable routine count(name: @[Byte], rounds: S64) -> S64
     for i in 0 til rounds
         Console.show("{name} {i}")
-        pauseuntil FIBERS.next_turn() carrying (i)
+        pauseuntil COROUTINES.next_turn() carrying (i)
     return rounds
 
 pausable routine sum_below(n: S64) -> S64
     until k >= n with k: S64 = 0, total: S64 = 0
         Console.show("sum at {k}")
-        pauseuntil FIBERS.next_turn() carrying (k, total)
+        pauseuntil COROUTINES.next_turn() carrying (k, total)
         continue with k: k + 1, total: total + k
     then
         return total
 
 routine start() -> None
-    a: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
-    b: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
-    c: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    a: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
+    b: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
+    c: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work_a: Work[S64] = count.to[Work](name: "a", rounds: 3)
     work_b: Work[S64] = count.to[Work](name: "b", rounds: 2)
     work_c: Work[S64] = sum_below.to[Work](n: 4)

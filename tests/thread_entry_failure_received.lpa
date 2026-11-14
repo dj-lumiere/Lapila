@@ -61,7 +61,7 @@ routine start() -> None
         else as e => Console.show("other")
     drop v
 
-    f: Fiber[S64] <- FIBERS.get_fiber[S64]()
+    f: Fiber[S64] <- COROUTINES.get_fiber[S64]()
     f.put_callable(entry: twice.to[Callable](), args: -9)
     show_result(check f.retrieve())
     f.put_work(twice.to[Work](n: 10))

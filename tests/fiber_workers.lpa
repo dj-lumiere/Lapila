@@ -1,6 +1,6 @@
-# Fibers on four threads: four thread tickets each run 16 fibers on their own thread's FIBERS, and every fiber adds
+# Fibers on four threads: four thread tickets each run 16 fibers on their own thread's COROUTINES, and every fiber adds
 # 1000 to a shared total, yielding between steps. Fibers never move between threads, the total comes out exact, and
-# each thread's FIBERS goes when its work is over.
+# each thread's COROUTINES goes when its work is over.
 
 import Fiber
 import Hosted
@@ -11,21 +11,21 @@ record Shared
 routine add_steps(state: @Shared) -> None
     until i == 1000 with i: U64 = 0
         state.total.fetch_add_unbroken(1)
-        FIBERS.yield()
+        COROUTINES.yield()
         continue with i: i + 1
     then
         return
 
-### One thread's work: 16 fibers on its FIBERS, run until all have finished.
+### One thread's work: 16 fibers on its COROUTINES, run until all have finished.
 routine run_fibers(state: @Shared) -> None
     fibers: &Slots[Fiber[None], 16]
 
     for i: U64 in 0 til 16
-        f: Fiber[None] <- FIBERS.get_fiber[None]()
+        f: Fiber[None] <- COROUTINES.get_fiber[None]()
         work_f: Work[None] = add_steps.to[Work](state: state)
         f.put_work(work_f)
         fibers.getslot(i).poke(steal f)
-    FIBERS.run()
+    COROUTINES.run()
 
     for i: U64 in 0 til 16
         drop fibers.getslot(i)

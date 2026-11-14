@@ -7,7 +7,7 @@ global COUNT: &S64
 
 pausable routine holds() -> None
     held: @S64 <- COUNT.get_exclusive_access()
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return
 
 routine start() -> None

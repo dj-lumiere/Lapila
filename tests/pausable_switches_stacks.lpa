@@ -5,16 +5,16 @@ import Fiber
 import Hosted
 
 routine let_others_go() -> None
-    FIBERS.yield()
+    COROUTINES.yield()
     return
 
 pausable routine yields() -> None
     let_others_go()
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return
 
 routine start() -> None
-    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    t: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
     work: Work[None] = yields.to[Work]()
     t.put_work(work)
     t.retrieve()

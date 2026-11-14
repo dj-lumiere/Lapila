@@ -1,7 +1,7 @@
 # Lists of tickets: four thread tickets napping for times 100 ms apart (wider than a timer tick, 15.6 ms on Windows,
 # and than a late thread start on a busy runner), wait_any_finished naming the first to finish,
 # retrieve_all in the list's order, take_finished moving every finished ticket out, give_back_all, and
-# give_back_finished on fibers once FIBERS has run them.
+# give_back_finished on fibers once COROUTINES has run them.
 
 import Collections
 import Fiber
@@ -28,15 +28,15 @@ routine start() -> None
     out.write("taken {done.count()}, left {ts.count()}\n")
     done.give_back_all()
     fs: &List[Fiber[U64]] <- .construct(manager: HEAP)
-    f: Fiber[U64] <- FIBERS.get_fiber[U64]()
+    f: Fiber[U64] <- COROUTINES.get_fiber[U64]()
     work_f: Work[U64] = nap.to[Work](ms: 3)
     f.put_work(work_f)
     fs.add_last(steal f)
-    g: Fiber[U64] <- FIBERS.get_fiber[U64]()
+    g: Fiber[U64] <- COROUTINES.get_fiber[U64]()
     work_g: Work[U64] = nap.to[Work](ms: 1)
     g.put_work(work_g)
     fs.add_last(steal g)
-    FIBERS.run()
+    COROUTINES.run()
     fs.give_back_finished()
     out.write("fibers left {fs.count()}\n")
     drop results

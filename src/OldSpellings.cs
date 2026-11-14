@@ -33,6 +33,8 @@ public static class OldSpellings
         "AlignedHeapManager" => Renamed(name, "HeapManagerByCAligned now"),
         // A manager with no memory to give throws the failure that says so.
         "MemoryAllocationError" => Renamed(name, "OutOfMemoryError now"),
+        // `FIBERS.get_fiber[T]()` reads like a call on a type.
+        "FIBERS" => $"'{name}' is not defined: each thread's CoroutineManager, which runs its fibers and its pausable work, is COROUTINES",
         _ => null,
     };
 
@@ -80,6 +82,7 @@ public static class OldSpellings
         "MemoryAllocationError" => Message(name, "a manager with no memory to give throws OutOfMemoryError"),
         "allocator_call_place" => Message(name, "the place a memory manager callback was called from is memory_manager_call_place()"),
         "zero_bss" or "copy_data" => Message(name, $"GlobalManager.{name}() readies the globals' memory"),
+        "FIBERS" => Message(name, "each thread's CoroutineManager, which runs its fibers and its pausable work, is COROUTINES"),
         _ => null,
     };
 

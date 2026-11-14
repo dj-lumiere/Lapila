@@ -5,7 +5,7 @@ import Fiber
 import Hosted
 
 pausable routine later() -> S64
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     return 1
 
 pausable routine adds() -> S64

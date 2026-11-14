@@ -2164,7 +2164,7 @@ in place. `cancel()` asks the
 work to stop: the work asks `cancel_requested()` where stopping is safe and returns. `retrieve()` of cancelled work
 throws `CancelRequested` (a `Thread[None]` / `Fiber[None]` / `PassableFiber[None]` one too), so a bare call stops there
 and `check t.retrieve()` tells them apart. Before each piece of work a thread puts every `@threadlocal` global back to
-its starting value. The same flow on all three ticket kinds: `Thread[T]`, `Fiber[T]` (`FIBERS.get_fiber[T]()`),
+its starting value. The same flow on all three ticket kinds: `Thread[T]`, `Fiber[T]` (`COROUTINES.get_fiber[T]()`),
 `PassableFiber[T]` (`pool.get_passable_fiber[T]()`). `work_slot()` gives the ticket's `@WorkSlot`, for code waiting on
 several tickets at once.
 - **The work's failure goes to `retrieve()`.** The routine of a ticket's work may fail. The work runs the routine's
@@ -2209,8 +2209,8 @@ several tickets at once.
   that starts no thread crashes `get_thread` with `TaskSpawnError`. `manager.launch_unwatched(entry, arg)` (entry takes an
   `@T`, `arg` is one and outlives the thread) starts a thread nobody waits for: only for a runtime's own threads that
   live as long as the program. `cpu_count()`.
-- **Fibers** (`Standard/Fiber/CoroutineManager.lpa`): `FIBERS.get_fiber[T]()` (any `CoroutineManager`'s `get_fiber`),
-  the same flow and crashes. `FIBERS` is each thread's own
+- **Fibers** (`Standard/Fiber/CoroutineManager.lpa`): `COROUTINES.get_fiber[T]()` (any `CoroutineManager`'s `get_fiber`),
+  the same flow and crashes. `COROUTINES` is each thread's own
   `CoroutineManager`, made on first use (`64kib` stacks on pages from `PAGES`), and on a thread ticket it goes when the
   work is over. `CoroutineManager.construct(stack_size, stack_manager, manager)` (`stack_size` a `ByteSize`, `stack_manager` a
   page manager such as `PAGES`) makes another, `drop manager` gives it back. Each fiber's stack is `take_stack(size, pages)`:
@@ -2224,7 +2224,7 @@ several tickets at once.
   `park_until(deadline)`, `waitfor(duration)`, and `run_blocking(work, arg)` (a blocking call on a thread ticket), which
   `read` / `write` (`Standard/Fiber/Io.lpa`) use. A blocking call made directly stops every fiber of its thread.
   `yield()` lets the other ready fibers go first. Outside a fiber `waitfor` waits the thread, `park` returns,
-  `run_blocking` just calls. More cores = thread tickets, each driving its own `FIBERS` (`tests/fiber_workers.lpa`),
+  `run_blocking` just calls. More cores = thread tickets, each driving its own `COROUTINES` (`tests/fiber_workers.lpa`),
   or a ThreadPoolManager. A thread that drives a manager between other work loops on `run_until_idle()` and sleeps on a word
   of its own: `wake_through(word)` makes a wake from another thread change that word (and `wake_all` it),
   `idle_wait() -> Duration` is how long it may sleep before a fiber with a deadline is due (`Duration.MAX` for none).
@@ -2232,11 +2232,11 @@ several tickets at once.
   thread per processor), `j: PassableFiber[T] <- pool.get_passable_fiber[T]()` (a fiber the pool's threads hand between
   them), then the ticket flow (`put_work`, `check_finished`, `waitfor`, `retrieve`, `cancel`, `drop j`). Work waits in
   the pool's queue until a
-  pool thread is free, then runs as a fiber the POOL keeps (not a thread's `FIBERS`). It runs until it waits, like any
+  pool thread is free, then runs as a fiber the POOL keeps (not a thread's `COROUTINES`). It runs until it waits, like any
   fiber. A wake of a waiting passable fiber puts it in the pool's queue of woken fibers, and whichever pool thread is free first
   goes on with it, so a passable fiber may wake on another thread than the one it waited on (work stealing at wait points only,
   `tests/thread_pool_manager_moves.lpa`): don't rely on a `@threadlocal` global across a wait in a passable fiber. Fibers a passable fiber
-  makes with `FIBERS` stay on their thread. A passable fiber may start more work on the pool (another passable fiber ticket) and wait: the waiting passable fiber parks, its
+  makes with `COROUTINES` stay on their thread. A passable fiber may start more work on the pool (another passable fiber ticket) and wait: the waiting passable fiber parks, its
   thread runs other passable fibers (recursive splitting: `tests/thread_pool_manager.lpa`). Passable fibers don't choose their thread, so they
   share values like threads do (unbroken values, exclusive accesses, channels). Threads start with the first passable fiber and end at
   `drop pool`: give every passable fiber ticket back and retrieve every piece of work first. In a program that runs pool passable fibers and keeps the crash trace as a
@@ -2249,11 +2249,13 @@ known at build time, its pauses are visible in its source, it runs on every targ
 of its own (deep recursion, calls into code that blocks or switches stacks). Threads compute in parallel.
 - `pausable routine f(a: A) -> R` (a free routine of the program, not generic, not `infallible`, at most four
   parameters). `x: T = pauseuntil X carrying (b, c)` stops it until `X` has finished, and `X`'s result is the value. `X` is
-  a call of another pausable routine (`pauseuntil g(n: 3)`) or a step, a value whose type obeys `Eventual[T]`: `FIBERS.next_turn()`
+  a call of another pausable routine (`pauseuntil g(n: 3)`) or a step, a value whose type obeys `Eventual[T]`: `COROUTINES.next_turn()`
   (`NextTurn`, the other ready work goes first, none ready goes on at once), `Clock.after(d)` (`ClockStep`), `t.finish()`
   on a `Thread`/`Fiber`/`PausingFiber` ticket (`Finish[T]`, gives what `retrieve()` would, its failure and
-  `CancelRequested` too). The builder reads the step's type from the source (a call's declared result, a record made by
-  its type's name, a typed value or global): anything else is `LP-S1467`. Arguments are computed before the pause.
+  `CancelRequested` too). Rule: the step's type must be readable from the source (a call's declared result, a record made
+  by its type's name, a value or global with a written type), otherwise bind the step with a written type first
+  (`step: ClockStep = Clock.after(5ms)`, then `pauseuntil step`): anything else is `LP-S1467`. A plain routine as the target
+  is `LP-S1467` too (call it without `pauseuntil`). Arguments are computed before the pause.
 - Forms: `pauseuntil X` as a line, `x: T = pauseuntil X`, `x: T? = try pauseuntil X`, `try pauseuntil X` as a line,
   `when [try|check] pauseuntil X` with arms, `x: T = when check pauseuntil X` with arms. Anything else is `LP-S1459` (inside an
   expression, `x: Check[T] = check pauseuntil`, `x: &T <- pauseuntil`, a pause inside a `for` over an emitter, a pause in a
@@ -2264,7 +2266,7 @@ of its own (deep recursion, calls into code that blocks or switches stacks). Thr
   `<-` place of the frame listed there lives in the state record (`Carried[T]`), a place from a manager or a ticket is
   kept as it is. A view of a frame place is `LP-S1461` (carry the place). A place not carried and not used after the
   pause is dropped right before it, a carried one at the routine's end (or when its work fails or is cancelled), once.
-- Running: `t: PausingFiber[R] <- FIBERS.get_pausing_fiber[R]()`, `t.put_work(f.to[Work](a: 1))`, `t.retrieve()` (outside a
+- Running: `t: PausingFiber[R] <- COROUTINES.get_pausing_fiber[R]()`, `t.put_work(f.to[Work](a: 1))`, `t.retrieve()` (outside a
   fiber it drives the manager on this thread), `t.cancel()`, `drop t`. A plain call of a pausable routine is `LP-S1462`
   (outside: make work of it, inside: `pauseuntil`). Pausable work on a `Thread`/`Fiber` ticket runs alone to its end,
   sleeping that flow between steps. A failure nothing receives ends the work and `retrieve()` throws it. `cancel()` wakes

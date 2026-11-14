@@ -13,7 +13,7 @@ needs TWriter obeys Writer
     return
 
 pausable routine at_most_ten(n: S64) -> S64
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     if n > 10
         throw TooLargeError(limit: 10)
     return n
@@ -32,11 +32,11 @@ pausable routine passes_on() -> S64
     return got
 
 routine start() -> None
-    t: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    t: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     work: Work[S64] = receives.to[Work]()
     t.put_work(work)
     Console.show("receives: {t.retrieve()}")
-    u: PausingFiber[S64] <- FIBERS.get_pausing_fiber[S64]()
+    u: PausingFiber[S64] <- COROUTINES.get_pausing_fiber[S64]()
     failing: Work[S64] = passes_on.to[Work]()
     u.put_work(failing)
     when check u.retrieve()

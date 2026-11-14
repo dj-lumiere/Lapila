@@ -73,7 +73,7 @@ routine waits_for_thread(log: @Log) -> S64
 routine steps(log: @Log) -> S64
     until i == 5 with i: U64 = 0
         log.steps.poke_unbroken(i + 1)
-        FIBERS.waitfor(200us)
+        COROUTINES.waitfor(200us)
         continue with i: i + 1
     then
         return 5
@@ -139,15 +139,15 @@ routine start() -> None
     cancelled(out)
 
     log: &Log <- Log(steps: 0)
-    w: Fiber[S64] <- FIBERS.get_fiber[S64]()
+    w: Fiber[S64] <- COROUTINES.get_fiber[S64]()
     work_w: Work[S64] = waits_for_thread.to[Work](log: log)
     w.put_work(work_w)
-    x: Fiber[S64] <- FIBERS.get_fiber[S64]()
+    x: Fiber[S64] <- COROUTINES.get_fiber[S64]()
     work_x: Work[S64] = steps.to[Work](log: log)
     x.put_work(work_x)
-    FIBERS.run()
+    COROUTINES.run()
     out.write("steps the other fiber took while one waited for a thread: {w.retrieve()} of {x.retrieve()}\n")
     drop w
     drop x
-    drop FIBERS
+    drop COROUTINES
     return

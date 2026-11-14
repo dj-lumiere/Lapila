@@ -8,13 +8,13 @@ global COUNT: &S64
 
 pausable routine bump_twice(held: @S64) -> None
     (held.peek() + 1).poke_into(held)
-    pauseuntil FIBERS.next_turn()
+    pauseuntil COROUTINES.next_turn()
     (held.peek() + 1).poke_into(held)
     return
 
 routine start() -> None
     held: @S64 <- COUNT.get_exclusive_access()
-    t: PausingFiber[None] <- FIBERS.get_pausing_fiber[None]()
+    t: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
     work: Work[None] = bump_twice.to[Work](held: steal held)
     t.put_work(steal work)
     t.retrieve()
