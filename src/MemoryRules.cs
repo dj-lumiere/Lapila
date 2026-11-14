@@ -178,6 +178,9 @@ public static class MemoryRules
     {
         /// `Root` is the manager `Name`'s memory came from and goes back to.
         public bool Manager { get; init; }
+
+        /// `Name` is a ticket `Root` handed out (a thread, a fiber, a pausing fiber): the manager outlives it.
+        public bool Ticket { get; init; }
     }
 
     /// A call hands `Root`'s view to the parameter `From` of `Callee` and the value `Name` to its parameter `Into`: when
@@ -441,6 +444,17 @@ public static class MemoryRules
             if (v.Contents is { } viewed) contents[v.Name] = viewed;
         }
         var viewHolders = events.Values.SelectMany(l => l).OfType<HoldsContents>().Where(h => h.View).Select(h => h.Name).ToHashSet();
+        var tickets = events.Values.SelectMany(l => l).OfType<HoldsViewOf>().Where(h => h.Ticket).Select(h => h.Name).ToHashSet();
+        // A ticket's views end with its work, and what it holds of its manager stays until the ticket is dropped.
+        void KeepTicketManager(State state, string ticket)
+        {
+            if (!tickets.Contains(ticket) || !state.HeldViews.TryGetValue(ticket, out var held))
+            {
+                state.HeldViews.Remove(ticket);
+                return;
+            }
+            held.RemoveWhere(id => !state.Managers.Contains(id));
+        }
 
         // Whether a #reshaping call on `reshaped` (null: on the root as a whole) moves what `of` holds: `of` is the
         // reshaped name, or that name is one `of` was taken through.
@@ -715,15 +729,15 @@ public static class MemoryRules
                         state.Working.Remove(wk.Ticket);
                         foreach (var lent in state.Lent.Where(l => l.Value.Ticket == wk.Ticket).Select(l => l.Key).ToList())
                             state.Lent[lent] = state.Lent[lent] with { Ticket = wk.Holder, Wait = wk.Wait };
-                        state.HeldViews.Remove(wk.Ticket);
+                        KeepTicketManager(state, wk.Ticket);
                         break;
                     case WorkWaited ww:
                         state.Putting.Remove(ww.Ticket);
                         state.Working.Remove(ww.Ticket);
                         foreach (var lent in state.Lent.Where(l => l.Value.Ticket == ww.Ticket).Select(l => l.Key).ToList())
                             state.Lent.Remove(lent);
-                        // Finished work reads nothing any more: the ticket holds no view.
-                        state.HeldViews.Remove(ww.Ticket);
+                        // Finished work reads nothing any more: the ticket holds no view, only its manager's fiber or thread.
+                        KeepTicketManager(state, ww.Ticket);
                         break;
                     case MayHoldViewOf may:
                         if (keeps?.Invoke(may.Callee, may.From, may.Into) == true && state.Names.TryGetValue(may.Root, out var keptGroup))
@@ -768,6 +782,14 @@ public static class MemoryRules
                         foreach (var heldId in state.HeldViews.GetValueOrDefault(uv.Name) ?? [])
                             if (state.Groups.TryGetValue(heldId, out var heldMemory) && heldMemory.Ended is { } heldEnd && GaveBack(heldMemory))
                             {
+                                if (state.Managers.Contains(heldId) && tickets.Contains(uv.Name))
+                                {
+                                    Report(Li.ViewUsedAfterEnd, uv.Pos, $"'{uv.Name}' is a ticket from the manager '{heldMemory.Origin}', which ended at "
+                                        + $"{heldMemory.How} on line {heldEnd.Line}, and a ticket reads the thread or fiber its manager keeps: a "
+                                        + $"manager outlives the tickets it hands out. Retrieve and drop '{uv.Name}' before line {heldEnd.Line}, "
+                                        + $"or end '{heldMemory.Origin}' after '{uv.Name}' is dropped");
+                                    break;
+                                }
                                 if (state.Managers.Contains(heldId))
                                 {
                                     Report(Li.ViewUsedAfterEnd, uv.Pos, $"'{uv.Name}' came from the manager '{heldMemory.Origin}', which ended at {heldMemory.How} on "

@@ -1,0 +1,67 @@
+# Every way a ticket goes back counts once: retrieved and dropped, cancelled and dropped, never used, given back with
+# its list, and a thread manager's and a pool's own. Then the managers end without a crash.
+
+import Collections
+import Fiber
+import Hosted
+
+routine five() -> S64
+    return 5
+
+### Counts milliseconds until it is cancelled.
+### :returns: How many it counted.
+routine count_until_cancelled() -> S64
+    until cancel_requested() with n: S64 = 0
+        waitfor(1ms)
+        continue with n: n + 1
+    then
+        return n
+
+pausable routine later() -> S64
+    pauseuntil COROUTINES.next_turn()
+    return 7
+
+routine start() -> None
+    sched: &CoroutineManager <- .construct(stack_size: 64kib, stack_manager: PAGES, manager: HEAP)
+    a: Fiber[S64] <- sched.get_fiber[S64]()
+    work: Work[S64] = five.to[Work]()
+    a.put_work(work)
+    got: S64 = a.retrieve()
+    drop a
+    unused: Fiber[S64] <- sched.get_fiber[S64]()
+    drop unused
+    p: PausingFiber[S64] <- sched.get_pausing_fiber[S64]()
+    pausing: Work[S64] = later.to[Work]()
+    p.put_work(pausing)
+    paused: S64 = p.retrieve()
+    drop p
+    list: &List[Fiber[S64]] <- .construct(HEAP)
+    for i in 0 til 2
+        f: Fiber[S64] <- sched.get_fiber[S64]()
+        f.put_work(work)
+        list.add_last(steal f)
+    results: &List[S64] <- list.retrieve_all()
+    drop list
+    drop sched
+    Console.show("fibers: {got} {paused} {results.count()}")
+
+    threads: &ThreadManager <- .construct(manager: HEAP)
+    t: Thread[S64] <- get_thread[S64](manager: threads)
+    counting: Work[S64] = count_until_cancelled.to[Work]()
+    t.put_work(counting)
+    waitfor(5ms)
+    t.cancel()
+    when check t.retrieve()
+        is S64 => Console.show("thread finished")
+        is CancelRequested => Console.show("thread cancelled")
+    drop t
+    drop threads
+
+    pool: &ThreadPoolManager <- .construct(threads: 2)
+    j: PassableFiber[S64] <- pool.get_passable_fiber[S64]()
+    j.put_work(work)
+    from_pool: S64 = j.retrieve()
+    drop j
+    drop pool
+    Console.show("pool: {from_pool}, all managers ended")
+    return

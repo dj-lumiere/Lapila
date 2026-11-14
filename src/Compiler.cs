@@ -2612,7 +2612,14 @@ public sealed partial class Compiler
             throw new CompileError(Li.GlobalInitializer, c.Pos, $"global {c.Name} has no value, and {t} has no all-zero value: it holds a pointer, "
                 + $"memory or a routine that is never empty ({noZero}). Give it one: global {c.Name}: &{t} <- value, "
                 + "or make what may be missing optional (@T? or Callable?, none when absent), or write lateinit global when the program fills it before it reads it");
-        string init = c.Value is null ? "zeroinitializer" : GlobalInitializer(c.Value, t, env);
+        string init;
+        // A value that doesn't build leaves no name behind: a later use would find it and the global would never be defined.
+        try { init = c.Value is null ? "zeroinitializer" : GlobalInitializer(c.Value, t, env); }
+        catch (CompileError)
+        {
+            _globalVars.Remove(symbol);
+            throw;
+        }
         // An exported global keeps its C name and is visible outside the module.
         string linkage = ExposeDefinitions || exported is not null ? "" : "internal ";
         if (ExposeDefinitions) NoteExposed(symbol);

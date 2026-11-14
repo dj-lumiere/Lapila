@@ -379,6 +379,7 @@ routine @PausingFiber[T].destruct() -> None
         return
     fiber.slot.give_back()
     manager: @CoroutineManager = fiber.manager.peek().unwrap()
+    manager.out.fetch_sub_unbroken(1)
     held: @U8 <- manager.inbox_guard.get_exclusive_access()
     fiber.next_idle.poke(manager.idle_pausing.peek())
     manager.idle_pausing.poke(fiber.to[Addr]())
@@ -400,12 +401,14 @@ needs AnyType T
     if idle_or_none.is_absent()
         drop held
         fiber: @FiberState = me.make_pausing_fiber()
+        me.out.fetch_add_unbroken(1)
         return PausingFiber[T](fiber, issued: 0)
     idle: @FiberState = idle_or_none.unwrap()
     me.idle_pausing.poke(idle.next_idle.peek())
     drop held
     idle.next_idle.poke(Addr.zero())
     idle.slot.state.poke_unbroken(TICKET_EMPTY)
+    me.out.fetch_add_unbroken(1)
     return PausingFiber[T](fiber: idle, issued: idle.slot.issued.peek())
 
 ### A new pausing fiber: a fiber record with no stack.

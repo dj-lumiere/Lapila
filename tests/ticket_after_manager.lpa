@@ -1,0 +1,19 @@
+# A named ticket used after the manager that handed it out ended is a build error that names the manager and the line.
+
+import Fiber
+import Hosted
+
+routine five() -> S64
+    return 5
+
+routine start() -> None
+    sched: &CoroutineManager <- .construct(stack_size: 64kib, stack_manager: PAGES, manager: HEAP)
+    f: Fiber[S64] <- sched.get_fiber[S64]()
+    work: Work[S64] = five.to[Work]()
+    f.put_work(work)
+    n: S64 = f.retrieve()
+    drop sched
+    finished: Bool = f.check_finished()
+    Console.show("{n} {finished}")
+    drop f
+    return

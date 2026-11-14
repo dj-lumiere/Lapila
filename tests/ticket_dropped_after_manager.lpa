@@ -1,0 +1,11 @@
+# Dropping a named ticket after its manager ended is a build error: the drop reads the fiber the manager kept.
+
+import Fiber
+import Hosted
+
+routine start() -> None
+    pool: &ThreadManager <- .construct(manager: HEAP)
+    t: Thread[None] <- get_thread[None](manager: pool)
+    drop pool
+    drop t
+    return

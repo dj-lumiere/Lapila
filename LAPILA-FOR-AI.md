@@ -2163,7 +2163,12 @@ inject lateinit`, and `waitfor` gives the ticket's address (`@Thread[T]`), so `t
 in place. `cancel()` asks the
 work to stop: the work asks `cancel_requested()` where stopping is safe and returns. `retrieve()` of cancelled work
 throws `CancelRequested` (a `Thread[None]` / `Fiber[None]` / `PassableFiber[None]` one too), so a bare call stops there
-and `check t.retrieve()` tells them apart. Before each piece of work a thread puts every `@threadlocal` global back to
+and `check t.retrieve()` tells them apart. A manager outlives its tickets: a named ticket used or dropped after its
+manager ended (or after a call that may end it) is `LP-S1118` ("'t' is a ticket from the manager 'sched', which ended at drop
+sched on line N"), and for tickets in containers, which the build doesn't follow, each manager (`CoroutineManager`,
+`ThreadManager`, `ThreadPoolManager`) counts the tickets it has out and its destruct crashes with `TicketsStillOutError`
+("the manager ends while N of the tickets it handed out are still out: ...") when the count isn't 0: drop the tickets (and a
+list of them) before the manager. Before each piece of work a thread puts every `@threadlocal` global back to
 its starting value. The same flow on all three ticket kinds: `Thread[T]`, `Fiber[T]` (`COROUTINES.get_fiber[T]()`),
 `PassableFiber[T]` (`pool.get_passable_fiber[T]()`). `work_slot()` gives the ticket's `@WorkSlot`, for code waiting on
 several tickets at once.

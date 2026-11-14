@@ -1,0 +1,3 @@
+fibers: 5 7 2
+thread cancelled
+pool: 5, all managers ended

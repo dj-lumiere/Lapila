@@ -1,0 +1,26 @@
+# Tickets another routine puts in a list, which the build doesn't follow, outlive their manager: the manager's end
+# crashes and says how many are still out.
+
+import Collections
+import Fiber
+import Hosted
+
+### Takes `count` fiber tickets from `sched` into `into`.
+### :param sched: The manager.
+### :param into: The list.
+### :param count: How many.
+routine take_tickets(sched: @CoroutineManager, into: @List[Fiber[S64]], count: S64) -> None
+    for i in 0 til count
+        f: Fiber[S64] <- sched.get_fiber[S64]()
+        into.add_last(steal f)
+    return
+
+routine start() -> None
+    sched: &CoroutineManager <- .construct(stack_size: 64kib, stack_manager: PAGES, manager: HEAP)
+    tickets: &List[Fiber[S64]] <- .construct(HEAP)
+    take_tickets(sched, into: tickets, count: 3)
+    Console.show("three tickets out")
+    drop sched
+    Console.show("never")
+    drop tickets
+    return

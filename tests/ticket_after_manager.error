@@ -1,0 +1,1 @@
+'f' is a ticket from the manager 'sched', which ended at drop sched on line 15, and a ticket reads the thread or fiber its manager keeps: a manager outlives the tickets it hands out. Retrieve and drop 'f' before line 15, or end 'sched' after 'f' is dropped

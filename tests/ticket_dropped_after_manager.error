@@ -1,0 +1,1 @@
+'t' is a ticket from the manager 'pool', which ended at drop pool on line 9, and a ticket reads the thread or fiber its manager keeps: a manager outlives the tickets it hands out. Retrieve and drop 't' before line 9, or end 'pool' after 't' is dropped

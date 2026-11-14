@@ -106,6 +106,12 @@ entity WorkSlot
 crashable CancelRequested
     nothing
 
+### What a manager that hands out tickets (threads, fibers, pausing fibers, passable fibers) throws when it ends while
+### some of them are still out: each one's work is retrieved and the ticket dropped before the manager ends.
+crashable TicketsStillOutError
+    ### How many tickets are still out.
+    count: U64
+
 ### What `t.waitfor(timeout).retrieve()` throws when the time runs out before the work has finished.
 crashable TaskTimeoutError
     nothing
@@ -116,6 +122,15 @@ crashable TaskTimeoutError
 routine CancelRequested.message_into[TWriter](out: @TWriter) -> None
 needs TWriter obeys Writer
     out.write("The work was asked to stop with cancel() before it finished.")
+    return
+
+### Writes how many tickets are still out and what to do.
+### :typeparam TWriter: The type of the Writer.
+### :param out: The Writer the message goes to.
+routine TicketsStillOutError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("the manager ends while {me.count} of the tickets it handed out are still out: retrieve each one's work and ")
+    out.write("drop the ticket before the manager ends")
     return
 
 ### Writes `The work didn't finish before the deadline waitfor() set.`

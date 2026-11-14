@@ -129,6 +129,8 @@ entity CoroutineManager
     alert: Addr
     ### The fibers whose work hasn't finished.
     busy: U64
+    ### The tickets handed out and not given back yet: the manager ends only once it is 0.
+    out: U64
     ### The fibers given back, waiting for the next ticket.
     idle: Addr
     ### The pausing fibers given back, waiting for the next ticket: they have no stack.
@@ -235,6 +237,7 @@ routine @Fiber[T].destruct() -> None
         return
     fiber.slot.give_back()
     manager: @CoroutineManager = fiber.manager.peek().unwrap()
+    manager.out.fetch_sub_unbroken(1)
     held: @U8 <- manager.inbox_guard.get_exclusive_access()
     fiber.next_idle.poke(manager.idle.peek())
     manager.idle.poke(fiber.to[Addr]())
@@ -264,7 +267,7 @@ common routine CoroutineManager.construct(stack_size: ByteSize, stack_manager: @
         home_race: Addr.zero(), current: Addr.zero(),
         ready: RotatableList[@FiberState].construct(manager), inbox_guard: 0,
         inbox: RotatableList[@FiberState].construct(manager), epoch: 0, alert: Addr.zero(), busy: 0,
-        idle: Addr.zero(), idle_pausing: Addr.zero(), all: Addr.zero(),
+        out: 0, idle: Addr.zero(), idle_pausing: Addr.zero(), all: Addr.zero(),
         timers: PriorityQueue[TimerKey, @FiberState].construct(manager), timer_seq: 0)
 
 ### Frees every fiber with its stack, and the queues. The fibers whose work never finished are dropped where they
@@ -273,14 +276,17 @@ common routine CoroutineManager.construct(stack_size: ByteSize, stack_manager: @
 routine @CoroutineManager.destruct() -> None
     if me.manager.peek().to[Addr]().is_hollow()
         return
+    out: U64 = me.out.peek_unbroken()
+    if out != 0
+        throw TicketsStillOutError(count: out)
     until at.is_absent() with at: @FiberState? = me.all.peek().to[@FiberState?]()
         fiber: @FiberState = at.unwrap()
         next: @FiberState? = fiber.next_all.peek().to[@FiberState?]()
         fiber.destruct()
         AccessManager.end_flow(fiber.access)
-        race_stack_free(fiber.race.peek())
-        # A pausing fiber has no stack.
+        # A pausing fiber has no stack, and none for the data race check either.
         if not fiber.stack.top.peek().is_hollow()
+            race_stack_free(fiber.race.peek())
             give_back_stack(stack: fiber.stack, pages: me.stack_manager.peek())
         deallocate(data: fiber, manager: me.manager.peek())
         continue with at: next
@@ -322,12 +328,14 @@ needs AnyType T
     if idle_or_none.is_absent()
         drop held
         fiber: @FiberState = me.make_fiber()
+        me.out.fetch_add_unbroken(1)
         return Fiber[T](fiber, issued: 0)
     idle: @FiberState = idle_or_none.unwrap()
     me.idle.poke(idle.next_idle.peek())
     drop held
     idle.next_idle.poke(Addr.zero())
     idle.slot.state.poke_unbroken(TICKET_EMPTY)
+    me.out.fetch_add_unbroken(1)
     return Fiber[T](fiber: idle, issued: idle.slot.issued.peek())
 
 ### A new fiber with a stack of its own, which first runs `fiber_start` once it has work.

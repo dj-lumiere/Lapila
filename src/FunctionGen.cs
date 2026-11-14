@@ -1251,6 +1251,30 @@ public sealed partial class FunctionGen
     /// The names that hold a manager's table (`table` in `local table: @MemoryManager <- arena.to[MemoryManager]()`).
     private readonly HashSet<string> _tables = [];
 
+    /// A ticket handed out by a manager this routine holds in a place (`t: Fiber[S64] <- sched.get_fiber[S64]()`, or the
+    /// manager handed to `get_thread[T](manager)`): it reads the thread or fiber the manager keeps, so the manager outlives
+    /// it, which the memory check follows like a view of the manager. A ticket in a container isn't followed.
+    private void NoteTicketManager(string name, Expr value, DType t, Pos pos)
+    {
+        if ((t is PtrType { Pointee: RecordType pointed } ? pointed : t) is not RecordType { IsTicket: true }) return;
+        var parts = new List<Expr>(CallParts(value));
+        if (value is MethodCallExpr m) parts.Insert(0, m.Receiver);
+        foreach (var part in parts)
+            if (RootName(part) is { } root && ResolveRoot(root) is var manager && manager != name && _memTracked.Contains(manager)
+                && InferQuiet(part) is { } managerType && IsTicketManager(managerType))
+            {
+                _viewNames.Add(name);
+                Mem(new MemoryRules.HoldsViewOf(name, manager, pos) { Manager = true, Ticket = true });
+            }
+    }
+
+    /// Whether a value is a manager that hands out tickets (a CoroutineManager, a ThreadManager, a ThreadPoolManager), or
+    /// its place or view.
+    private static bool IsTicketManager(DType t) =>
+        (t is PtrType { Pointee: { } inner } ? inner : t) is RecordType { Decl: { IsLibrary: true } d } r
+        && (d.Name is "CoroutineManager" or "ThreadManager" or "ThreadPoolManager"
+            || d.Name == "BorrowedCell" && r.Args is [RecordType { Decl: { IsLibrary: true, Name: "CoroutineManager" or "ThreadManager" or "ThreadPoolManager" } }]);
+
     /// Memory or a collection made through a table (`[0] * 4 at table`, `.construct(table)`) goes back to that table's
     /// manager: `name` holds a view of the manager, which must outlive it.
     private void NoteManagedThrough(string name, Expr value, Pos pos)
@@ -2399,6 +2423,7 @@ public sealed partial class FunctionGen
                     _ticketNames.Add(b.Name);
                     Mem(new MemoryRules.Acquire(b.Name, "borrowed here", b.Pos)
                         { Entity = (t is PtrType { Pointee: { } held } ? held : t).Name });
+                    NoteTicketManager(b.Name, b.Value is ClaimExpr { Contents: { } handedOut } ? handedOut : b.Value, t, b.Pos);
                 }
                 else if (MemOn && Tracked(t) && !_workBlocks.Contains(b.Name))
                 {

@@ -22,7 +22,7 @@ module Hosted
 ### The hosted thread manager: the operating system's threads, with the work blocks from HEAP. Ready before
 ### `start` runs.
 @target(os: not "none")
-global DEFAULT_THREADS: &ThreadManager <- (launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0, idle: Addr.zero(), manager: HEAP)
+global DEFAULT_THREADS: &ThreadManager <- (launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0, idle: Addr.zero(), manager: HEAP, out: 0)
 
 ### A ticket for a thread, from {get_thread}: it runs one piece of work at a time, whose result is a `T` (`Void` for
 ### none), until it is given back with `drop`.
@@ -52,6 +52,8 @@ entity ThreadManager
     idle: Addr
     ### Where the workers and the work blocks come from.
     manager: @MemoryManager
+    ### The tickets handed out and not given back yet: the manager ends only once it is 0.
+    out: U64
 
 ### Makes a `Thread` from its fields.
 ### :param worker: Its `worker`.
@@ -88,6 +90,7 @@ routine @Thread[T].destruct() -> None
         return
     worker.slot.give_back()
     manager: @ThreadManager = worker.manager.peek()
+    manager.out.fetch_sub_unbroken(1)
     held: @U8 <- manager.guard.get_exclusive_access()
     worker.next.poke(manager.idle.peek())
     manager.idle.poke(worker.to[Addr]())
@@ -103,7 +106,7 @@ routine @Thread[T].destruct() -> None
 common routine ThreadManager.construct(
     launch_fn: Callable[(Callable[(Addr,), None], Addr, Addr), Bool], state: Addr,
     manager: @MemoryManager) -> Me
-    return Me(launch_fn, state, guard: 0, idle: Addr.zero(), manager)
+    return Me(launch_fn, state, guard: 0, idle: Addr.zero(), manager, out: 0)
 
 ### A manager of the operating system's threads, with the workers and the work blocks from `manager`.
 ### :param manager: Where the workers and the work blocks come from.
@@ -111,11 +114,14 @@ common routine ThreadManager.construct(
 @target(os: not "none")
 common routine ThreadManager.construct(manager: @MemoryManager) -> Me
     return Me(launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0,
-        idle: Addr.zero(), manager)
+        idle: Addr.zero(), manager, out: 0)
 
 ### Ends the idle threads. Every ticket goes back first: a ticket given back to a manager that is gone reaches memory
 ### that is gone, and its thread never ends.
 routine @ThreadManager.destruct() -> None
+    out: U64 = me.out.peek_unbroken()
+    if out != 0
+        throw TicketsStillOutError(count: out)
     held: @U8 <- me.guard.get_exclusive_access()
 
     loop
@@ -149,6 +155,7 @@ routine get_thread[T]() -> Thread[T]
 @track_caller
 routine get_thread[T](manager: @ThreadManager) -> Thread[T]
     worker: @ThreadWorker = manager.take_worker()
+    manager.out.fetch_add_unbroken(1)
     return Thread[T](worker, issued: worker.slot.issued.peek())
 
 ### Starts a thread that runs `entry(arg)` and ends when it returns, which nobody waits for: for a runtime's own

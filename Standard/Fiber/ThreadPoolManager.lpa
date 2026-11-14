@@ -60,6 +60,8 @@ entity ThreadPoolManager
     fibers: Addr
     ### The fibers whose passable fiber is over, waiting for the next, through `next_idle`.
     spare: Addr
+    ### The tickets handed out and not given back yet: the pool ends only once it is 0.
+    out: U64
 
 ### One passable fiber of a pool: its work, and its place in the queue or among the idle ones.
 secret entity PassableFiberSlot
@@ -109,13 +111,16 @@ common routine ThreadPoolManager.construct(threads: U64) -> Me
     return Me(guard: 0, first: Addr.zero(), last: Addr.zero(), idle: Addr.zero(), epoch: 0,
         stopping: 0, count, threads: BorrowedSlice[Thread[None]].empty(manager: HEAP),
         manager: HEAP, woken: RotatableList[@FiberState].construct(manager: HEAP),
-        fibers: Addr.zero(), spare: Addr.zero())
+        fibers: Addr.zero(), spare: Addr.zero(), out: 0)
 
 ### Stops the pool: its threads finish the work they have, then end, and the idle passable fibers and the fibers go.
 ### Give every passable fiber back first.
 @target(os: not "none")
 @track_caller
 routine @ThreadPoolManager.destruct() -> None
+    out: U64 = me.out.peek_unbroken()
+    if out != 0
+        throw TicketsStillOutError(count: out)
     threads: @BorrowedSlice[Thread[None]] = me.threads
     started: U64 = threads.count()
 
@@ -166,6 +171,7 @@ routine @PassableFiber[T].destruct() -> None
         return
     passable.slot.give_back()
     pool: @ThreadPoolManager = passable.pool.peek()
+    pool.out.fetch_sub_unbroken(1)
     held: @U8 <- pool.guard.get_exclusive_access()
     passable.next.poke(pool.idle.peek())
     pool.idle.poke(passable.to[Addr]())
@@ -192,12 +198,14 @@ needs AnyType T
             throw OutOfMemoryError()
         passable: @PassableFiberSlot = passable_at.to[@PassableFiberSlot]()
         passable.poke(PassableFiberSlot(slot: .construct(manager), next: Addr.zero(), pool: me))
+        me.out.fetch_add_unbroken(1)
         return PassableFiber[T](passable, issued: 0)
     idle: @PassableFiberSlot = idle_or_none.unwrap()
     me.idle.poke(idle.next.peek())
     drop held
     idle.next.poke(Addr.zero())
     idle.slot.state.poke_unbroken(TICKET_EMPTY)
+    me.out.fetch_add_unbroken(1)
     return PassableFiber[T](passable: idle, issued: idle.slot.issued.peek())
 
 ### Starts the pool's threads, the first time. The lock is held.
