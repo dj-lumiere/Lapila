@@ -214,7 +214,7 @@ static partial class Cli
             if (!File.Exists(file)) throw new ToolError(Li.NoSuchFile, $"no such file: {file}");
         var expensive = ExpensiveCallsIn(files);
         var programRoots = ProgramModuleRoots(files);
-        int count = 0, expensiveCount = 0;
+        int count = 0, expensiveCount = 0, sleepCount = 0;
         var linesOf = StyleLint.SavedFiles();
         foreach (var file in files)
         {
@@ -230,7 +230,10 @@ static partial class Cli
             foreach (var w in StyleLint.Check(decls, linesOf))
             {
                 Console.Error.WriteLine(w);
-                count++;
+                // A pausable routine that puts its thread to sleep is a note on how the work runs, like an expensive
+                // call on a loop: it is shown, and a test may make one on purpose, so it doesn't fail the check.
+                if (w.StartsWith(Li.PausableBlocksThread.Head, StringComparison.Ordinal)) sleepCount++;
+                else count++;
             }
             foreach (var w in expensive.GetValueOrDefault(Path.GetFullPath(file), []))
             {
@@ -238,8 +241,9 @@ static partial class Cli
                 expensiveCount++;
             }
         }
+        string sleeps = sleepCount > 0 ? $", {sleepCount} call(s) that put a pausable routine's thread to sleep" : "";
         Console.Error.WriteLine(
-            $"{count} warning(s) and {expensiveCount} expensive call(s) on a loop in {files.Count} file(s)");
+            $"{count} warning(s) and {expensiveCount} expensive call(s) on a loop in {files.Count} file(s){sleeps}");
         return count > 0 ? 1 : 0;
     }
 
