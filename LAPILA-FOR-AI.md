@@ -1160,7 +1160,9 @@ routine start() -> None
   result names (`seven[T]() -> T`), where the value's place says the type. That type flows inward, never from a later
   use of a name: a binding's written type, a parameter, a return type, the receiver of a call that gives back the
   receiver's type (an operator is such a call: `b: B64 = n.to() * n.to() + a`, `c: B64 = n.to().sqrt()`, `-n.to()`),
-  and the other side of a comparison (`if n.to() < a`; a comparison's `Bool` says nothing of its sides). An argument
+  or its Optional where a `T?` goes (`p: B64? = n.to().positive()` with `positive() -> Me?`), and the other operand
+  of an operator or a comparison (`if n.to() < a`, `n.to() * x`, chained `0.0 <= n.to() <= limit`; a bare number
+  gives no type, and a comparison's `Bool` says nothing of its sides). An argument
   binds a type parameter before the place does (`e: B64 = pick(n)` with `n: S64` is `expected B64, found S64`). Where
   nothing gives it, a conversion is LP-S458 ("S64.to takes the type it goes to, and nothing here gives one (...)") and
   a generic routine LP-S161, both listing the places looked at.

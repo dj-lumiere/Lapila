@@ -1,0 +1,7 @@
+# A chained comparison whose other operands are bare numbers gives a conversion without its type nothing to take.
+
+routine start() -> None
+    n: S64 = 9
+    if 0 <= n.to() <= 10
+        set_exit_code(1)
+    return

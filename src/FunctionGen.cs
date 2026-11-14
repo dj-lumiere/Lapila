@@ -5250,6 +5250,7 @@ public sealed partial class FunctionGen
     /// operand beside it.
     private Val EvalChain(ChainedComparison c)
     {
+        c = ChainWithResultTypes(c);
         var join = NewLBlock("chain");
         var exits = new List<string>();
         var temps = new List<string>();
@@ -5421,8 +5422,8 @@ public sealed partial class FunctionGen
         {
             case BinaryExpr { Op: "and" or "or" }:
                 return e;
-            case BinaryExpr b when ComparisonWithResultType(b) is { } typedComparison:
-                return Desugar(typedComparison);
+            case BinaryExpr b when OperatorWithResultType(b) is { } typedOperator:
+                return Desugar(typedOperator);
             case BinaryExpr b:
             {
                 string name = Operators.Routine(b.Op) ?? throw Err(Li.OperatorUse, b.Pos, $"'{b.Op}' is not an operator Lapila has");
@@ -6509,7 +6510,7 @@ public sealed partial class FunctionGen
         // `n.to().sqrt()` where a B64 goes: the receiver takes the type when this call gives it back.
         // A comparison gives a Bool whatever its sides are, so the Bool it goes to says nothing of them.
         if (expected is not null && !IsComparisonName(m.Name) && NeedsResultType(m.Receiver)
-            && WithResultType(m, expected) is MethodCallExpr typedChain)
+            && (WithResultType(m, expected) ?? WithResultTypeThroughMaybe(m, expected)) is MethodCallExpr typedChain)
             m = typedChain;
 
         var rt = Infer(m.Receiver);

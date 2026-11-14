@@ -1,12 +1,18 @@
 # A conversion or a generic routine without its type argument takes the type its value goes to, and that type flows
-# inward: through an operator's sides, down calls that give back their receiver's type, across a comparison, into an
-# argument and a return.
+# inward: through an operator's sides, down calls that give back their receiver's type (or its Optional where one
+# goes), across a comparison, into an argument and a return. With nothing expected of an operator, a side takes the
+# other side's type, and a chained comparison takes its typed operand's.
 
 import Hosted
 
 routine seven[T]() -> T
     s: S64 = 7
     return s.to[T]()
+
+routine B64.positive() -> Me?
+    if me > 0.0
+        return me
+    return none
 
 routine half(x: B64) -> B64
     return x / 2.0
@@ -29,4 +35,12 @@ routine start() -> None
         Console.show("equal")
     doubled: B64 = seven() * 2.0
     Console.show("{half(n.to())} {widened(n)} {doubled} {a * n.to()}")
+    x: B128 = 0x1p1
+    Console.show("{n.to() * x} {n.to().sqrt() + x}")
+    if 0.0 <= n.to() <= sum
+        Console.show("inside")
+    p: B64? = n.to().positive()
+    when p
+        is B64 as v => Console.show("{v}")
+        is None => Console.show("none")
     return

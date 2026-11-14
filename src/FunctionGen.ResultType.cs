@@ -80,18 +80,40 @@ public sealed partial class FunctionGen
         return typed is not null && TryInfer(typed) is { } given && given.Equals(t) ? typed : null;
     }
 
-    /// The other side of a comparison gives a side that needs a type its own (`n.to() < limit`), when the comparison's
-    /// routine on that type takes it. Null when it doesn't, or nothing needs it.
-    private BinaryExpr? ComparisonWithResultType(BinaryExpr b)
+    /// `m` with the payload of the Optional `expected` given to its receiver, when `m` then gives `expected`: a call
+    /// that gives `Me?` (`n.to().positive()` where a `B64?` goes). Null otherwise.
+    private MethodCallExpr? WithResultTypeThroughMaybe(MethodCallExpr m, DType expected)
     {
-        if (b.Op is not ("==" or "!=" or "<" or "<=" or ">" or ">=") || !NeedsResultType(b.Left) || NeedsResultType(b.Right)
-            || TryInfer(b.Right) is not { } known || known is PtrType)
+        if (expected is not VariantType optional || OptionalPayload(optional) is not { } payload
+            || WithResultType(m.Receiver, payload) is not { } receiver)
             return null;
-        return WithResultType(b.Left, known) is { } left ? b with { Left = left } : null;
+        var typed = m with { Receiver = receiver };
+        return TryInfer(typed) is { } given && given.Equals(expected) ? typed : null;
+    }
+
+    /// The other side of an operator gives a side that needs a type its own (`n.to() < limit`, `n.to() * x`), when
+    /// the operator's routine on that type then fits. Null when it doesn't, or nothing needs it.
+    private BinaryExpr? OperatorWithResultType(BinaryExpr b)
+    {
+        if (b.Op is "and" or "or" or "===" or "!==" || !NeedsResultType(b.Left) || NeedsResultType(b.Right)
+            || TryInfer(b.Right) is not { } known || known is PtrType || WithResultType(b.Left, known) is not { } left)
+            return null;
+        var typed = b with { Left = left };
+        return TryInfer(typed) is not null ? typed : null;
+    }
+
+    /// A chained comparison with each operand that needs a type given the type of an operand that has one
+    /// (`0.0 <= n.to() <= limit`). A bare number has none to give.
+    private ChainedComparison ChainWithResultTypes(ChainedComparison c)
+    {
+        if (!c.Operands.Any(NeedsResultType)) return c;
+        var known = c.Operands.Where(o => !NeedsResultType(o)).Select(TryInfer).FirstOrDefault(t => t is not null and not PtrType);
+        if (known is null) return c;
+        return c with { Operands = c.Operands.Select(o => NeedsResultType(o) ? WithResultType(o, known) ?? o : o).ToList() };
     }
 
     /// What the message of a call that still has no type says about the places looked at.
     private const string ResultTypePlaces =
         "the builder looks at a binding's written type, a parameter, a return type, a call on the result (an operator too) "
-        + "that gives back its receiver's type, and the other side of a comparison";
+        + "that gives back its receiver's type, and the other operand of an operator or a comparison";
 }

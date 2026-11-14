@@ -1,1 +1,1 @@
-S32.to takes the type it goes to, and nothing here gives one (the builder looks at a binding's written type, a parameter, a return type, a call on the result (an operator too) that gives back its receiver's type, and the other side of a comparison): to[
+S32.to takes the type it goes to, and nothing here gives one (the builder looks at a binding's written type, a parameter, a return type, a call on the result (an operator too) that gives back its receiver's type, and the other operand of an operator or a comparison): to[
