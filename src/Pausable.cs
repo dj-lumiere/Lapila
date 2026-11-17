@@ -972,14 +972,15 @@ public static class Pausable
         {
             var (step, result, nested) = _stepOf[pause.Expr];
             var p = pause.Expr;
-            // What isn't carried is given back before the routine stops: the frame's names at the jump, the kept places here.
-            foreach (var f in _fields.Values.Where(f => f.Kind != FieldKind.Value && !f.Param && !pause.Live.Contains(f.Name)
-                                                         && !p.Carrying.Any(c => c.Name == f.Name)))
-                _cur.Add(new ExprStmt(Call(FieldOf(f.Name), "end"), p.Pos));
             Expr made = nested && p.Target is CallExpr call
                 ? new NsCallExpr(step, "construct", [], call.Args.Select(RewriteExpr).ToList(), call.Pos) { ArgNames = call.ArgNames }
                 : RewriteExpr(p.Target);
             _cur.Add(new ExprStmt(new MethodCallExpr(FieldOf(_room), "hold", [step], [made], p.Pos), p.Pos));
+            // What isn't carried is given back before the routine stops, once the step is made (its arguments may read
+            // it): the frame's names at the jump, the kept places here.
+            foreach (var f in _fields.Values.Where(f => f.Kind != FieldKind.Value && !f.Param && !pause.Live.Contains(f.Name)
+                                                         && !p.Carrying.Any(c => c.Name == f.Name)))
+                _cur.Add(new ExprStmt(Call(FieldOf(f.Name), "end"), p.Pos));
             _cur.Add(new ExprStmt(Call(FieldOf(_at), "poke", new IntLit(pause.Number, p.Pos)), p.Pos));
             _cur.Add(Jump(Wait(pause.Number)));
             StartBlock(Wait(pause.Number));
@@ -1024,8 +1025,10 @@ public static class Pausable
                             + "that makes it, while a pause gives its result after it waits: observe the failures with when check pauseuntil ... "
                             + "and its arms, or take an Optional with try pauseuntil ...");
                     if (b.Borrows)
-                        throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a pause's result with '<-': a pause gives a value bound with "
-                            + "'=' for now, so a step whose result is an entity can't be waited for yet");
+                    {
+                        EmitBorrowedResult(b, poll, pending, end);
+                        break;
+                    }
                     var (subject, arms) = b.Value switch
                     {
                         UnaryExpr { Op: "try" } u => ((Expr)(u with { Operand = poll }), ValueArms(b.Type is { Question: true, Args: [TypeArgType t] } ? t.Type : null, b, orNone: true)),
@@ -1044,6 +1047,31 @@ public static class Pausable
                 }
             }
             return true;
+        }
+
+        /// `x: &T <- pauseuntil X`, a step whose result is an entity (the bytes of a file read): `lateinit x: &T`, then
+        /// `when poll` with the pending arm and `is T as v => x <- steal v`. A name kept across a later pause is a place
+        /// of the record, so the declaration and the fill are the record's.
+        private void EmitBorrowedResult(BindStmt b, Expr poll, WhenArm pending, Stmt end)
+        {
+            if (b.Value is UnaryExpr { Op: "try" })
+                throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a try of a pause with '<-': an entity has no Optional to "
+                    + "bind there. Receive the failures with when try pauseuntil ... or when check pauseuntil ... and its arms");
+            if (!b.Type.Amp)
+                throw new CompileError(Li.PauseForm, b.Pos, $"'{b.Name}' takes a pause's result with '<-' as {b.Type}: write the place it "
+                    + $"goes in, {b.Name}: &T <- pauseuntil ... (&[T] for a BorrowedSlice[T])");
+            TypeRef held = b.Type switch
+            {
+                { Name: "BorrowedCell", Args: [TypeArgType inner] } => inner.Type,
+                var t => t with { Amp = false },
+            };
+            var bare = new BindStmt(b.Name, b.Type, new ImplicitCallExpr("hollow", [], [], b.Pos), b.Pos) { Borrows = true, Bare = true, Late = true };
+            _cur.AddRange(Rewrite(bare, 0));
+            string got = Hidden("pause_value");
+            var fill = new FillStmt(new ValueRef(b.Name, b.Pos), new StealExpr(new ValueRef(got, b.Pos), b.Pos), b.Pos);
+            var take = new WhenArm(null, [new IsPattern(held, new ValueRef(got, b.Pos), b.Pos)], Rewrite(fill, 0), b.Pos);
+            _cur.Add(new WhenStmt(poll, [pending, take], b.Pos));
+            _cur.Add(end);
         }
 
         /// The arms that take a pause's result: `is T as v => v`, and for a try the empty one, `is None => none`.

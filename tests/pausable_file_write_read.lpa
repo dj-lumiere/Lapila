@@ -1,0 +1,63 @@
+# Writing a file and reading it back from a pausable routine, a file that isn't there under try and check, and a failed
+# write nothing receives inside the work, which the ticket's retrieve() throws.
+
+import Fiber
+import Hosted
+
+### Writes the file at `path`, reads it back and shows what it holds.
+### :param path: The file, which is there.
+### :returns: The number of bytes read back.
+pausable routine write_then_read(path: @[Byte]) -> U64
+    f: &File <- File.at(path)
+    pauseuntil OsFileManager.write_all_step(at: f, data: "written while paused\n",
+        manager: HEAP) carrying (f)
+    text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    Console.show("read back: {text.getslice()}", end: "")
+    return text.count()
+
+### Reads a file that isn't there, under try and under check.
+### :param path: The file, which isn't there.
+pausable routine read_missing(path: @[Byte]) -> None
+    f: &File <- File.at(path)
+    when try pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP) carrying (f)
+        is BorrowedSlice[Byte] as text => Console.show("try: {text.count()} bytes")
+        is None => Console.show("try: none")
+    when check pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+        is BorrowedSlice[Byte] as text => Console.show("check: {text.count()} bytes")
+        is FsError as e => Console.show("check: {e.name()}")
+    return
+
+### Writes a file that isn't there, receiving nothing: the work fails there.
+### :param path: The file, which isn't there.
+pausable routine write_missing(path: @[Byte]) -> None
+    f: &File <- File.at(path)
+    pauseuntil OsFileManager.write_all_step(at: f, data: "lost", manager: HEAP)
+    Console.show("not reached")
+    return
+
+routine start() -> None
+    tmp: &Directory <- OsEnvironment.temp_directory(HEAP)
+    root: &Directory <- tmp.go_to(name: "lapila_pausable_file_write_read", manager: HEAP)
+    OsFileManager.make_directory(at: root, parents: true)
+    there: &File <- root.file(name: "there.txt", manager: HEAP)
+    gone: &File <- root.file(name: "gone.txt", manager: HEAP)
+    OsFileManager.make_file(at: there, replacing: true)
+    try OsFileManager.delete(at: gone)
+
+    t: PausingFiber[U64] <- COROUTINES.get_pausing_fiber[U64]()
+    writing: Work[U64] = write_then_read.to[Work](path: there.path.peek())
+    t.put_work(writing)
+    n: U64 = t.retrieve()
+    Console.show("{n} bytes")
+    u: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
+    missing: Work[None] = read_missing.to[Work](path: gone.path.peek())
+    u.put_work(missing)
+    u.retrieve()
+    w: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
+    lost: Work[None] = write_missing.to[Work](path: gone.path.peek())
+    w.put_work(lost)
+    when check w.retrieve()
+        is None => Console.show("written")
+        is FsError as e => Console.show("retrieve: {e.name()}")
+    OsFileManager.delete_all(at: root, manager: HEAP)
+    return

@@ -1,0 +1,20 @@
+# A pause whose result is an entity takes it with '<-' into a place: a try there has no Optional to bind, so its
+# failures are received with when try or when check and its arms.
+
+import Fiber
+import Hosted
+
+### Reads the file.
+### :param path: The file.
+### :returns: The number of bytes.
+pausable routine count_bytes(path: @[Byte]) -> U64
+    f: &File <- File.at(path)
+    text: &[Byte]? <- try pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    return 0
+
+routine start() -> None
+    t: PausingFiber[U64] <- COROUTINES.get_pausing_fiber[U64]()
+    work: Work[U64] = count_bytes.to[Work](path: "x")
+    t.put_work(work)
+    Console.show("{t.retrieve()}")
+    return

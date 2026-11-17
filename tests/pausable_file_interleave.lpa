@@ -1,0 +1,72 @@
+# A pausable routine reads a file while another pausable work on the same thread goes on with next_turn() and
+# Clock.after: the read waits on a named pipe that a thread writes to later, so the other work has its turns meanwhile,
+# and both finish.
+
+import Fiber
+import Hosted
+
+### How many rounds the ticking work has had.
+global TICKS: &U64
+### Whether the read has returned.
+global READ_DONE: &Bool
+
+### Binds the C `mkfifo` function, which makes a named pipe.
+### :param path: The pipe's path, NUL-terminated.
+### :param mode: Its permissions.
+### :returns: 0, or -1 with `errno` set.
+@external("c")
+@symbol("mkfifo")
+routine c_mkfifo(path: @Byte, mode: U32) -> CInt
+
+### Writes to the pipe once a while has passed: the read on the other side waits until then.
+### :param path: The pipe.
+routine feed_later(path: @[Byte]) -> None
+    waitfor(30ms)
+    OsFileManager.write_all(at: File.at(path), data: "through the pipe\n")
+    return
+
+### Reads the pipe and shows what it held.
+### :param path: The pipe.
+### :returns: The rounds the other work had while the read waited.
+pausable routine read_pipe(path: @[Byte]) -> U64
+    f: &File <- File.at(path)
+    text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    READ_DONE.store(true)
+    Console.show("read {text.count()} bytes: {text.getslice()}", end: "")
+    return TICKS.load()
+
+### Lets the other work go first, then waits a millisecond, round after round until the read has returned.
+### :returns: The rounds it had.
+pausable routine tick() -> U64
+    until READ_DONE.load()
+        pauseuntil COROUTINES.next_turn()
+        pauseuntil Clock.after(1ms)
+        TICKS.store(TICKS.load() + 1)
+    then
+        return TICKS.load()
+
+routine start() -> None
+    tmp: &Directory <- OsEnvironment.temp_directory(HEAP)
+    pipe: &File <- tmp.file(name: "lapila_pausable_file_interleave.fifo", manager: HEAP)
+    try OsFileManager.delete(at: pipe)
+    terminated: &[Byte] <- @[Byte].concat(a: pipe.path.peek(), b: "\0", manager: HEAP)
+    if c_mkfifo(path: terminated.getslot(0), mode: 0o600) != 0
+        Console.show("no named pipe")
+        return
+
+    feeder: Thread[None] <- get_thread[None]()
+    feeding: Work[None] = feed_later.to[Work](path: pipe.path.peek())
+    feeder.put_work(feeding)
+    reader: PausingFiber[U64] <- COROUTINES.get_pausing_fiber[U64]()
+    ticker: PausingFiber[U64] <- COROUTINES.get_pausing_fiber[U64]()
+    reading: Work[U64] = read_pipe.to[Work](path: pipe.path.peek())
+    ticking: Work[U64] = tick.to[Work]()
+    reader.put_work(reading)
+    ticker.put_work(ticking)
+    during: U64 = reader.retrieve()
+    total: U64 = ticker.retrieve()
+    Console.show("the other work had rounds while the read waited: {during > 0}")
+    Console.show("it stopped after the read: {total >= during}")
+    feeder.retrieve()
+    OsFileManager.delete(at: pipe)
+    return

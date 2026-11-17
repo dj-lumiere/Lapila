@@ -1,0 +1,5 @@
+read back: written while paused
+21 bytes
+try: none
+check: NotFoundError
+retrieve: NotFoundError

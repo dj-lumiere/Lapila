@@ -2267,13 +2267,16 @@ of its own (deep recursion, calls into code that blocks or switches stacks). Thr
   a call of another pausable routine (`pauseuntil g(n: 3)`) or a step, a value whose type obeys `Eventual[T]`: `COROUTINES.next_turn()`
   (`NextTurn`, the other ready work goes first, none ready goes on at once), `Clock.after(d)` (`ClockStep`), `t.finish()`
   on a `Thread`/`Fiber`/`PausingFiber` ticket (`Finish[T]`, gives what `retrieve()` would, its failure and
-  `CancelRequested` too). Rule: the step's type must be readable from the source (a call's declared result, a record made
+  `CancelRequested` too), `OsFileManager.read_all_step(at, manager)` and `write_all_step(at, data, manager)`
+  (`FileStep[BorrowedSlice[Byte]]` / `FileStep[None]`, `Fiber/FileSteps.lpa`, below). Rule: the step's type must be readable from the source (a call's declared result, a record made
   by its type's name, a value or global with a written type), otherwise bind the step with a written type first
   (`step: ClockStep = Clock.after(5ms)`, then `pauseuntil step`): anything else is `LP-S1467`. A plain routine as the target
   is `LP-S1467` too (call it without `pauseuntil`). Arguments are computed before the pause.
 - Forms: `pauseuntil X` as a line, `x: T = pauseuntil X`, `x: T? = try pauseuntil X`, `try pauseuntil X` as a line,
-  `when [try|check] pauseuntil X` with arms, `x: T = when check pauseuntil X` with arms. Anything else is `LP-S1459` (inside an
-  expression, `x: Check[T] = check pauseuntil`, `x: &T <- pauseuntil`, a pause inside a `for` over an emitter, a pause in a
+  `when [try|check] pauseuntil X` with arms, `x: T = when check pauseuntil X` with arms, and for a step whose result is
+  an entity `x: &T <- pauseuntil X` (`&[T]` for a `BorrowedSlice[T]`: the place is filled with the result). Anything
+  else is `LP-S1459` (inside an expression, `x: Check[T] = check pauseuntil`, `x: &T? <- try pauseuntil` (receive the
+  failures with `when try`/`when check` and its arms), a pause inside a `for` over an emitter, a pause in a
   value `when`'s arm, `pauseuntil` outside a pausable routine). `if`, `when` arms and loops (`for` over a range, `until`,
   `loop`, `with` values) may pause inside.
 - `carrying` lists every value bound before the pause that the lines after it use (a loop's `with` value only when the
@@ -2287,6 +2290,16 @@ of its own (deep recursion, calls into code that blocks or switches stacks). Thr
   sleeping that flow between steps. A failure nothing receives ends the work and `retrieve()` throws it. `cancel()` wakes
   the pause it waits at, which throws `CancelRequested` (a `try`/`check` on the pause receives it, and `retrieve()` of
   cancelled work throws `CancelRequested` anyway). A wake from another thread goes through the manager's inbox.
+- File steps (`Fiber/FileSteps.lpa`): `text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: notes, manager:
+  HEAP) carrying (...)` reads the whole file, `pauseuntil OsFileManager.write_all_step(at: notes, data: text, manager:
+  HEAP)` writes it (the file must exist, as for `write_all`). The step copies the path (and the bytes to write) into
+  memory from `manager`, takes a thread of `DEFAULT_THREADS`, runs `read_all` / `write_all` there, and that thread wakes
+  the work through the manager's inbox. The bytes read come from `manager` (one threads share, `HEAP`), and the program
+  drops them. Failures are `FsError`s, received by `try`/`check` on the pause. Cancelled while the call runs: the pause
+  throws `CancelRequested` at once, and the step's end waits for the OS call to return (it can't be stopped), then
+  gives back the bytes, the copies and the thread. Whole files only: there is no range step, and no socket steps
+  (the stdlib has no sockets). A fiber that calls `read_all` blocks its thread. `COROUTINES.read(fd, buf, count)`
+  parks the fiber instead (`run_blocking`).
 - Refused inside: taking an access with `<-` (`LP-S1463`: hand the view in, an access handed with
   `f.to[Work](held: steal held)` is given back by the state record when the work ends), a call that may switch stacks,
   found through the calls (`LP-S1465`, names the chain to `switch_stack`), `retrieve()` of a `Fiber`/`PausingFiber`

@@ -1,0 +1,3 @@
+read 17 bytes: through the pipe
+the other work had rounds while the read waited: true
+it stopped after the read: true

@@ -1,0 +1,4 @@
+blocks out while the read waits: true
+the pause was cancelled
+retrieve: cancelled
+blocks out after: 0

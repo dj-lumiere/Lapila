@@ -1,0 +1,96 @@
+# Cancelling pausable work while its file read is in flight: the read waits on a named pipe that a thread writes to
+# later. The pause throws CancelRequested at once, the step's end waits for the read to return, and the bytes it read go
+# back to the memory manager they came from: the counting manager below has nothing out at the end.
+
+import Fiber
+import Hosted
+
+### A heap that counts the blocks it has out, from any thread.
+record CountingHeap
+    out: Unbroken[S64]
+
+obeys MemoryManageable[CountingHeap]
+
+### Binds the C `mkfifo` function, which makes a named pipe.
+### :param path: The pipe's path, NUL-terminated.
+### :param mode: Its permissions.
+### :returns: 0, or -1 with `errno` set.
+@external("c")
+@symbol("mkfifo")
+routine c_mkfifo(path: @Byte, mode: U32) -> CInt
+
+### A block from the C heap, counted.
+### :param size: The bytes.
+### :param align: Their alignment.
+### :returns: The block, or zero.
+routine @CountingHeap.borrow(size: U64, align: U64) -> Addr
+    at: Addr = C_HEAP.borrow(size, align)
+    if not at.is_hollow()
+        me.out.fetch_add(1)
+    return at
+
+### A block resized on the C heap.
+### :param at: The block, or zero for a new one.
+### :param size: The bytes.
+### :param align: Their alignment.
+### :returns: The block, or zero.
+routine @CountingHeap.reborrow(at: Addr, size: U64, align: U64) -> Addr
+    if at.is_hollow()
+        return me.borrow(size, align)
+    return C_HEAP.reborrow(at, size, align)
+
+### A block given back to the C heap, counted.
+### :param at: The block.
+routine @CountingHeap.give_back(at: Addr) -> None
+    if at.is_hollow()
+        return
+    me.out.fetch_add(-1)
+    C_HEAP.give_back(at)
+    return
+
+### Writes to the pipe once a while has passed: the read on the other side waits until then.
+### :param path: The pipe.
+routine feed_later(path: @[Byte]) -> None
+    waitfor(40ms)
+    OsFileManager.write_all(at: File.at(path), data: "late bytes\n")
+    return
+
+### Reads the pipe, and says what the pause gave.
+### :param path: The pipe.
+### :param manager: The memory manager for the bytes.
+pausable routine read_pipe(path: @[Byte], manager: @MemoryManager) -> None
+    f: &File <- File.at(path)
+    when check pauseuntil OsFileManager.read_all_step(at: f, manager: manager)
+        is BorrowedSlice[Byte] as text => Console.show("read {text.count()} bytes")
+        is CancelRequested => Console.show("the pause was cancelled")
+        is FsError as e => Console.show("failed: {e.name()}")
+    return
+
+routine start() -> None
+    tmp: &Directory <- OsEnvironment.temp_directory(HEAP)
+    pipe: &File <- tmp.file(name: "lapila_pausable_file_cancel.fifo", manager: HEAP)
+    try OsFileManager.delete(at: pipe)
+    terminated: &[Byte] <- @[Byte].concat(a: pipe.path.peek(), b: "\0", manager: HEAP)
+    if c_mkfifo(path: terminated.getslot(0), mode: 0o600) != 0
+        Console.show("no named pipe")
+        return
+    counting: &CountingHeap <- CountingHeap(out: .construct(value: 0))
+    manager: &MemoryManager <- counting.to[MemoryManager]()
+
+    feeder: Thread[None] <- get_thread[None]()
+    feeding: Work[None] = feed_later.to[Work](path: pipe.path.peek())
+    feeder.put_work(feeding)
+    t: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
+    reading: Work[None] = read_pipe.to[Work](path: pipe.path.peek(), manager: manager)
+    t.put_work(reading)
+    # The work starts the read and waits at its pause.
+    COROUTINES.run_until_idle()
+    Console.show("blocks out while the read waits: {counting.out.peek() > 0}")
+    t.cancel()
+    when check t.retrieve()
+        is None => Console.show("retrieve: finished")
+        is CancelRequested => Console.show("retrieve: cancelled")
+    Console.show("blocks out after: {counting.out.peek()}")
+    feeder.retrieve()
+    OsFileManager.delete(at: pipe)
+    return

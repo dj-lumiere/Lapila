@@ -1,0 +1,1 @@
+'text' takes a try of a pause with '<-': an entity has no Optional to bind there. Receive the failures with when try pauseuntil ... or when check pauseuntil ... and its arms

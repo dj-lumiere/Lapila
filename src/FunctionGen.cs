@@ -4590,7 +4590,9 @@ public sealed partial class FunctionGen
                 + "for each failure you handle (is NotFoundError as e) and an else arm for the rest (else as e)");
         if (elseArm is not null)
         {
-            if (missing.Count == 0) throw Err(Li.WhenArms, elseArm.Pos, $"every branch of {vt} has its arm, so else never runs");
+            // A generic body checked before any instance can't see what a ticket's work throws, which an instance may
+            // (a ticket in a field holds any failure the program throws): the instances say whether else runs.
+            if (missing.Count == 0 && !_c.Prechecking) throw Err(Li.WhenArms, elseArm.Pos, $"every branch of {vt} has its arm, so else never runs");
             string label;
             // What else takes is the arm's to end when it holds an entity: one such branch is named on its own.
             if (missing.FirstOrDefault(Entities.Holds) is { } heldByElse && (w.ElseBinding is null || missing.Count > 1))
@@ -4598,7 +4600,8 @@ public sealed partial class FunctionGen
                     + $"and the arm that takes it is where it ends: give it an arm of its own, is {heldByElse} as x");
             if (w.ElseBinding is { } rest)
             {
-                if (missing.Count == 1) label = armBlock(elseArm, () => BindPayload(vt, slot!, missing[0], rest));
+                if (missing.Count == 0) label = armBlock(elseArm, () => Define(rest.Name, v, rest.Pos));
+                else if (missing.Count == 1) label = armBlock(elseArm, () => BindPayload(vt, slot!, missing[0], rest));
                 else if (failures && missing.All(Crashing.IsCrashable))
                 {
                     var crashables = Crashing.Union(missing);
