@@ -1,5 +1,5 @@
-# Writing a file and reading it back from a pausable routine, a file that isn't there under try and check, and a failed
-# write nothing receives inside the work, which the ticket's retrieve() throws.
+# Writing a file (its bytes handed over with steal) and reading it back from a pausable routine, a file that isn't
+# there under try and check, and a failed write nothing receives inside the work, which the ticket's retrieve() throws.
 
 import Fiber
 import Hosted
@@ -9,9 +9,9 @@ import Hosted
 ### :returns: The number of bytes read back.
 pausable routine write_then_read(path: @[Byte]) -> U64
     f: &File <- File.at(path)
-    pauseuntil OsFileManager.write_all_step(at: f, data: "written while paused\n",
-        manager: HEAP) carrying (f)
-    text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    bytes: &[Byte] <- .construct(values: "written while paused\n", times: 1, manager: HEAP)
+    pauseuntil OsFileManager.pausing_write_all(at: f, data: steal bytes, manager: HEAP) carrying (f)
+    text: &[Byte] <- pauseuntil OsFileManager.pausing_read_all(at: f, manager: HEAP)
     Console.show("read back: {text.getslice()}", end: "")
     return text.count()
 
@@ -19,10 +19,10 @@ pausable routine write_then_read(path: @[Byte]) -> U64
 ### :param path: The file, which isn't there.
 pausable routine read_missing(path: @[Byte]) -> None
     f: &File <- File.at(path)
-    when try pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP) carrying (f)
+    when try pauseuntil OsFileManager.pausing_read_all(at: f, manager: HEAP) carrying (f)
         is BorrowedSlice[Byte] as text => Console.show("try: {text.count()} bytes")
         is None => Console.show("try: none")
-    when check pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    when check pauseuntil OsFileManager.pausing_read_all(at: f, manager: HEAP)
         is BorrowedSlice[Byte] as text => Console.show("check: {text.count()} bytes")
         is FsError as e => Console.show("check: {e.name()}")
     return
@@ -31,7 +31,8 @@ pausable routine read_missing(path: @[Byte]) -> None
 ### :param path: The file, which isn't there.
 pausable routine write_missing(path: @[Byte]) -> None
     f: &File <- File.at(path)
-    pauseuntil OsFileManager.write_all_step(at: f, data: "lost", manager: HEAP)
+    bytes: &[Byte] <- .construct(values: "lost", times: 1, manager: HEAP)
+    pauseuntil OsFileManager.pausing_write_all(at: f, data: steal bytes, manager: HEAP)
     Console.show("not reached")
     return
 

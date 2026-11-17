@@ -1,6 +1,6 @@
-# Cancelling pausable work while its file read is in flight: the read waits on a named pipe that a thread writes to
-# later. The pause throws CancelRequested at once, the step's end waits for the read to return, and the bytes it read go
-# back to the memory manager they came from: the counting manager below has nothing out at the end.
+# Cancelling pausable work while its file read or write is in flight: each waits on a named pipe that a thread opens
+# later. The pause throws CancelRequested at once, the op's end waits for the call to return, and the bytes read or
+# handed over go back to the memory manager they came from: the counting manager below has nothing out at the end.
 
 import Fiber
 import Hosted
@@ -55,14 +55,35 @@ routine feed_later(path: @[Byte]) -> None
     OsFileManager.write_all(at: File.at(path), data: "late bytes\n")
     return
 
+### Reads the pipe once a while has passed: the write on the other side waits until then.
+### :param path: The pipe.
+routine drain_later(path: @[Byte]) -> None
+    waitfor(40ms)
+    text: &[Byte] <- OsFileManager.read_all(at: File.at(path), manager: HEAP)
+    drop text
+    return
+
+### Writes the pipe, and says what the pause gave.
+### :param path: The pipe.
+### :param manager: The memory manager for the bytes.
+pausable routine write_pipe(path: @[Byte], manager: @MemoryManager) -> None
+    f: &File <- File.at(path)
+    bytes: &[Byte] <- .construct(values: "early bytes\n", times: 1, manager: manager)
+    when check pauseuntil OsFileManager.pausing_write_all(at: f, data: steal bytes,
+        manager: manager)
+        is None => Console.show("written")
+        is CancelRequested => Console.show("the write's pause was cancelled")
+        is FsError as e => Console.show("failed: {e.name()}")
+    return
+
 ### Reads the pipe, and says what the pause gave.
 ### :param path: The pipe.
 ### :param manager: The memory manager for the bytes.
 pausable routine read_pipe(path: @[Byte], manager: @MemoryManager) -> None
     f: &File <- File.at(path)
-    when check pauseuntil OsFileManager.read_all_step(at: f, manager: manager)
+    when check pauseuntil OsFileManager.pausing_read_all(at: f, manager: manager)
         is BorrowedSlice[Byte] as text => Console.show("read {text.count()} bytes")
-        is CancelRequested => Console.show("the pause was cancelled")
+        is CancelRequested => Console.show("the read's pause was cancelled")
         is FsError as e => Console.show("failed: {e.name()}")
     return
 
@@ -90,7 +111,21 @@ routine start() -> None
     when check t.retrieve()
         is None => Console.show("retrieve: finished")
         is CancelRequested => Console.show("retrieve: cancelled")
-    Console.show("blocks out after: {counting.out.peek()}")
+    Console.show("blocks out after the read: {counting.out.peek()}")
     feeder.retrieve()
+    drainer: Thread[None] <- get_thread[None]()
+    draining: Work[None] = drain_later.to[Work](path: pipe.path.peek())
+    drainer.put_work(draining)
+    w: PausingFiber[None] <- COROUTINES.get_pausing_fiber[None]()
+    writing: Work[None] = write_pipe.to[Work](path: pipe.path.peek(), manager: manager)
+    w.put_work(writing)
+    COROUTINES.run_until_idle()
+    Console.show("blocks out while the write waits: {counting.out.peek() > 0}")
+    w.cancel()
+    when check w.retrieve()
+        is None => Console.show("retrieve: finished")
+        is CancelRequested => Console.show("retrieve: cancelled")
+    Console.show("blocks out after the write: {counting.out.peek()}")
+    drainer.retrieve()
     OsFileManager.delete(at: pipe)
     return

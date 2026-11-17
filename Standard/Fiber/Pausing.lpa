@@ -10,8 +10,8 @@
 # `wake_when_done(waiter)` asks to wake the waiting work once it is. A pausable routine's state record obeys it, and so
 # do the steps at the bottom, which the managers give: `COROUTINES.next_turn()` (the other ready work goes first),
 # `Clock.after(d)` (at least `d` passes), a ticket's `finish()` (its work has finished, the result is the
-# ticket's), and `OsFileManager.read_all_step` / `write_all_step` (a file read or written on another thread,
-# FileSteps.lpa). Code of your own may write more steps: a record with those two routines and `obeys Eventual[Me, T]`.
+# ticket's), and `OsFileManager.pausing_read_all` / `pausing_write_all` (a file read or written on another thread,
+# PausingFileOp.lpa). Code of your own may write more steps: a record with those two routines and `obeys Eventual[Me, T]`.
 #
 # The work runs on a `PausingFiber[T]` ticket from a CoroutineManager, `COROUTINES.get_pausing_fiber[T]()`, made from the
 # routine with `f.to[Work](...)` and put on with `put_work`, the flow every ticket has. The manager calls the record's

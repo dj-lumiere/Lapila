@@ -9,7 +9,7 @@ import Hosted
 ### :returns: The number of bytes.
 pausable routine count_bytes(path: @[Byte]) -> U64
     f: &File <- File.at(path)
-    text: &[Byte]? <- try pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    text: &[Byte]? <- try pauseuntil OsFileManager.pausing_read_all(at: f, manager: HEAP)
     return 0
 
 routine start() -> None

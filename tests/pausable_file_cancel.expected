@@ -1,4 +1,8 @@
 blocks out while the read waits: true
-the pause was cancelled
+the read's pause was cancelled
 retrieve: cancelled
-blocks out after: 0
+blocks out after the read: 0
+blocks out while the write waits: true
+the write's pause was cancelled
+retrieve: cancelled
+blocks out after the write: 0

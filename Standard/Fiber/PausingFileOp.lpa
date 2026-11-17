@@ -1,0 +1,141 @@
+# Lapila stdlib: file calls a pausable routine waits for
+#
+# `pauseuntil OsFileManager.pausing_read_all(at: notes, manager: HEAP)` reads the whole file and
+# `pauseuntil OsFileManager.pausing_write_all(at: notes, data: steal bytes, manager: HEAP)` writes it, as `read_all`
+# and `write_all` do, while the pausable work waits and its thread goes on with its other work. The op copies the path
+# into memory from `manager`, takes a thread of DEFAULT_THREADS and starts the call on it. When the call returns, that
+# thread wakes the waiting work through its CoroutineManager's inbox, which is safe between threads. The bytes a read
+# gives come from `manager` too, and the program drops them. The bytes a write puts in the file are handed over with
+# `steal`: the op keeps them until the write is done and gives them back to their manager when it ends. A failure of
+# the call is the op's failure, so `try` and `check` on the pause receive it as on any call.
+#
+# A call to the OS can't be stopped once it started. When the waiting work is cancelled, its pause throws
+# `CancelRequested` at once. The op's end then waits for the call to return, with its thread, and gives back what the
+# call made, the bytes, the copy of the path and the thread.
+
+module Fiber
+
+import Hosted
+
+### A file call a pausable routine waits for, a step that obeys `Eventual`: the call runs on a thread of
+### DEFAULT_THREADS, and the op finishes when it returns, with its result (its failure too).
+### :typeparam T: The call's result: `BorrowedSlice[Byte]` for a read, `None` for a write.
+@target(os: not "none")
+entity PausingFileOp[T]
+obeys Eventual[PausingFileOp[T], T]
+    ### The file's path, copied: the call on the other thread reads it.
+    path: BorrowedSlice[Byte]
+    ### The bytes a write puts in the file, handed over, or empty for a read.
+    data: BorrowedSlice[Byte]
+    ### The thread the call runs on.
+    thread: Thread[T]
+
+### Makes a `PausingFileOp` from its fields.
+### :param path: Its `path`.
+### :param data: Its `data`.
+### :param thread: Its `thread`.
+### :returns: The new value.
+@target(os: not "none")
+common routine PausingFileOp[T].construct(path: BorrowedSlice[Byte], data: BorrowedSlice[Byte],
+    thread: Thread[T]) -> Me
+    return Me(path: steal path, data: steal data, thread: steal thread)
+
+### Reads the whole file while a pausable routine waits:
+### `text: &[Byte] <- pauseuntil OsFileManager.pausing_read_all(at: notes, manager: HEAP)`. The read runs on another
+### thread.
+### :param at: The file to read.
+### :param manager: The memory manager for the bytes and the copy of the path. The read's thread borrows from it, so
+###     it is one threads share, such as `HEAP`.
+### :returns: The op. Its result is the file's bytes (drop them), its failure what `read_all` throws.
+### :throws: Crashes with `OutOfMemoryError` when `manager` has no memory for the path, and with `TaskSpawnError`
+###     when no thread starts.
+@target(os: not "none")
+@track_caller
+@expensive("starts the read on another thread")
+common routine OsFileManager.pausing_read_all(at: @File,
+    manager: @MemoryManager) -> PausingFileOp[BorrowedSlice[Byte]]
+    path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
+    t: Thread[BorrowedSlice[Byte]] <- get_thread[BorrowedSlice[Byte]]()
+    reading: Work[BorrowedSlice[Byte]] = read_all_at.to[Work](path: path.getslice(),
+        manager: manager)
+
+    t.put_work(reading)
+    return PausingFileOp[BorrowedSlice[Byte]](path: steal path, data: .empty(manager),
+        thread: steal t)
+
+### Writes `data` as the whole content of the file, which must exist, while a pausable routine waits:
+### `pauseuntil OsFileManager.pausing_write_all(at: notes, data: steal bytes, manager: HEAP)`. The write runs on another
+### thread. The op keeps the bytes until the write is done and gives them back to their manager when it ends, done,
+### failed or cancelled: a program that still needs them copies them first.
+### :param at: The file to write.
+### :param data: The bytes that become the file, handed over with `steal`.
+### :param manager: The memory manager for the copy of the path.
+### :returns: The op. Its failure is what `write_all` throws.
+### :throws: Crashes with `OutOfMemoryError` when `manager` has no memory for the path, and with `TaskSpawnError`
+###     when no thread starts.
+@target(os: not "none")
+@track_caller
+@expensive("starts the write on another thread")
+common routine OsFileManager.pausing_write_all(at: @File, data: BorrowedSlice[Byte],
+    manager: @MemoryManager) -> PausingFileOp[None]
+    path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
+    t: Thread[None] <- get_thread[None]()
+    writing: Work[None] = write_all_at.to[Work](path: path.getslice(), data: data.getslice())
+
+    t.put_work(writing)
+    return PausingFileOp[None](path: steal path, data: steal data, thread: steal t)
+
+### Reads the whole file at `path`: the work of a read op, on its thread.
+### :param path: The file's path.
+### :param manager: The memory manager for the bytes.
+### :returns: The bytes.
+### :throws: Throws what `OsFileManager.read_all` throws.
+@target(os: not "none")
+secret routine read_all_at(path: @[Byte], manager: @MemoryManager) -> BorrowedSlice[Byte]
+    file: &File <- File.at(path)
+
+    return OsFileManager.read_all(at: file, manager)
+
+### Writes `data` as the whole content of the file at `path`: the work of a write op, on its thread.
+### :param path: The file's path.
+### :param data: The bytes.
+### :throws: Throws what `OsFileManager.write_all` throws.
+@target(os: not "none")
+secret routine write_all_at(path: @[Byte], data: @[Byte]) -> None
+    file: &File <- File.at(path)
+
+    OsFileManager.write_all(at: file, data)
+    return
+
+### Gives the call's result once it has returned.
+### :returns: The result, or `Pending` while the call runs.
+### :throws: Throws the {FsError} the call threw.
+@target(os: not "none")
+routine @PausingFileOp[T].resume() -> T | Pending
+    finish: &Finish[T] <- Finish[T](slot: me.thread.work_slot())
+
+    # The ticket sits in a field, so the builder can't read what its work throws. The call throws only an FsError.
+    when check finish.resume()
+        is Pending => return Pending()
+        is T as value => return value
+        is FsError as error => throw error
+        else => throw IoError(code: 0)
+
+### Wakes `waiter` once the call has returned: at once when it has.
+### :param waiter: The waiting work's waiter.
+@target(os: not "none")
+routine @PausingFileOp[T].wake_when_done(waiter: Waiter) -> None
+    finish: &Finish[T] <- Finish[T](slot: me.thread.work_slot())
+
+    finish.wake_when_done(waiter)
+    return
+
+### Waits for the call to return, if it still runs (the waiting work was cancelled), then gives back its result
+### nobody took, the thread, the bytes it wrote and the copy of the path.
+@target(os: not "none")
+routine @PausingFileOp[T].destruct() -> None
+    me.thread.work_slot().wait()
+    drop me.thread
+    drop me.data
+    drop me.path
+    return

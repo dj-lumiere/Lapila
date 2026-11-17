@@ -30,7 +30,7 @@ routine feed_later(path: @[Byte]) -> None
 ### :returns: The rounds the other work had while the read waited.
 pausable routine read_pipe(path: @[Byte]) -> U64
     f: &File <- File.at(path)
-    text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: f, manager: HEAP)
+    text: &[Byte] <- pauseuntil OsFileManager.pausing_read_all(at: f, manager: HEAP)
     READ_DONE.store(true)
     Console.show("read {text.count()} bytes: {text.getslice()}", end: "")
     return TICKS.load()
