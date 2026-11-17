@@ -905,6 +905,76 @@ secret routine symlink_metadata(path: @[Byte]) -> Metadata
             is Metadata as returned => return returned
     throw path_error(path)
 
+# -- calls a fiber hands to a thread ------------------------------------------------------
+#
+# open, read, write and fsync may block the thread. Inside a fiber they run on a thread of DEFAULT_THREADS while the
+# fiber parks (run_off_fiber), so each keeps its result and errno, which is the thread's own, in an OsCall.
+
+### One open, read, write or fsync, with its result and the errno it left.
+@target(os: ("linux", "macos"))
+secret record OsCall
+    fd: CInt
+    ### The buffer of a read or write, the NUL-terminated path of an open, zero for an fsync.
+    at: Addr
+    ### The byte count of a read or write, the flags of an open.
+    count: U64
+    result: S64
+    error: CInt
+
+### Makes an `OsCall` from its fields.
+### :param fd: Its `fd`.
+### :param at: Its `at`.
+### :param count: Its `count`.
+### :returns: The new value, its result and error 0.
+@target(os: ("linux", "macos"))
+secret common routine OsCall.construct(fd: CInt, at: Addr, count: U64) -> Me
+    return Me(fd, at, count, result: 0, error: 0)
+
+### Releases nothing: an `OsCall` holds no memory of its own.
+@target(os: ("linux", "macos"))
+secret routine @OsCall.destruct() -> None
+    return
+
+### Keeps `result` and, when it is negative, the errno the call left.
+### :param result: The call's result.
+@target(os: ("linux", "macos"))
+secret routine @OsCall.keep(result: S64) -> None
+    me.result.poke(result)
+    if result < 0
+        me.error.poke(errno())
+    return
+
+### open(2) of an OsCall: its path, its flags, permissions 0o666 before the umask.
+### :param call: The call.
+@target(os: ("linux", "macos"))
+secret routine open_call(call: @OsCall) -> None
+    fd: CInt = c_open(call.at.peek().to[@Byte]().to[CStrView](), call.count.peek().to[CInt](), 438)
+    call.keep(fd.to[S64]())
+    return
+
+### read(2) of an OsCall.
+### :param call: The call.
+@target(os: ("linux", "macos"))
+secret routine read_call(call: @OsCall) -> None
+    call.keep(c_read(call.fd.peek(), call.at.peek().to[@Byte](),
+        call.count.peek().to[CSize]()).to[S64]())
+    return
+
+### write(2) of an OsCall.
+### :param call: The call.
+@target(os: ("linux", "macos"))
+secret routine write_call(call: @OsCall) -> None
+    call.keep(c_write(call.fd.peek(), call.at.peek().to[@Byte](),
+        call.count.peek().to[CSize]()).to[S64]())
+    return
+
+### fsync(2) of an OsCall.
+### :param call: The call.
+@target(os: ("linux", "macos"))
+secret routine fsync_call(call: @OsCall) -> None
+    call.keep(c_fsync(call.fd.peek()).to[S64]())
+    return
+
 # -- file handles ------------------------------------------------------------------------
 
 ### An open file, from a File's open_read and the like: a Reader and a Writer. claim it, and close it when done.
@@ -955,10 +1025,11 @@ secret common routine FileHandle.open(path: @[Byte], mode: OpenMode) -> Me
         OpenMode.READ_WRITE => 2
         OpenMode.CREATE_NEW => 1 | f.create | f.exclude
         OpenMode.CREATE_REPLACING => 1 | f.create | f.truncate
-    fd: CInt = c_open(cpath.to[CStrView](), f.cloexec | how, 438)
-    if fd < 0
-        throw last_error()
-    return Me(fd: fd, failed: false, input: Addr.zero())
+    call: &OsCall <- OsCall.construct(fd: -1, at: cpath, count: (f.cloexec | how).to[U64]())
+    run_off_fiber(work: open_call.to[Callable](), arg: call)
+    if call.result.peek() < 0
+        throw error_of(call.error.peek())
+    return Me(fd: call.result.peek().to[CInt](), failed: false, input: Addr.zero())
 
 ### One read of up to count bytes into buffer: how many, 0 at the end of the file. One call reads at most 1 GiB, and a
 ### read a signal interrupts is tried again. The bytes an input buffer holds are not counted: read_bytes is the
@@ -970,14 +1041,16 @@ secret common routine FileHandle.open(path: @[Byte], mode: OpenMode) -> Me
 @target(os: ("linux", "macos"))
 @expensive("asks the operating system")
 routine @FileHandle.read_some(buffer: @Byte, count: U64) -> U64
-    got: S64 = c_read(me.fd.peek(), buffer, count.min(1073741824).to[CSize]()).to[S64]()
+    call: &OsCall <- OsCall.construct(fd: me.fd.peek(), at: buffer, count: count.min(1073741824))
+    run_off_fiber(work: read_call.to[Callable](), arg: call)
+    got: S64 = call.result.peek()
     if got >= 0
         return got.to[U64]()
     # EINTR: a signal came first, so ask again
-    if errno() == 4
+    if call.error.peek() == 4
         when check me.read_some(buffer, count)
             is U64 as returned => return returned
-    throw last_error()
+    throw error_of(call.error.peek())
 
 ### Writes up to count bytes: how many it did. One call writes at most 1 GiB, and a write a signal interrupts is
 ### tried again.
@@ -987,13 +1060,15 @@ routine @FileHandle.read_some(buffer: @Byte, count: U64) -> U64
 ### :throws: Throws the reason when the write fails.
 @target(os: ("linux", "macos"))
 secret routine @FileHandle.write_some(data: @Byte, count: U64) -> U64
-    wrote: S64 = c_write(me.fd.peek(), data, count.min(1073741824).to[CSize]()).to[S64]()
+    call: &OsCall <- OsCall.construct(fd: me.fd.peek(), at: data, count: count.min(1073741824))
+    run_off_fiber(work: write_call.to[Callable](), arg: call)
+    wrote: S64 = call.result.peek()
     if wrote >= 0
         return wrote.to[U64]()
-    if errno() == 4
+    if call.error.peek() == 4
         when check me.write_some(data, count)
             is U64 as returned => return returned
-    throw last_error()
+    throw error_of(call.error.peek())
 
 ### Moves the operating system's position: the new one, from the start. `seek` is the one that counts the bytes an
 ### input buffer holds.
@@ -1049,8 +1124,11 @@ routine @FileHandle.set_size(size: U64) -> None
 @target(os: ("linux", "macos"))
 @expensive("asks the operating system")
 routine @FileHandle.sync() -> None
-    when check checked(c_fsync(me.fd.peek()))
-        is None => return
+    call: &OsCall <- OsCall.construct(fd: me.fd.peek(), at: Addr.zero(), count: 0)
+    run_off_fiber(work: fsync_call.to[Callable](), arg: call)
+    if call.result.peek() != 0
+        throw error_of(call.error.peek())
+    return
 
 ### Closes the file, gives back its input buffer, and leaves the handle empty, so a second close does nothing.
 @target(os: ("linux", "macos"))

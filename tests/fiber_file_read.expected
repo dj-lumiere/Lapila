@@ -1,0 +1,4 @@
+read 17 bytes: through the pipe
+the other fiber had rounds while the read waited: true
+it stopped after the read: true
+read outside a fiber

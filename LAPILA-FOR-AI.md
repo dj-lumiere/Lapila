@@ -2237,7 +2237,10 @@ several tickets at once.
   Inside a fiber, waiting parks only that fiber: `retrieve()` of a fiber or THREAD ticket, `park()` (until
   `wake(handle)` from any thread, the handle from `current()`, may return early so loop on the condition),
   `park_until(deadline)`, `waitfor(duration)`, and `run_blocking(work, arg)` (a blocking call on a thread ticket), which
-  `read` / `write` (`Standard/Fiber/Io.lpa`) use. A blocking call made directly stops every fiber of its thread.
+  `read` / `write` (`Standard/Fiber/Io.lpa`) use. The file calls (`FileHandle.open`, `read_some`, `write_some`, `sync`,
+  so `OsFileManager.read_all`, `write_all`, `read_bytes`, `write_bytes` and the rest built on them) do the same by
+  themselves inside a fiber (`run_off_fiber`, Hosted/Thread.lpa) and are plain calls outside one. Any other blocking
+  call made directly stops every fiber of its thread.
   `yield()` lets the other ready fibers go first. Outside a fiber `waitfor` waits the thread, `park` returns,
   `run_blocking` just calls. More cores = thread tickets, each driving its own `COROUTINES` (`tests/fiber_workers.lpa`),
   or a ThreadPoolManager. A thread that drives a manager between other work loops on `run_until_idle()` and sleeps on a word
@@ -2267,9 +2270,9 @@ of its own (deep recursion, calls into code that blocks or switches stacks). Thr
   a call of another pausable routine (`pauseuntil g(n: 3)`) or a step, a value whose type obeys `Eventual[T]`: `COROUTINES.next_turn()`
   (`NextTurn`, the other ready work goes first, none ready goes on at once), `Clock.after(d)` (`ClockStep`), `t.finish()`
   on a `Thread`/`Fiber`/`PausingFiber` ticket (`Finish[T]`, gives what `retrieve()` would, its failure and
-  `CancelRequested` too), `OsFileManager.read_all_step(at, manager)` and `write_all_step(at, data, manager)`
-  (`FileStep[BorrowedSlice[Byte]]` / `FileStep[None]`, `Fiber/FileSteps.lpa`, below). Rule: the step's type must be readable from the source (a call's declared result, a record made
-  by its type's name, a value or global with a written type), otherwise bind the step with a written type first
+  `CancelRequested` too), `OsFileManager.pausing_read_all(at, manager)` and `pausing_write_all(at, data, manager)`
+  (`PausingFileOp[BorrowedSlice[Byte]]` / `PausingFileOp[None]`, `Fiber/PausingFileOp.lpa`, below). Rule: the step's
+  type must be readable from the source (a call's declared result, a record made by its type's name, a value or global with a written type), otherwise bind the step with a written type first
   (`step: ClockStep = Clock.after(5ms)`, then `pauseuntil step`): anything else is `LP-S1467`. A plain routine as the target
   is `LP-S1467` too (call it without `pauseuntil`). Arguments are computed before the pause.
 - Forms: `pauseuntil X` as a line, `x: T = pauseuntil X`, `x: T? = try pauseuntil X`, `try pauseuntil X` as a line,
@@ -2290,16 +2293,17 @@ of its own (deep recursion, calls into code that blocks or switches stacks). Thr
   sleeping that flow between steps. A failure nothing receives ends the work and `retrieve()` throws it. `cancel()` wakes
   the pause it waits at, which throws `CancelRequested` (a `try`/`check` on the pause receives it, and `retrieve()` of
   cancelled work throws `CancelRequested` anyway). A wake from another thread goes through the manager's inbox.
-- File steps (`Fiber/FileSteps.lpa`): `text: &[Byte] <- pauseuntil OsFileManager.read_all_step(at: notes, manager:
-  HEAP) carrying (...)` reads the whole file, `pauseuntil OsFileManager.write_all_step(at: notes, data: text, manager:
-  HEAP)` writes it (the file must exist, as for `write_all`). The step copies the path (and the bytes to write) into
-  memory from `manager`, takes a thread of `DEFAULT_THREADS`, runs `read_all` / `write_all` there, and that thread wakes
-  the work through the manager's inbox. The bytes read come from `manager` (one threads share, `HEAP`), and the program
-  drops them. Failures are `FsError`s, received by `try`/`check` on the pause. Cancelled while the call runs: the pause
-  throws `CancelRequested` at once, and the step's end waits for the OS call to return (it can't be stopped), then
-  gives back the bytes, the copies and the thread. Whole files only: there is no range step, and no socket steps
-  (the stdlib has no sockets). A fiber that calls `read_all` blocks its thread. `COROUTINES.read(fd, buf, count)`
-  parks the fiber instead (`run_blocking`).
+- File ops (`Fiber/PausingFileOp.lpa`): `text: &[Byte] <- pauseuntil OsFileManager.pausing_read_all(at: notes,
+  manager: HEAP) carrying (...)` reads the whole file, `pauseuntil OsFileManager.pausing_write_all(at: notes, data:
+  steal bytes, manager: HEAP)` writes it (the file must exist, as for `write_all`). The op copies the path into memory
+  from `manager`, takes a thread of `DEFAULT_THREADS`, runs `read_all` / `write_all` there, and that thread wakes the
+  work through the manager's inbox. The bytes read come from `manager` (one threads share, `HEAP`), and the program
+  drops them. The bytes to write are a `BorrowedSlice[Byte]` handed over with `steal`, no copy: the op keeps them until
+  the write is done and gives them back to their manager when it ends (done, failed or cancelled), so a program that
+  still needs them copies them first. Failures are `FsError`s, received by `try`/`check` on the pause. Cancelled while
+  the call runs: the pause throws `CancelRequested` at once, and the op's end waits for the OS call to return (it
+  can't be stopped), then gives back the bytes, the path copy and the thread. Whole files only: there is no range op,
+  and no socket ops (the stdlib has no sockets).
 - Refused inside: taking an access with `<-` (`LP-S1463`: hand the view in, an access handed with
   `f.to[Work](held: steal held)` is given back by the state record when the work ends), a call that may switch stacks,
   found through the calls (`LP-S1465`, names the chain to `switch_stack`), `retrieve()` of a `Fiber`/`PausingFiber`

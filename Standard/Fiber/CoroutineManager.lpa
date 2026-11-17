@@ -26,7 +26,8 @@
 # - waitfor(duration) until that much time has passed.
 # - retrieve() of another ticket, a fiber's or a thread's: the thread that finishes its work wakes the fiber.
 # - run_blocking() a call that may block the thread (reading a pipe, a socket, a file): a thread ticket runs it while
-#   the fiber waits. read and write (Standard/Fiber/Io.lpa) are built on it.
+#   the fiber waits. read and write (Standard/Fiber/Io.lpa) are built on it, and the file calls (FileHandle's open,
+#   reads, writes and sync, so OsFileManager's read_all and write_all) do the same by themselves.
 #
 # A wake from another thread goes in the manager's inbox, and the manager takes it in at its next turn, waking its
 # thread if it sleeps. Outside a fiber, sleep waits the thread, run_blocking just calls, and park returns.

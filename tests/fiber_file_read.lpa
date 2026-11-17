@@ -1,0 +1,77 @@
+# A fiber reading a file doesn't stop the others: the read waits on a named pipe that a thread writes to later, and runs
+# on a thread of DEFAULT_THREADS while the fiber parks, so another fiber of the same manager goes on with its timers
+# meanwhile. Outside a fiber the same read is a plain call.
+
+import Fiber
+import Hosted
+
+### How many rounds the ticking fiber has had.
+global TICKS: &U64
+### Whether the read has returned.
+global READ_DONE: &Bool
+
+### Binds the C `mkfifo` function, which makes a named pipe.
+### :param path: The pipe's path, NUL-terminated.
+### :param mode: Its permissions.
+### :returns: 0, or -1 with `errno` set.
+@external("c")
+@symbol("mkfifo")
+routine c_mkfifo(path: @Byte, mode: U32) -> CInt
+
+### Writes to the pipe once a while has passed: the read on the other side waits until then.
+### :param path: The pipe.
+routine feed_later(path: @[Byte]) -> None
+    waitfor(30ms)
+    OsFileManager.write_all(at: File.at(path), data: "through the pipe\n")
+    return
+
+### Reads the pipe and shows what it held.
+### :param path: The pipe.
+### :returns: The rounds the other fiber had while the read waited.
+routine read_pipe(path: @[Byte]) -> U64
+    text: &[Byte] <- OsFileManager.read_all(at: File.at(path), manager: HEAP)
+    READ_DONE.store(true)
+    Console.show("read {text.count()} bytes: {text.getslice()}", end: "")
+    return TICKS.load()
+
+### Waits a millisecond, round after round until the read has returned.
+### :returns: The rounds it had.
+routine tick() -> U64
+    until READ_DONE.load()
+        COROUTINES.waitfor(1ms)
+        TICKS.store(TICKS.load() + 1)
+    then
+        return TICKS.load()
+
+routine start() -> None
+    tmp: &Directory <- OsEnvironment.temp_directory(HEAP)
+    pipe: &File <- tmp.file(name: "lapila_fiber_file_read.fifo", manager: HEAP)
+    plain: &File <- tmp.file(name: "lapila_fiber_file_read.txt", manager: HEAP)
+    try OsFileManager.delete(at: pipe)
+    terminated: &[Byte] <- @[Byte].concat(a: pipe.path.peek(), b: "\0", manager: HEAP)
+    if c_mkfifo(path: terminated.getslot(0), mode: 0o600) != 0
+        Console.show("no named pipe")
+        return
+
+    feeder: Thread[None] <- get_thread[None]()
+    feeding: Work[None] = feed_later.to[Work](path: pipe.path.peek())
+    feeder.put_work(feeding)
+    reader: Fiber[U64] <- COROUTINES.get_fiber[U64]()
+    ticker: Fiber[U64] <- COROUTINES.get_fiber[U64]()
+    reading: Work[U64] = read_pipe.to[Work](path: pipe.path.peek())
+    ticking: Work[U64] = tick.to[Work]()
+    reader.put_work(reading)
+    ticker.put_work(ticking)
+    during: U64 = reader.retrieve()
+    total: U64 = ticker.retrieve()
+    Console.show("the other fiber had rounds while the read waited: {during > 0}")
+    Console.show("it stopped after the read: {total >= during}")
+    feeder.retrieve()
+    OsFileManager.delete(at: pipe)
+
+    OsFileManager.make_file(at: plain, replacing: true)
+    OsFileManager.write_all(at: plain, data: "read outside a fiber\n")
+    text: &[Byte] <- OsFileManager.read_all(at: plain, manager: HEAP)
+    Console.show("{text.getslice()}", end: "")
+    OsFileManager.delete(at: plain)
+    return

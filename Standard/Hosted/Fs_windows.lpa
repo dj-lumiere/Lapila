@@ -712,6 +712,29 @@ secret routine symlink_metadata(path: @[Byte]) -> Metadata
 
 # -- file handles --------------------------------------------------------------------------
 
+# -- calls a fiber hands to a thread ------------------------------------------------------
+#
+# CreateFileW, ReadFile, WriteFile and FlushFileBuffers may block the thread. Inside a fiber they run on a thread of
+# DEFAULT_THREADS while the fiber parks (run_off_fiber), so each keeps its result and the last error, which is the
+# thread's own, in a WinCall.
+
+### One CreateFileW, ReadFile, WriteFile or FlushFileBuffers, with its result and the last error it left.
+@target(os: "windows")
+secret record WinCall
+    ### The file's handle, and the handle CreateFileW gives.
+    handle: Addr
+    ### The buffer of a read or write, the 0-terminated UTF-16 path of an open, zero for a flush.
+    at: Addr
+    ### The byte count of a read or write, the access of an open.
+    count: U32
+    ### The disposition of an open.
+    disposition: U32
+    ### The bytes read or written.
+    done: U32
+    ### Nonzero when the call succeeded.
+    ok: CInt
+    error: U32
+
 ### An open file, from a File's open_read and the like: a Reader and a Writer. claim it, and close it when
 ### done.
 @target(os: "windows")
@@ -719,6 +742,66 @@ record FileHandle
     handle: Addr
     failed: Bool  # a write_bytes failed (write_all reports each failure itself)
     input: Addr  # the InputBuffer that reading by line, word, or value fills, hollow until the first such read
+
+### Makes a `WinCall` from its fields.
+### :param handle: Its `handle`.
+### :param at: Its `at`.
+### :param count: Its `count`.
+### :param disposition: Its `disposition`.
+### :returns: The new value, its results 0.
+@target(os: "windows")
+secret common routine WinCall.construct(handle: Addr, at: Addr, count: U32, disposition: U32) -> Me
+    return Me(handle, at, count, disposition, done: 0, ok: 0, error: 0)
+
+### Releases nothing: a `WinCall` holds no memory of its own.
+@target(os: "windows")
+secret routine @WinCall.destruct() -> None
+    return
+
+### Keeps `ok` and, when it is 0, the last error the call left.
+### :param ok: Nonzero for success.
+@target(os: "windows")
+secret routine @WinCall.keep(ok: CInt) -> None
+    me.ok.poke(ok)
+    if ok == 0
+        me.error.poke(c_get_last_error())
+    return
+
+### CreateFileW of a WinCall, sharing the file with every other handle.
+### :param call: The call.
+@target(os: "windows")
+secret routine open_call(call: @WinCall) -> None
+    h: Addr = c_create_file(call.at.peek().to[@U16](), call.count.peek(), FILE_SHARE_ALL,
+        Addr.zero(), call.disposition.peek(), FILE_ATTRIBUTE_NORMAL, Addr.zero())
+    call.handle.poke(h)
+    if is_invalid_handle(h)
+        call.keep(0)
+        return
+    call.keep(1)
+    return
+
+### ReadFile of a WinCall.
+### :param call: The call.
+@target(os: "windows")
+secret routine read_call(call: @WinCall) -> None
+    call.keep(c_read_file(call.handle.peek(), call.at.peek().to[@Byte](), call.count.peek(),
+        call.done, Addr.zero()))
+    return
+
+### WriteFile of a WinCall.
+### :param call: The call.
+@target(os: "windows")
+secret routine write_call(call: @WinCall) -> None
+    call.keep(c_write_file(call.handle.peek(), call.at.peek().to[@Byte](), call.count.peek(),
+        call.done, Addr.zero()))
+    return
+
+### FlushFileBuffers of a WinCall.
+### :param call: The call.
+@target(os: "windows")
+secret routine flush_call(call: @WinCall) -> None
+    call.keep(c_flush_file_buffers(call.handle.peek()))
+    return
 
 ### Makes a `FileHandle` from its fields.
 ### :param handle: Its `handle`.
@@ -759,11 +842,11 @@ secret common routine FileHandle.open(path: @[Byte], mode: OpenMode) -> Me
         OpenMode.CREATE_NEW => (wpath.getview().to[@U16](), GENERIC_WRITE, CREATE_NEW)
         OpenMode.CREATE_REPLACING => (wpath.getview().to[@U16](), GENERIC_WRITE, CREATE_ALWAYS)
     wpath2, access, disposition = values2
-    h: Addr = c_create_file(wpath2, access, FILE_SHARE_ALL, Addr.zero(), disposition,
-        FILE_ATTRIBUTE_NORMAL, Addr.zero())
-    if is_invalid_handle(h)
-        throw last_error()
-    return Me(handle: h, failed: false, input: Addr.zero())
+    call: &WinCall <- WinCall.construct(handle: Addr.zero(), at: wpath2, count: access, disposition)
+    run_off_fiber(work: open_call.to[Callable](), arg: call)
+    if call.ok.peek() == 0
+        throw error_of(call.error.peek())
+    return Me(handle: call.handle.peek(), failed: false, input: Addr.zero())
 
 ### One read of up to count bytes into buffer: how many, 0 at the end of the file. One call reads at most 1 GiB, and a
 ### broken pipe reads as the end. The bytes an input buffer holds are not counted: read_bytes is the one that takes
@@ -775,14 +858,14 @@ secret common routine FileHandle.open(path: @[Byte], mode: OpenMode) -> Me
 @target(os: "windows")
 @expensive("asks the operating system")
 routine @FileHandle.read_some(buffer: @Byte, count: U64) -> U64
-    got: &U32 <- 0
+    call: &WinCall <- WinCall.construct(handle: me.handle.peek(), at: buffer,
+        count: count.min(1073741824).to[U32](), disposition: 0)
 
-    ok: CInt = c_read_file(me.handle.peek(), buffer, count.min(1073741824).to[U32](), got,
-        Addr.zero())
-    if ok != 0
-        return got.load().to[U64]()
+    run_off_fiber(work: read_call.to[Callable](), arg: call)
+    if call.ok.peek() != 0
+        return call.done.peek().to[U64]()
     # ERROR_BROKEN_PIPE: the writing end closed, which is the end
-    e: U32 = c_get_last_error()
+    e: U32 = call.error.peek()
     if e == 109
         return 0
     throw error_of(e)
@@ -794,13 +877,13 @@ routine @FileHandle.read_some(buffer: @Byte, count: U64) -> U64
 ### :throws: Throws the reason when the write fails.
 @target(os: "windows")
 secret routine @FileHandle.write_some(data: @Byte, count: U64) -> U64
-    wrote: &U32 <- 0
+    call: &WinCall <- WinCall.construct(handle: me.handle.peek(), at: data,
+        count: count.min(1073741824).to[U32](), disposition: 0)
 
-    ok: CInt = c_write_file(me.handle.peek(), data, count.min(1073741824).to[U32](), wrote,
-        Addr.zero())
-    if ok != 0
-        return wrote.load().to[U64]()
-    throw last_error()
+    run_off_fiber(work: write_call.to[Callable](), arg: call)
+    if call.ok.peek() != 0
+        return call.done.peek().to[U64]()
+    throw error_of(call.error.peek())
 
 ### Moves the operating system's position: the new one, from the start. `seek` is the one that counts the bytes an
 ### input buffer holds.
@@ -861,8 +944,13 @@ routine @FileHandle.set_size(size: U64) -> None
 @target(os: "windows")
 @expensive("asks the operating system")
 routine @FileHandle.sync() -> None
-    when check checked(c_flush_file_buffers(me.handle.peek()))
-        is None => return
+    call: &WinCall <- WinCall.construct(handle: me.handle.peek(), at: Addr.zero(), count: 0,
+        disposition: 0)
+
+    run_off_fiber(work: flush_call.to[Callable](), arg: call)
+    if call.ok.peek() == 0
+        throw error_of(call.error.peek())
+    return
 
 ### Closes the file, gives back its input buffer, and leaves the handle empty, so a second close does nothing.
 @target(os: "windows")
