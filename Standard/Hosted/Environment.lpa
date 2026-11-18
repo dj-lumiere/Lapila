@@ -61,6 +61,41 @@ routine set_arguments(argc: CInt, argv: @(@Byte?)?) -> None
     ARGUMENT_COUNT.store(n)
     return
 
+### Puts the null device on descriptor 0, 1 or 2 when the parent started the program with it closed. `open` and `socket`
+### give the lowest free descriptor, so without this the first file the program opens would become its standard input,
+### output or error. Descriptor 0 gets the null device for reading and 1 and 2 for writing. When the null device can't
+### be opened the program stops at once with a short message on descriptor 2 when that is still open, and status 1.
+### The builder's entry calls it first of all, before the runtime opens anything of its own, and so does Revare's and
+### Mielia's.
+@export("lapila_keep_standard_descriptors")
+@target(os: ("linux", "macos"))
+routine keep_standard_descriptors() -> None
+    for fd in 0 til 3
+        if c_fcntl(fd.to[CInt](), 1) >= 0
+            continue
+        opened: CInt = c_open("/dev/null", null_device_access(fd.to[CInt]()))
+        if opened < 0
+            message: @[Byte] = "cannot open /dev/null for a closed standard descriptor\n"
+            if c_fcntl(2, 1) >= 0
+                c_write(2, message.getview().to[@Byte](), message.count().to[CSize]())
+            c_exit_now(1)
+    return
+
+### How the null device is opened for a standard descriptor.
+### :param fd: The descriptor, 0, 1 or 2.
+### :returns: `O_RDONLY` for 0, `O_WRONLY` for the others.
+@target(os: ("linux", "macos"))
+secret routine null_device_access(fd: CInt) -> CInt
+    if fd == 0
+        return 0
+    return 1
+
+### Does nothing: Windows doesn't hand out the lowest free number for a new handle.
+@export("lapila_keep_standard_descriptors")
+@target(os: "windows")
+routine keep_standard_descriptors() -> None
+    return
+
 ### One argument as the program sees it: the C string's bytes as they are.
 ### :param raw_or_none: The NUL-terminated argument, or None.
 ### :param manager: Unused here.

@@ -133,17 +133,20 @@ public sealed partial class Compiler
     /// The attributes of a function the builder writes itself.
     private string EntryAttrs(Pos pos) => $"nounwind{UnwindTable} {CpuModel.For(Target, pos).FnAttrs}";
 
-    /// The platform's C `main`: the arguments handed to Hosted (`OsEnvironment.argument`), `start`, then the exit
-    /// status from Hosted's exit_code (what set_exit_code stored last, 0 when nothing did). A crash ends the
-    /// process before that with its own status.
+    /// The platform's C `main`: the standard descriptors kept open (Hosted's keep_standard_descriptors), the arguments
+    /// handed to Hosted (`OsEnvironment.argument`), `start`, then the exit status from Hosted's exit_code (what
+    /// set_exit_code stored last, 0 when nothing did). A crash ends the process before that with its own status.
     private void PlanHostedMain(RoutineDecl start, Instance startInst)
     {
         var exitCode = EntryHelper(HostedModule, "exit_code", start.Pos);
         var setArguments = EntryHelper(HostedModule, "set_arguments", start.Pos);
+        var keepDescriptors = EntryHelper(HostedModule, "keep_standard_descriptors", start.Pos);
         if (ExposeDefinitions) NoteExposed("main");
-        _entry.AppendLine("; The program's entry: the arguments kept, start, then the exit status set_exit_code stored.");
+        _entry.AppendLine("; The program's entry: the descriptors kept, the arguments kept, start, then the exit status set_exit_code stored.");
         _entry.AppendLine($"define i32 @main(i32 %argc, ptr %argv) {EntryAttrs(start.Pos)} {{");
         _entry.AppendLine("entry:");
+        // First of all, so nothing the program opens later can take descriptor 0, 1 or 2.
+        _entry.AppendLine($"  {EntryCall(keepDescriptors)}");
         _entry.AppendLine($"  call {setArguments.CcPrefix(Target)}void @{Quote(setArguments.Symbol)}(i32 %argc, ptr %argv)");
         // A traced build reports a hardware fault the way it reports a crash (Standard/Hosted/Faults.lpa). The race check
         // reports faults itself.
