@@ -25,6 +25,14 @@ public sealed partial class Compiler
         if (_crashReachable is null)
         {
             var byName = _userRoutines.GroupBy(r => r.Name).ToDictionary(g => g.Key, g => g.ToList());
+            // A routine the program declares `@external` runs the program's routine that exports its symbol (a crash
+            // handler's `ig_flush_output`, which a program may write itself), so a call to it reaches that routine too.
+            var exporters = _userRoutines.Where(r => r.AnnotationNamed("export")?.First is not null)
+                .GroupBy(r => r.AnnotationNamed("export")!.First!).ToDictionary(g => g.Key, g => g.Select(r => r.Name).ToList());
+            var alsoRuns = new Dictionary<string, List<string>>();
+            foreach (var r in _userRoutines.Where(r => r.AnnotationNamed("external") is not null))
+                if (exporters.TryGetValue(r.AnnotationNamed("symbol")?.First ?? r.Name, out var exported))
+                    alsoRuns[r.Name] = [.. alsoRuns.GetValueOrDefault(r.Name) ?? [], .. exported];
             IEnumerable<Expr> Exprs(RoutineDecl r) => (r.Blocks ?? []).SelectMany(b => Bodies.All(b.Stmts)).SelectMany(Bodies.Exprs).SelectMany(ExprTree.All);
             var reach = new HashSet<string> { "message_into" };
             var queue = new Queue<string>(reach);
@@ -42,6 +50,9 @@ public sealed partial class Compiler
                         if (reach.Add(named.Name)) queue.Enqueue(named.Name);
                 }
             while (queue.TryDequeue(out var name))
+            {
+                foreach (var exporter in alsoRuns.GetValueOrDefault(name) ?? [])
+                    if (reach.Add(exporter)) queue.Enqueue(exporter);
                 foreach (var r in byName.GetValueOrDefault(name) ?? [])
                     foreach (var e in Exprs(r))
                     {
@@ -55,6 +66,7 @@ public sealed partial class Compiler
                         };
                         if (called is not null && reach.Add(called)) queue.Enqueue(called);
                     }
+            }
             _crashReachable = reach;
         }
         return _crashReachable.Contains(routine);

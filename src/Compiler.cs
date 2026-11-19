@@ -16,6 +16,12 @@ public sealed partial class Compiler
     /// IngridLapila) leaves them out.
     public bool EmitLibraryExports { get; init; } = true;
 
+    /// Whether a program's `Console.show` / `Console.alert` collects its line and writes it whole under one access to the
+    /// stream (FunctionGen.EmitWholeLine). Off for a build of Ingrid's own code that declares no module under Ingrid
+    /// (Anvila's IngridLapila): its calls are the runtime's, which write straight out, so a crash report never waits
+    /// for a line or takes memory.
+    public bool WholeConsoleLines { get; init; } = true;
+
     /// The libraries and library directories the build adds to the link (the manifest's `-L` and `-l` flags): with the
     /// target's own C libraries, the libraries whose names an `@export` must not take.
     public IReadOnlyList<string> LinkArguments { get; init; } = [];
@@ -1249,8 +1255,15 @@ public sealed partial class Compiler
         return false;
     }
 
-    /// Whether `file` reaches a `secret` declaration: a file of the declaration's module or of a module under it.
-    public bool PrivateReaches(Decl d, string file) => IsUnder(ModuleOf(file), d.Module);
+    /// Whether `file` reaches a `secret` declaration: a file of the declaration's module or of a module under it. Lines
+    /// the builder writes for a standard library module's own purpose reach that module's secrets too (SecretReach).
+    public bool PrivateReaches(Decl d, string file) =>
+        IsUnder(ModuleOf(file), d.Module) || (SecretReach is { } module && d.IsLibrary && IsUnder(d.Module, module));
+
+    /// The standard library module whose `secret` names the lines the builder is writing reach, or null. It is set only
+    /// while the builder emits lines of its own for that module's purpose (a program's `Console.show` becomes a
+    /// `Hosted/LineWriter` line), never around an expression the program wrote, so the program still can't name them.
+    public string? SecretReach { get; set; }
 
     public static string ShowModule(string module) => module == "" ? "the root module" : module;
 

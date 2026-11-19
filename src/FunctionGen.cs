@@ -2527,7 +2527,7 @@ public sealed partial class FunctionGen
                 // A program's `Console.show` / `Console.alert` is collected into a line first and written whole under one
                 // access to its stream, so lines of several threads never mix. The standard library's and Ingrid's own calls, and a routine
                 // that may run while the program crashes (it takes no memory and waits for nothing), write straight out.
-                if (!_decl.IsLibrary && !Compiler.IsUnder(_decl.Module, StandardLibrary.IngridRoot) && !_c.MayRunWhileCrashing(_decl.Name) && e.Value is NsCallExpr { Name: "show" or "alert" } && TemplateCall(e.Value) is var (consoleWriter, lineTemplate, lineShown)
+                if (_c.WholeConsoleLines && !_decl.IsLibrary && !Compiler.IsUnder(_decl.Module, StandardLibrary.IngridRoot) && !_c.MayRunWhileCrashing(_decl.Name) && e.Value is NsCallExpr { Name: "show" or "alert" } && TemplateCall(e.Value) is var (consoleWriter, lineTemplate, lineShown)
                     && consoleWriter is NsCallExpr { Name: "output" or "errors" } consoleStream)
                 {
                     EmitWholeLine(consoleStream.Name == "output", lineTemplate, lineShown, e.Pos);
@@ -4867,11 +4867,25 @@ public sealed partial class FunctionGen
         string name = $"console line {_tmp++}";
         var type = new TypeRef("BorrowedCell", [new TypeArgType(new TypeRef("LineWriter", [], pos) { Path = HostedModule })], pos)
             { Path = Compiler.SystemModule, Amp = true };
-        EmitStmt(new BindStmt(name, type, new NsCallExpr(new TypeRef("LineWriter", [], pos) { Path = HostedModule }, "construct", [], [], pos), pos) { Borrows = true });
+        AsLibrary(HostedModule, () => EmitStmt(new BindStmt(name, type, new NsCallExpr(new TypeRef("LineWriter", [], pos) { Path = HostedModule }, "construct", [], [], pos), pos) { Borrows = true }));
+        // The holes are the program's own expressions: they are expanded with the program's reach only.
         ExpandTemplate(new ValueRef(name, pos), template, shown);
         var send = new MethodCallExpr(new ValueRef(name, pos), output ? "send_output" : "send_errors", [], [], pos);
-        EmitStmt(new ExprStmt(send, pos));
-        EmitStmt(new DropStmt(new ValueRef(name, pos), pos));
+        AsLibrary(HostedModule, () =>
+        {
+            EmitStmt(new ExprStmt(send, pos));
+            EmitStmt(new DropStmt(new ValueRef(name, pos), pos));
+        });
+    }
+
+    /// Emits lines the builder wrote for a standard library module's own purpose, which reach that module's `secret`
+    /// names (Compiler.SecretReach). Only lines without a part the program wrote go through here.
+    private void AsLibrary(string module, Action emit)
+    {
+        string? outer = _c.SecretReach;
+        _c.SecretReach = module;
+        try { emit(); }
+        finally { _c.SecretReach = outer; }
     }
 
     /// The writer a `.write("x = {x}\n")` writes to, or null when the call is an ordinary one: on a type, a stateless

@@ -299,8 +299,10 @@ public sealed partial class Compiler
                 .ToList() is { Count: > 0 } methods)
         {
             string home = ownerDecl?.Module ?? SystemModule;
+            // A `destruct` is only ever called by the builder (a program gives a value back with `drop`), so a value of a
+            // secret type the builder put in the program's frame is given back like any other.
             var visible = methods.Where(m =>
-                m.IsPrivate ? PrivateReaches(m, file)
+                m.IsPrivate ? PrivateReaches(m, file) || name == "destruct"
                 : anyModule || m.Module == home || Visible(m, file, null)).ToList();
             if (visible.Count == 0)
                 throw new CompileError(Li.NameInOtherModule, pos, Hidden(methods[0], $"routine '{owner}.{name}'", null));

@@ -18,13 +18,16 @@ needs TWriter obeys Writer
 infallible routine crash_now() -> None
     throw StuckLineError()
 
-### Holds standard error's line access, then waits for a thread that crashes.
-routine start() -> None
-    held: @U8 <- ERRORS_LINE_GUARD.get_exclusive_access()
+### Shows a line, then waits for a thread that crashes.
+routine crash_on_thread() -> None
     Console.show("the line access is held")
     t: Thread[None] <- get_thread[None]()
     t.put_work(crash_now.to[Work]())
     t.retrieve()
     drop t
-    drop held
+    return
+
+### Holds standard error's line access while a thread crashes.
+routine start() -> None
+    hold_errors_line_while(crash_on_thread.to[Callable[(), None]]())
     return

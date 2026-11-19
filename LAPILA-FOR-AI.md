@@ -2809,7 +2809,7 @@ and membership is `has` / `lacks` (`set.has(x)`, `text.has(needle)`, `set.lacks(
 a dict's key (`dict.has_key(k)`). There are no other bare
 predicates (`empty()`, `finite()`, `exists()`, `all()`), no `should_`, and no `starts_with`. A capability is `is_[x]able`,
 never `can_[x]`: `is_readable`, `is_writable`, `is_seekable` (not `can_read`, `can_write`, `can_seek`), and a C ABI
-symbol keeps its own name (`rf_fs_can_read`). A vector mask asks
+symbol keeps its own name (`ig_fs_can_read`). A vector mask asks
 `is_all_true()`, `is_any_true()`, `is_none_true()`. A free routine with a family prefix keeps the prefix first
 (`f128_is_integer`, `ryu_is_multiple_of_pow5`). Not questions in this sense, so they keep their names: comparisons and
 (`eq`, `lt`, `compare`), an overflow test that goes with its operation
