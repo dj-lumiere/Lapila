@@ -1954,7 +1954,11 @@ Format through `System/Text` (`Format.lpa`), not printf. printf is for C interop
   `Console.alert("...")` one line to standard error, and `end:` changes the line end (`Console.show("loading",
   end: "")`, a string literal). Both expand their template like a Writer's `write` (below). With a value in place
   of the template, `Console.show(x)` / `Console.alert(x)` is `Console.show("{x}")`: x's `represent_into` writes it
-  (a type without one is a build error saying so), and `end:` still works. A memory cell shows itself, not its value
+  (a type without one is a build error saying so), and `end:` still works. Each `Console.show` / `Console.alert` call's line is written
+  whole, even from several threads: the program's call collects the line (512 bytes in its frame, longer from `HEAP`) and
+  writes it under one exclusive access to the stream, so a hole that prints something itself comes out before the line.
+  The library's own calls and a routine that may run while the program crashes (a reporting routine, a `message_into`,
+  and what they call) write piece by piece instead, taking no memory and never waiting for that access. `Console.output().write(...)` writes piece by piece. A memory cell shows itself, not its value
   (below). Standard input:
   `Console.ask[T]()`, `Console.ask_line(manager)`, `ask_word(manager)`, `ask_bytes(n, manager)`, `ask_all(manager)`, all
   through one buffer the process shares. `ask_line` and `ask_word` are failable and throw `EndOfInputError` at the end of the

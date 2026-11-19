@@ -1,0 +1,89 @@
+# Four threads call Console.show at once, many times, each with a line of twelve holes: every line comes out whole,
+# never mixed with another thread's. The program runs itself again with an argument so it can read what the threads
+# wrote (the child's standard output) and check each line: it is 14 bytes, starts with L, ends with E, and holds one
+# thread's digit twelve times. The summary counts what was seen, so its text doesn't depend on timing.
+# The child is /proc/self/exe, which only Linux has.
+
+import Collections
+import Hosted
+
+### Lines each thread prints.
+preset LINES: U64 = 3000
+### Threads that print.
+preset THREADS: U64 = 4
+### The length of one line without its line end: L, twelve digits, E.
+preset LINE_LENGTH: U64 = 14
+
+### Prints LINES lines of twelve holes, all holding the thread's digit.
+### :param id: The thread's digit, 0 to 3.
+routine speak(id: U64) -> None
+    for n in 0 til LINES
+        Console.show("L{id}{id}{id}{id}{id}{id}{id}{id}{id}{id}{id}{id}E")
+    then
+        return
+
+### Starts THREADS threads that print, and waits for them.
+routine child() -> None
+    threads: &List[Thread[None]] <- .construct(HEAP)
+    for id: U64 in 0 til THREADS
+        t: Thread[None] <- get_thread[None]()
+        printing: Work[None] = speak.to[Work](id: id)
+        t.put_work(steal printing)
+        threads.add_last(steal t)
+    then
+        for i: U64 in 0 til threads.count()
+            threads.getslot(i).retrieve()
+        threads.give_back_all()
+        drop threads
+        return
+
+### Whether the bytes of text from `start` up to `end` are one thread's whole line.
+### :param text: What the child wrote.
+### :param start: Where the line starts.
+### :param end: Where the line ends, before its line feed.
+### :returns: True for a whole line.
+routine whole(text: @[Byte], start: U64, end: U64) -> Bool
+    if end - start != LINE_LENGTH
+        return false
+    if text[start] != Byte('L') or text[end - 1] != Byte('E')
+        return false
+    digit: Byte = text[start + 1]
+    for k: U64 in 2 til 13
+        if text[start + k] != digit
+            return false
+    then
+        return true
+
+### Runs the child and checks every line it wrote.
+routine parent() -> None
+    args: &Items[@[Byte], 1] <- ["child"]
+    options: ProcessOptions = ProcessOptions.default()
+    ran: &ProcessOutput <- ProcessManager.create_process(program: "/proc/self/exe",
+        args: args.getview(), options, manager: HEAP)
+    text: @[Byte] = ran.stdout.getslice()
+    seen: &Items[U64, 4] <- [0] * 4
+    mixed: &U64 <- 0
+
+    for i in 0 til text.count() with start: U64 = 0
+        if text[i] != Byte('\n')
+            continue with start: start
+        if whole(text, start, i)
+            index: U64 = text[start + 1].to[U8]().to[U64]() - 48
+            seen.getslot(index).poke(seen[index] + 1)
+        else
+            mixed.store(mixed.load() + 1)
+        continue with start: i + 1
+    then
+        Console.show("status {ran.status.peek().code()}")
+        for id: U64 in 0 til THREADS
+            Console.show("thread {id}: {seen[id]} whole lines")
+        Console.show("lines not whole: {mixed.load()}")
+        drop ran
+        return
+
+routine start() -> None
+    if OsEnvironment.argument_count() > 0
+        child()
+    else
+        parent()
+    return

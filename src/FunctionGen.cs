@@ -2524,6 +2524,15 @@ public sealed partial class FunctionGen
                 if (e.Value is CallExpr or NsCallExpr or MethodCallExpr && InferQuiet(e.Value) is { } made && Entities.Holds(made))
                     throw Err(Li.UnusedReturnValue, e.Pos, $"this call hands you a {made.Name}, {HoldsWhat(made)}, and the line leaves it on the floor: "
                         + "keep it in a place (x: &" + made.Name + " <- ...), drop it, or hand it over");
+                // A program's `Console.show` / `Console.alert` is collected into a line first and written whole under one
+                // access to its stream, so lines of several threads never mix. The standard library's and Ingrid's own calls, and a routine
+                // that may run while the program crashes (it takes no memory and waits for nothing), write straight out.
+                if (!_decl.IsLibrary && !Compiler.IsUnder(_decl.Module, StandardLibrary.IngridRoot) && !_c.MayRunWhileCrashing(_decl.Name) && e.Value is NsCallExpr { Name: "show" or "alert" } && TemplateCall(e.Value) is var (consoleWriter, lineTemplate, lineShown)
+                    && consoleWriter is NsCallExpr { Name: "output" or "errors" } consoleStream)
+                {
+                    EmitWholeLine(consoleStream.Name == "output", lineTemplate, lineShown, e.Pos);
+                    break;
+                }
                 EvalAny(e.Value);
                 break;
             }
@@ -4845,6 +4854,24 @@ public sealed partial class FunctionGen
         var target = new NsCallExpr(call.Owner, stream, [], [], call.Pos);
         if (first is StrLit text) return (target, text with { Value = text.Value + end }, null);
         return (target, new StrLit(end, first.Pos), first);
+    }
+
+    /// The module the console lives in.
+    private const string HostedModule = "Hosted";
+
+    /// `Console.show("...")` as the lines the program could have written: the line is collected in a LineWriter of this
+    /// frame (`line: &LineWriter`), the template is expanded into it, `send` writes it whole to the stream, and the
+    /// line is dropped, which gives back the memory a long one took, also when a hole's failure leaves early.
+    private void EmitWholeLine(bool output, StrLit template, Expr? shown, Pos pos)
+    {
+        string name = $"console line {_tmp++}";
+        var type = new TypeRef("BorrowedCell", [new TypeArgType(new TypeRef("LineWriter", [], pos) { Path = HostedModule })], pos)
+            { Path = Compiler.SystemModule, Amp = true };
+        EmitStmt(new BindStmt(name, type, new NsCallExpr(new TypeRef("LineWriter", [], pos) { Path = HostedModule }, "construct", [], [], pos), pos) { Borrows = true });
+        ExpandTemplate(new ValueRef(name, pos), template, shown);
+        var send = new MethodCallExpr(new ValueRef(name, pos), output ? "send_output" : "send_errors", [], [], pos);
+        EmitStmt(new ExprStmt(send, pos));
+        EmitStmt(new DropStmt(new ValueRef(name, pos), pos));
     }
 
     /// The writer a `.write("x = {x}\n")` writes to, or null when the call is an ordinary one: on a type, a stateless

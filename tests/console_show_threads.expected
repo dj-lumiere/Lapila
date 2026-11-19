@@ -1,0 +1,6 @@
+status 0
+thread 0: 3000 whole lines
+thread 1: 3000 whole lines
+thread 2: 3000 whole lines
+thread 3: 3000 whole lines
+lines not whole: 0

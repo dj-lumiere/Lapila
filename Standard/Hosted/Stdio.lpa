@@ -1,7 +1,8 @@
 # Lapila stdlib: the console: the process's standard input, output, and error
 #
 # Console is what a program uses: Console.show and Console.alert write a line to standard output and standard error
-# (the builder expands their template, as for a Writer's write), and the ask routines read standard input. Behind it
+# (the builder expands their template, as for a Writer's write, and a program's call writes its line whole under one
+# access to the stream, so lines of several threads never mix), and the ask routines read standard input. Behind it
 # are three types, one per stream, so a stream is only read or only written: ConsoleOutput and ConsoleErrors are
 # Writers (write_all writes bytes, and nothing is buffered, a BufWriter[ConsoleOutput] is the caller's choice),
 # and ConsoleInput is a Reader. Standard input is read through one buffer the whole process shares, behind one exclusive access:
@@ -609,6 +610,113 @@ routine @ConsoleErrors.is_terminal() -> Bool
 ### :returns: `true` when colors can be used.
 routine @ConsoleErrors.enable_colors() -> Bool
     return stream_enable_colors(StdStream.ERROR)
+
+# -- One line at once ------------------------------------------------------------------------------
+
+### The byte whose exclusive access one `Console.show` line holds while it is written to standard output.
+global OUTPUT_LINE_GUARD: &U8
+### The byte whose exclusive access one `Console.alert` line holds while it is written to standard error.
+global ERRORS_LINE_GUARD: &U8
+
+### How many bytes of a line are kept in the line's own frame before it moves to memory from HEAP.
+preset LINE_INLINE: U64 = 512
+
+### The text of one `Console.show` or `Console.alert` call, collected before it is written, so the line goes out in one
+### piece under one access to its stream and lines of several threads never mix. It is for the builder: the program's calls make one in their
+### frame (the builder expands the call), a line of {LINE_INLINE} bytes or fewer allocates nothing, and a longer one
+### moves to memory from HEAP that the builder gives back with the line. The library's and Ingrid's own Console calls (the crash
+### report, a fault) write straight to the stream and take no access, so a crash never waits for a line.
+entity LineWriter
+obeys Writer[LineWriter]
+    secret inline: Items[Byte, 512]
+    ### How many bytes the line holds, in `inline` or in `spill` once it has moved there.
+    secret used: U64
+    ### The line's memory from HEAP, hollow while the line fits `inline`.
+    secret spill: BorrowedSlice[Byte]
+    ### Whether the line has moved to `spill`.
+    secret spilled: Bool
+    ### Set when memory for a long line could not be taken: the line is not written, and `send` throws.
+    secret failed: Bool
+
+### An empty line.
+### :returns: The line, holding no bytes and no memory.
+common routine LineWriter.construct() -> Me
+    return Me(inline: [0x00] * 512, used: 0, spill: BorrowedSlice[Byte].empty(manager: HEAP),
+        spilled: false, failed: false)
+
+### Makes sure `spill` holds `need` bytes.
+### :param need: How many bytes the line needs.
+secret routine @LineWriter.reserve(need: U64) -> None
+    capacity: U64 = me.spill.count.peek()
+    if need <= capacity
+        return
+    bigger: U64 = (capacity * 2).max(need).max(1024)
+    if capacity == 0
+        when check BorrowedSlice[Byte].construct(count: bigger, manager: HEAP)
+            is BorrowedSlice[Byte] as memory =>
+                me.spill.replace(value: steal memory)
+                return
+            is OutOfMemoryError => nothing
+    else
+        resized: Check[None] = check me.spill.resize(bigger)
+        when resized
+            is None => return
+            is OutOfMemoryError => nothing
+    me.failed.poke(true)
+    return
+
+### Adds bytes to the line: into the frame while it fits, else into memory from HEAP.
+### :param data: The first byte to add.
+### :param count: How many bytes to add.
+routine @LineWriter.write_bytes(data: @Byte, count: U64) -> None
+    if me.failed.peek()
+        return
+    used: U64 = me.used.peek()
+    if not me.spilled.peek()
+        if used + count <= LINE_INLINE
+            kept: @Byte = me.inline.getview().to[@Byte]()
+            kept.stride(used).copy(src: data, count)
+            me.used.poke(used + count)
+            return
+        # the line outgrows the frame: what it holds moves to memory
+        me.reserve(used + count)
+        if me.failed.peek()
+            return
+        me.spill.getslot(0).copy(src: me.inline.getview().to[@Byte](), count: used)
+        me.spilled.poke(true)
+    else
+        me.reserve(used + count)
+        if me.failed.peek()
+            return
+    me.spill.getslot(used).copy(src: data, count)
+    me.used.poke(used + count)
+    return
+
+### Writes the whole line to standard output under one exclusive access to it.
+### :throws: Throws `OutOfMemoryError` when memory for a long line could not be taken, before anything is written.
+routine @LineWriter.send_output() -> None
+    me.send(stream: StdStream.OUTPUT, guard: OUTPUT_LINE_GUARD)
+    return
+
+### Writes the whole line to standard error under one exclusive access to it.
+### :throws: Throws `OutOfMemoryError` when memory for a long line could not be taken, before anything is written.
+routine @LineWriter.send_errors() -> None
+    me.send(stream: StdStream.ERROR, guard: ERRORS_LINE_GUARD)
+    return
+
+### Writes the whole line to a stream, holding the access to the stream's guard byte for the write alone.
+### :param stream: Standard output or error.
+### :param guard: The byte whose access is held.
+secret routine @LineWriter.send(stream: StdStream, guard: @U8) -> None
+    if me.failed.peek()
+        throw OutOfMemoryError()
+    data: @Byte = when
+        me.spilled.peek() => me.spill.getslot(0)
+        else => me.inline.getview().to[@Byte]()
+    AccessManager.take_exclusive(at: guard.to[Addr](), size: 1)
+    stream_write(stream, data, me.used.peek())
+    AccessManager.give_back(at: guard.to[Addr]())
+    return
 
 # -- Linux and macOS -------------------------------------------------------------------
 

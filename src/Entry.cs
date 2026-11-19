@@ -13,6 +13,53 @@ namespace Lapila;
 /// program brings its own entry.
 public sealed partial class Compiler
 {
+
+    private HashSet<string>? _crashReachable;
+
+    /// The names of the program's routines that may run while the program crashes: the routines handed to
+    /// `Crash.report_with`, the crashables' `message_into`, and every routine either calls by name (a name stands for every
+    /// routine that has it, so the set is generous). What runs then takes no memory and waits for no access, so a
+    /// `Console.show` there writes its pieces straight out instead of collecting its line.
+    public bool MayRunWhileCrashing(string routine)
+    {
+        if (_crashReachable is null)
+        {
+            var byName = _userRoutines.GroupBy(r => r.Name).ToDictionary(g => g.Key, g => g.ToList());
+            IEnumerable<Expr> Exprs(RoutineDecl r) => (r.Blocks ?? []).SelectMany(b => Bodies.All(b.Stmts)).SelectMany(Bodies.Exprs).SelectMany(ExprTree.All);
+            var reach = new HashSet<string> { "message_into" };
+            var queue = new Queue<string>(reach);
+            foreach (var r in _userRoutines)
+                foreach (var e in Exprs(r))
+                {
+                    var args = e switch
+                    {
+                        CallExpr { Name: "report_with" } c => c.Args,
+                        NsCallExpr { Name: "report_with" } n => n.Args,
+                        MethodCallExpr { Name: "report_with" } m => m.Args,
+                        _ => null,
+                    };
+                    foreach (var named in (args ?? []).SelectMany(ExprTree.All).OfType<RoutineRef>())
+                        if (reach.Add(named.Name)) queue.Enqueue(named.Name);
+                }
+            while (queue.TryDequeue(out var name))
+                foreach (var r in byName.GetValueOrDefault(name) ?? [])
+                    foreach (var e in Exprs(r))
+                    {
+                        string? called = e switch
+                        {
+                            CallExpr c => c.Name,
+                            NsCallExpr n => n.Name,
+                            MethodCallExpr m => m.Name,
+                            RoutineRef rr => rr.Name,
+                            _ => null,
+                        };
+                        if (called is not null && reach.Add(called)) queue.Enqueue(called);
+                    }
+            _crashReachable = reach;
+        }
+        return _crashReachable.Contains(routine);
+    }
+
     /// The name of the program's entry routine.
     public const string StartName = "start";
 

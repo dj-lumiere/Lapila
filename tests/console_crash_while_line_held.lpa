@@ -1,0 +1,30 @@
+# A thread that crashes while another thread holds the access to standard error that a Console.alert line takes: the
+# crash report is written without that access, so it comes out and the program stops with the crash exit code.
+
+import Hosted
+
+crashable StuckLineError
+    nothing
+
+### Writes the message.
+### :typeparam TWriter: The Writer.
+### :param out: Where it goes.
+routine StuckLineError.message_into[TWriter](out: @TWriter) -> None
+needs TWriter obeys Writer
+    out.write("crashed while a line was held")
+    return
+
+### Fails inside an infallible routine, which stops the program.
+infallible routine crash_now() -> None
+    throw StuckLineError()
+
+### Holds standard error's line access, then waits for a thread that crashes.
+routine start() -> None
+    held: @U8 <- ERRORS_LINE_GUARD.get_exclusive_access()
+    Console.show("the line access is held")
+    t: Thread[None] <- get_thread[None]()
+    t.put_work(crash_now.to[Work]())
+    t.retrieve()
+    drop t
+    drop held
+    return
