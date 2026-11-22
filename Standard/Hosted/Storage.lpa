@@ -667,3 +667,40 @@ secret routine partition_of(path: @[Byte], manager: @MemoryManager) -> Partition
         PATH_CAPACITY.to[U32]()) == 0
         throw last_error()
     return windows_partition(root: root.getview().to[@U16](), manager)
+
+# -- WASI --------------------------------------------------------------------------------
+
+### The storage devices: WASI shows a program none.
+### :param manager: The memory manager for the list.
+### :returns: An empty list.
+@target(os: "wasip1")
+@track_caller
+secret routine storage_devices(manager: @MemoryManager) -> List[StorageManager]
+    list: &List[StorageManager] <- .construct(manager)
+
+    return list
+
+### The partitions: WASI shows a program none, only the directories the runtime opened for it.
+### :param manager: The memory manager for the list.
+### :returns: An empty list.
+@target(os: "wasip1")
+@track_caller
+secret routine partitions(manager: @MemoryManager) -> List[PartitionManager]
+    list: &List[PartitionManager] <- .construct(manager)
+
+    return list
+
+### The partition the existing path is on. WASI tells a program nothing about partitions, so the one it gives has no
+### name, device or size, and the file system `wasi`.
+### :param path: The path, which must exist.
+### :param manager: The memory manager for the names.
+### :returns: The partition.
+### :throws: Throws the reason when nothing is at `path`.
+@target(os: "wasip1")
+secret routine partition_of(path: @[Byte], manager: @MemoryManager) -> PartitionManager
+    when check metadata(path)
+        is Metadata => nothing
+    facts: PartitionFacts = PartitionFacts(name: "", device: "", mounted_at: "",
+        file_system: "wasi", size: 0)
+    made: &PartitionManager <- partition_from(facts, manager)
+    return made

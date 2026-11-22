@@ -390,3 +390,18 @@ routine give_fault_stack() -> Addr
 @target(os: "windows")
 routine release_fault_stack(memory: Addr) -> None
     return
+
+# -- WASI --------------------------------------------------------------------------------------------------------
+
+### Nothing under WASI: a fault there is a WebAssembly trap, which ends the program in the runtime, and the runtime
+### reports it with its own stack of the program's functions.
+### :returns: Null.
+@target(os: "wasip1")
+routine give_fault_stack() -> Addr
+    return Addr.zero()
+
+### Nothing under WASI.
+### :param memory: Unused.
+@target(os: "wasip1")
+routine release_fault_stack(memory: Addr) -> None
+    return

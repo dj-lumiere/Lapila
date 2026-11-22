@@ -1,0 +1,376 @@
+# Lapila stdlib: WASI preview 1, the system a WebAssembly program runs on
+#
+# On wasm32-wasip1-none there is no C library. These are WASI's own calls, imported from the runtime's
+# wasi_snapshot_preview1 module, and the hosted layer (the console, files, clocks, entropy, the arguments and the
+# environment, the exit) calls them where the other systems call their C library. Each call returns WASI's error
+# number, 0 for success. A program runs on one thread, so nothing here waits for another one.
+#
+# WASI has no working directory. The runtime opens directories for the program before it starts (wasmtime's `--dir`),
+# numbered from 3 on, each under the name the runtime gives it: a path is looked up in the open directory whose name is
+# its longest prefix, and a relative path in the one named ".".
+
+module Hosted
+
+# -- the calls -------------------------------------------------------------------------
+
+### Binds WASI's `fd_write`, which writes the bytes of several buffers to a descriptor.
+### :param fd: The descriptor.
+### :param buffers: The first of the buffers, each its first byte and its length (eight bytes on wasm32).
+### :param count: How many buffers there are.
+### :param written: Where the number of bytes written goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_write")
+@target(os: "wasip1")
+secret routine wasi_fd_write(fd: U32, buffers: @U32, count: U32, written: @U32) -> U16
+
+### Binds WASI's `fd_read`, which reads bytes from a descriptor into several buffers.
+### :param fd: The descriptor.
+### :param buffers: The first of the buffers, each its first byte and its length (eight bytes on wasm32).
+### :param count: How many buffers there are.
+### :param read: Where the number of bytes read goes, 0 at the end.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_read")
+@target(os: "wasip1")
+secret routine wasi_fd_read(fd: U32, buffers: @U32, count: U32, read: @U32) -> U16
+
+### Binds WASI's `fd_close`, which closes a descriptor.
+### :param fd: The descriptor.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_close")
+@target(os: "wasip1")
+secret routine wasi_fd_close(fd: U32) -> U16
+
+### Binds WASI's `fd_seek`, which moves a descriptor's position.
+### :param fd: The descriptor.
+### :param offset: How far to move.
+### :param whence: Where it counts from: 0 the start, 1 the position, 2 the end.
+### :param at: Where the new position from the start goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_seek")
+@target(os: "wasip1")
+secret routine wasi_fd_seek(fd: U32, offset: S64, whence: U8, at: @U64) -> U16
+
+### Binds WASI's `fd_sync`, which waits until a file's data and metadata are on its storage.
+### :param fd: The descriptor.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_sync")
+@target(os: "wasip1")
+secret routine wasi_fd_sync(fd: U32) -> U16
+
+### Binds WASI's `fd_fdstat_get`, a descriptor's kind, flags and rights.
+### :param fd: The descriptor.
+### :param out: Where the 24-byte `fdstat` goes: the kind in its first byte.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_fdstat_get")
+@target(os: "wasip1")
+secret routine wasi_fd_fdstat_get(fd: U32, out: @U64) -> U16
+
+### Binds WASI's `fd_filestat_get`, an open file's metadata.
+### :param fd: The descriptor.
+### :param out: Where the 64-byte `filestat` goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_filestat_get")
+@target(os: "wasip1")
+secret routine wasi_fd_filestat_get(fd: U32, out: @U64) -> U16
+
+### Binds WASI's `fd_filestat_set_size`, which truncates or extends an open file.
+### :param fd: The descriptor.
+### :param size: The new size in bytes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_filestat_set_size")
+@target(os: "wasip1")
+secret routine wasi_fd_filestat_set_size(fd: U32, size: U64) -> U16
+
+### Binds WASI's `fd_prestat_get`, what the runtime opened at a descriptor before the program started.
+### :param fd: The descriptor, from 3 on.
+### :param out: Where the 8-byte `prestat` goes: 0 in its first byte for a directory, then its name's length.
+### :returns: 0, or WASI's error number (8, a bad descriptor, past the last one).
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_prestat_get")
+@target(os: "wasip1")
+secret routine wasi_fd_prestat_get(fd: U32, out: @U32) -> U16
+
+### Binds WASI's `fd_prestat_dir_name`, the name the runtime gave a directory it opened for the program.
+### :param fd: The descriptor.
+### :param name: Where the name's bytes go, no NUL after them.
+### :param count: The name's length, from `fd_prestat_get`.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_prestat_dir_name")
+@target(os: "wasip1")
+secret routine wasi_fd_prestat_dir_name(fd: U32, name: @Byte, count: U32) -> U16
+
+### Binds WASI's `fd_readdir`, which reads a directory's entries from a cookie on.
+### :param fd: The directory's descriptor.
+### :param buffer: Where the entries go: each a 24-byte `dirent` and its name.
+### :param count: The buffer's size.
+### :param cookie: Where to start: 0, or a `dirent`'s `d_next`.
+### :param used: Where the number of bytes filled goes, less than `count` once the last entry is in.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("fd_readdir")
+@target(os: "wasip1")
+secret routine wasi_fd_readdir(fd: U32, buffer: @Byte, count: U32, cookie: U64, used: @U32) -> U16
+
+### Binds WASI's `path_open`, which opens or creates a file or directory below a directory.
+### :param dir: The directory's descriptor.
+### :param lookup: 1 to follow a link at the end of the path.
+### :param path: The path's bytes, relative to `dir`.
+### :param count: The path's length.
+### :param open: The `oflags`: 1 create, 2 directory, 4 exclusive, 8 truncate.
+### :param base: The rights the descriptor has.
+### :param inheriting: The rights of what is opened through it.
+### :param flags: The `fdflags`: 1 append.
+### :param fd: Where the new descriptor goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_open")
+@target(os: "wasip1")
+secret routine wasi_path_open(dir: U32, lookup: U32, path: @Byte, count: U32, open: U16, base: U64,
+    inheriting: U64, flags: U16, fd: @U32) -> U16
+
+### Binds WASI's `path_create_directory`, which makes a directory.
+### :param dir: The directory the path is in.
+### :param path: The path's bytes.
+### :param count: The path's length.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_create_directory")
+@target(os: "wasip1")
+secret routine wasi_path_create_directory(dir: U32, path: @Byte, count: U32) -> U16
+
+### Binds WASI's `path_remove_directory`, which removes an empty directory.
+### :param dir: The directory the path is in.
+### :param path: The path's bytes.
+### :param count: The path's length.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_remove_directory")
+@target(os: "wasip1")
+secret routine wasi_path_remove_directory(dir: U32, path: @Byte, count: U32) -> U16
+
+### Binds WASI's `path_unlink_file`, which removes a file or a link.
+### :param dir: The directory the path is in.
+### :param path: The path's bytes.
+### :param count: The path's length.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_unlink_file")
+@target(os: "wasip1")
+secret routine wasi_path_unlink_file(dir: U32, path: @Byte, count: U32) -> U16
+
+### Binds WASI's `path_rename`, which renames a file or directory, replacing what is at the new path.
+### :param from_dir: The directory the current path is in.
+### :param from: The current path's bytes.
+### :param from_count: Its length.
+### :param to_dir: The directory the new path is in.
+### :param to: The new path's bytes.
+### :param to_count: Its length.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_rename")
+@target(os: "wasip1")
+secret routine wasi_path_rename(from_dir: U32, from: @Byte, from_count: U32, to_dir: U32, to: @Byte,
+    to_count: U32) -> U16
+
+### Binds WASI's `path_filestat_get`, the metadata of what is at a path.
+### :param dir: The directory the path is in.
+### :param lookup: 1 to follow a link at the end of the path, 0 to describe the link.
+### :param path: The path's bytes.
+### :param count: The path's length.
+### :param out: Where the 64-byte `filestat` goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("path_filestat_get")
+@target(os: "wasip1")
+secret routine wasi_path_filestat_get(dir: U32, lookup: U32, path: @Byte, count: U32,
+    out: @U64) -> U16
+
+### Binds WASI's `clock_time_get`, which reads a clock in nanoseconds.
+### :param clock: 0 the date and time, 1 a clock that only goes forward, 2 the process's processor time.
+### :param precision: The coarsest reading wanted, in nanoseconds.
+### :param time: Where the reading goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("clock_time_get")
+@target(os: "wasip1")
+secret routine wasi_clock_time_get(clock: U32, precision: U64, time: @U64) -> U16
+
+### Binds WASI's `poll_oneoff`, which waits until one of its subscriptions happens: here, a clock reaching a time.
+### :param subscriptions: The first 48-byte subscription.
+### :param events: Where the 32-byte events go.
+### :param count: How many subscriptions there are.
+### :param happened: Where the number of events goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("poll_oneoff")
+@target(os: "wasip1")
+secret routine wasi_poll_oneoff(subscriptions: @U64, events: @U64, count: U32,
+    happened: @U32) -> U16
+
+### Binds WASI's `random_get`, which fills a buffer with random bytes for keys and seeds.
+### :param buffer: Where the bytes go.
+### :param count: How many bytes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("random_get")
+@target(os: "wasip1")
+secret routine wasi_random_get(buffer: Addr, count: U32) -> U16
+
+### Binds WASI's `args_sizes_get`: how many arguments the program has and how many bytes they take, NULs counted.
+### :param count: Where the number of arguments goes, the program's name counted.
+### :param bytes: Where their bytes' count goes.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("args_sizes_get")
+@target(os: "wasip1")
+secret routine wasi_args_sizes_get(count: @U32, bytes: @U32) -> U16
+
+### Binds WASI's `args_get`, which writes the arguments, each NUL-terminated, and a table of where each starts.
+### :param table: Where the address of each argument goes.
+### :param text: Where their bytes go.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("args_get")
+@target(os: "wasip1")
+secret routine wasi_args_get(table: @Addr, text: @Byte) -> U16
+
+### Binds WASI's `environ_sizes_get`: how many environment variables there are and how many bytes they take.
+### :param count: Where the number of variables goes.
+### :param bytes: Where their bytes' count goes, NULs counted.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("environ_sizes_get")
+@target(os: "wasip1")
+secret routine wasi_environ_sizes_get(count: @U32, bytes: @U32) -> U16
+
+### Binds WASI's `environ_get`, which writes the variables, each `NAME=VALUE` and a NUL, and a table of where each
+### starts.
+### :param table: Where the address of each variable goes.
+### :param text: Where their bytes go.
+### :returns: 0, or WASI's error number.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("environ_get")
+@target(os: "wasip1")
+secret routine wasi_environ_get(table: @Addr, text: @Byte) -> U16
+
+### Binds WASI's `proc_exit`, which ends the program with a status. The builder's entry calls it after `start`.
+### :param status: The exit status.
+@external("c")
+@import_module("wasi_snapshot_preview1")
+@symbol("proc_exit")
+@noreturn
+@target(os: "wasip1")
+secret routine wasi_proc_exit(status: U32) -> None
+
+# -- what the calls share ----------------------------------------------------------------
+
+### WASI's error number for a descriptor that isn't open, which `fd_prestat_get` gives past the last open directory.
+@target(os: "wasip1")
+secret preset WASI_BAD_DESCRIPTOR: U16 = 8
+
+### WASI's error number for a call a signal interrupted.
+@target(os: "wasip1")
+secret preset WASI_INTERRUPTED: U16 = 27
+
+### Every right a descriptor can have: the runtime gives a new one what its directory allows of these.
+@target(os: "wasip1")
+secret preset WASI_ALL_RIGHTS: U64 = 0x1FFFFFFF
+
+### The rights an open file has whatever it is opened for: seek, tell, set its flags, sync, advise, read its metadata,
+### and poll. The runtime opens the file for reading only with `WASI_READ_RIGHT` and for writing only with one of
+### `WASI_WRITE_RIGHTS`, so a file is asked for no access it isn't opened for.
+@target(os: "wasip1")
+secret preset WASI_FILE_RIGHTS: U64 = 0x082000BC
+
+### The right to read: fd_read.
+@target(os: "wasip1")
+secret preset WASI_READ_RIGHT: U64 = 0x2
+
+### The rights to write: fd_datasync, fd_write, fd_allocate and fd_filestat_set_size.
+@target(os: "wasip1")
+secret preset WASI_WRITE_RIGHTS: U64 = 0x00400141
+
+### The rights a directory is opened with: every right but those to write, which a directory refuses.
+@target(os: "wasip1")
+secret preset WASI_DIRECTORY_RIGHTS: U64 = 0x1FBFFEBE
+
+### Writes `count` bytes at `data` to a descriptor with one `fd_write`.
+### :param fd: The descriptor.
+### :param data: The first byte.
+### :param count: How many bytes, at most 4 GiB - 1.
+### :param written: Where the number of bytes written goes.
+### :returns: 0, or WASI's error number.
+@target(os: "wasip1")
+secret routine wasi_write_one(fd: U32, data: @Byte, count: U32, written: @U32) -> U16
+    buffer: &Items[U32, 2] <- [ptrtoint[Addr, U32](data.to[Addr]()), count]
+
+    return wasi_fd_write(fd, buffer.getview().to[@U32](), 1, written)
+
+### Reads up to `count` bytes from a descriptor into `buffer` with one `fd_read`.
+### :param fd: The descriptor.
+### :param buffer: Where the bytes go.
+### :param count: The most bytes, at most 4 GiB - 1.
+### :param read: Where the number of bytes read goes.
+### :returns: 0, or WASI's error number.
+@target(os: "wasip1")
+secret routine wasi_read_one(fd: U32, buffer: @Byte, count: U32, read: @U32) -> U16
+    buffers: &Items[U32, 2] <- [ptrtoint[Addr, U32](buffer.to[Addr]()), count]
+
+    return wasi_fd_read(fd, buffers.getview().to[@U32](), 1, read)
+
+### Reads a clock in nanoseconds.
+### :param clock: 0 the date and time, 1 the clock that only goes forward, 2 the process's processor time.
+### :returns: The reading, or None when the runtime has no such clock.
+@target(os: "wasip1")
+secret routine wasi_clock(clock: U32) -> Optional[U64]
+    time: &U64 <- 0
+
+    if wasi_clock_time_get(clock, precision: 1, time) != 0
+        return none
+    return time.load()
+
+### Waits until the clock that only goes forward reads `deadline` nanoseconds, with one `poll_oneoff` on that clock.
+### :param deadline: The reading to wait for, in nanoseconds of `Clock.monotonic()`.
+@target(os: "wasip1")
+secret routine wasi_sleep_until(deadline: U64) -> None
+    # The subscription: its user data, the clock tag (0), the clock (1, monotonic), the time, the precision, and the
+    # flag that the time is absolute (1).
+    subscription: &Items[U64, 6] <- [0, 0, 1, deadline, 1, 1]
+    events: &Items[U64, 4]
+    happened: &U32 <- 0
+
+    wasi_poll_oneoff(subscription.getview().to[@U64](), events.getview().to[@U64](), 1, happened)
+    return

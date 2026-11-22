@@ -112,32 +112,63 @@ common routine CpuEventManager.holder(kind: CpuEventKind) -> Callable[(CpuEvent,
 ### logoff or a shutdown returns).
 ### :param holder: The handler, or None to let the system end the process.
 ### :returns: The handler before, None for none: pass it back to put it back.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 common routine CpuEventManager.when_terminated(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
     before: Callable[(CpuEvent,), None]? = Me.replace(kind: CpuEventKind.TERMINATED, holder)
     listen(kind: CpuEventKind.TERMINATED, on: holder.is_present())
     return before
 
+### Sets a handler, which WASI never calls: it sends a program no events.
+### :param holder: The handler.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI hands a program no signals and ends it in the runtime on a trap, so wasm32-wasip1-none has no events to handle")
+common routine CpuEventManager.when_terminated(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
+    return none
+
 ### Sets the handler of an interrupt from the keyboard: SIGINT, Ctrl+C or Ctrl+Break on Windows. When it returns, the
 ### program goes on. An interrupt that comes while it is still running is ignored.
 ### :param holder: The handler, or None to let the system end the process.
 ### :returns: The handler before, None for none: pass it back to put it back.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 common routine CpuEventManager.when_interrupted(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
     before: Callable[(CpuEvent,), None]? = Me.replace(kind: CpuEventKind.INTERRUPTED, holder)
     listen(kind: CpuEventKind.INTERRUPTED, on: holder.is_present())
     return before
 
+### Sets a handler, which WASI never calls: it sends a program no events.
+### :param holder: The handler.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI hands a program no signals and ends it in the runtime on a trap, so wasm32-wasip1-none has no events to handle")
+common routine CpuEventManager.when_interrupted(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
+    return none
+
 ### Sets the handler of a fault, in place of the fault report. The fault ends the process when it returns, as it would
 ### have.
 ### :param holder: The handler, or None for the fault report.
 ### :returns: The handler before, None for none: pass it back to put it back.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 common routine CpuEventManager.when_faulted(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
     before: Callable[(CpuEvent,), None]? = Me.replace(kind: CpuEventKind.FAULT, holder)
     if holder.is_present()
         install_fault_handlers()
     return before
+
+### Sets a handler, which WASI never calls: it sends a program no events.
+### :param holder: The handler.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI hands a program no signals and ends it in the runtime on a trap, so wasm32-wasip1-none has no events to handle")
+common routine CpuEventManager.when_faulted(holder: Callable[(CpuEvent,), None]?) -> Callable[(CpuEvent,), None]?
+    return none
+
+### Raises an event in the process, which WASI can't do: it has no signals.
+### :param kind: The kind to raise.
+@target(os: "wasip1")
+@unavailable("WASI hands a program no signals and ends it in the runtime on a trap, so wasm32-wasip1-none has no events to handle")
+common routine CpuEventManager.raise(kind: CpuEventKind) -> None
+    return
 
 ### Gives `event` to its handler: what the system's delivery calls. An interrupt that comes while the interrupt
 ### handler is still running is taken and ignored.

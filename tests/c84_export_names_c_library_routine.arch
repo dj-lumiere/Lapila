@@ -1,0 +1,2 @@
+# Checks a clash with a C library name, and a WASI program links no C library.
+not wasm32

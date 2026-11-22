@@ -100,7 +100,7 @@ routine keep_standard_descriptors() -> None
 ### :param raw_or_none: The NUL-terminated argument, or None.
 ### :param manager: Unused here.
 ### :returns: A view of the argument's bytes.
-@target(os: ("linux", "macos"))
+@target(os: ("linux", "macos", "wasip1"))
 secret routine argument_text(raw_or_none: @Byte?, manager: @MemoryManager) -> @[Byte]
     if raw_or_none.is_absent()
         return ""
@@ -297,3 +297,115 @@ common routine OsEnvironment.temp_directory(manager: @MemoryManager) -> Director
 common routine OsEnvironment.home_directory(manager: @MemoryManager) -> Directory
     when check home_dir(manager)
         is BorrowedSlice[Byte] as found => return Directory.construct(path: steal found)
+
+# -- WASI ----------------------------------------------------------------------------------
+
+### The address of WASI's environment table, read on first use and kept for the whole run: one address per variable,
+### each a NUL-terminated `NAME=VALUE`. Zero until it is read.
+@target(os: "wasip1")
+secret global WASI_ENVIRONMENT: &Addr
+
+### How many variables WASI's environment table holds.
+@target(os: "wasip1")
+secret global WASI_ENVIRONMENT_COUNT: &U64
+
+### Keeps the arguments WASI gives the program, for {OsEnvironment.argument}: their table and their text from C_HEAP,
+### kept for the whole run. The builder's entry calls it before `start`.
+### :throws: Throws `OutOfMemoryError` when the table or the text can't be allocated.
+@target(os: "wasip1")
+routine wasi_take_arguments() -> None
+    count: &U32 <- 0
+    bytes: &U32 <- 0
+
+    if wasi_args_sizes_get(count, bytes) != 0 or count.load() == 0
+        ARGUMENT_COUNT.store(0)
+        return
+    table_at: Addr = allocate[Addr](count: count.load().to[U64]() + 1, manager: C_HEAP)
+    text_at: Addr = allocate[Byte](count: bytes.load().to[U64]().max(1), manager: C_HEAP)
+    if table_at.is_hollow() or text_at.is_hollow()
+        throw OutOfMemoryError()
+    if wasi_args_get(table_at.to[@Addr](), text_at.to[@Byte]()) != 0
+        ARGUMENT_COUNT.store(0)
+        return
+    set_arguments(argc: count.load().to[CInt](), argv: table_at.to[@(@Byte?)?]())
+    return
+
+### WASI's environment table, read once.
+### :returns: The table's address, zero when the runtime gave no variables, and how many it holds.
+### :throws: Throws `OutOfMemoryError` when the table or the text can't be allocated.
+@target(os: "wasip1")
+secret routine wasi_environment() -> (Addr, U64)
+    if WASI_ENVIRONMENT.load().is_not_hollow()
+        return (WASI_ENVIRONMENT.load(), WASI_ENVIRONMENT_COUNT.load())
+    count: &U32 <- 0
+    bytes: &U32 <- 0
+
+    if wasi_environ_sizes_get(count, bytes) != 0 or count.load() == 0
+        return (Addr.zero(), 0)
+    table_at: Addr = allocate[Addr](count: count.load().to[U64]() + 1, manager: C_HEAP)
+    text_at: Addr = allocate[Byte](count: bytes.load().to[U64]().max(1), manager: C_HEAP)
+    if table_at.is_hollow() or text_at.is_hollow()
+        throw OutOfMemoryError()
+    if wasi_environ_get(table_at.to[@Addr](), text_at.to[@Byte]()) != 0
+        return (Addr.zero(), 0)
+    WASI_ENVIRONMENT_COUNT.store(count.load().to[U64]())
+    WASI_ENVIRONMENT.store(table_at)
+    return (table_at, count.load().to[U64]())
+
+### The `NAME=VALUE` text of one variable of WASI's environment table.
+### :param table: The table.
+### :param index: The variable, from 0.
+### :returns: A view of its bytes, the NUL left out.
+@target(os: "wasip1")
+secret routine wasi_entry(table: Addr, index: U64) -> @[Byte]
+    raw: @Byte = table.to[@Addr]()
+        .stride(index)
+        .peek()
+        .to[@Byte]()
+    return @[Byte].construct(data: raw, count: raw.to[CStrView]().count())
+
+### The value of the environment variable `name`, in memory from `manager`. Drop it.
+### :param name: The variable's name.
+### :param manager: The memory manager for the value.
+### :returns: The value's bytes.
+### :absent: When the variable isn't set, or the table or the copy can't be allocated.
+@target(os: "wasip1")
+@expensive("allocates a copy of the variable")
+secret routine env_var(name: @[Byte], manager: @MemoryManager) -> Optional[BorrowedSlice[Byte]]
+    found: Optional[(Addr, U64)] = try wasi_environment()
+    if found.is_absent()
+        return none
+    table, count = found.unwrap()
+    for i in 0 til count
+        entry: @[Byte] = wasi_entry(table, index: i)
+        if env_key_matches(name, entry, fold: false)
+            value: @[Byte] = entry.slice(start: name.count() + 1, end: entry.count())
+            when check BorrowedSlice[Byte].construct(count: value.count().max(1), manager: manager)
+                is BorrowedSlice[Byte] as text =>
+                    text.data.peek().copy(src: value.data, count: value.count())
+                    text.keep_first(value.count())
+                    return text
+                is OutOfMemoryError => return none
+        continue
+    return none
+
+### The variables of WASI's environment, `NAME=VALUE` each, as a list from manager.
+### :param manager: The memory manager for the list and the copies.
+### :returns: The variables.
+### :throws: Crashes with `OutOfMemoryError` when `manager` fails.
+@target(os: "wasip1")
+@track_caller
+secret routine environment_entries(manager: @MemoryManager) -> List[EnvironmentEntry]
+    list: &List[EnvironmentEntry] <- .construct(manager)
+
+    table, count = wasi_environment()
+    for i in 0 til count
+        text: @[Byte] = wasi_entry(table, index: i)
+        when text.find("=")
+            is U64 as at =>
+                list.add_last(EnvironmentEntry(
+                    name: copied(text: text.slice(start: 0, end: at), manager),
+                    value: copied(text: text.slice(start: at + 1, end: text.count()), manager)))
+            is None => nothing
+        continue
+    return list

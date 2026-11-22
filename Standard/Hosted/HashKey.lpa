@@ -1,11 +1,11 @@
 # Lapila stdlib: OsEntropy, the operating system's random source, and the hash key drawn from it
 #
-# OsEntropy fills memory with secret random bits from the OS: getrandom on Linux, arc4random_buf on macOS, and
-# ProcessPrng (what BCryptGenRandom draws from, Windows 10 and later) on Windows. Every stdlib `hash()` is SipHash-2-4
-# under one per-process key (HashKey.lpa in System), which asks the program's `lapila_hash_key` for it the
-# first time something hashes. With an operating system this is that routine: 128 bits from OsEntropy. A program
-# replaces it by exporting its own routine under the same name, as it replaces the crash handler.
-# `Xoshiro256.from_entropy()` draws from the same source through `entropy_key()`.
+# OsEntropy fills memory with secret random bits from the OS: getrandom on Linux, arc4random_buf on macOS,
+# ProcessPrng (what BCryptGenRandom draws from, Windows 10 and later) on Windows, and random_get under WASI. Every
+# stdlib `hash()` is SipHash-2-4 under one per-process key (HashKey.lpa in System), which asks the program's
+# `lapila_hash_key` for it the first time something hashes. With an operating system this is that routine: 128 bits
+# from OsEntropy. A program replaces it by exporting its own routine under the same name, as it replaces the crash
+# handler. `Xoshiro256.from_entropy()` draws from the same source through `entropy_key()`.
 
 module Hosted
 
@@ -106,6 +106,21 @@ common routine OsEntropy.fill(buffer: Addr, count: U64) -> None
     prng: Callable[@callconv("stdcall"), (Addr, CSize), CInt] = place.to[@Callable[@callconv("stdcall"), (Addr, CSize), CInt]]().peek()
     prng.call(buffer, count.to[CSize]())
     return
+
+### Fills count bytes at buffer with random bits from WASI's random_get, the runtime's random source.
+### :param buffer: Where the bytes go.
+### :param count: How many bytes to fill.
+### :throws: Throws `UnacceptedValueError` when random_get fails, instead of handing back bytes that aren't random.
+@target(os: "wasip1")
+common routine OsEntropy.fill(buffer: Addr, count: U64) -> None
+    # One call takes a U32 count, so a large request comes in parts.
+    until filled >= count with filled: U64 = 0
+        part: U64 = (count - filled).min(1073741824)
+        if wasi_random_get(buffer.to[@Byte]().stride(filled).to[Addr](), part.to[U32]()) != 0
+            throw UnacceptedValueError(description: "random_get gave no random bytes.")
+        continue with filled: filled + part
+    then
+        return
 
 ### 64 fresh random bits from the OS, drawn anew on every call: `OsEntropy.next[U64]()`.
 ### :returns: The random word.

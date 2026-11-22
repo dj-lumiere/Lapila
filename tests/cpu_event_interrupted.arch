@@ -1,0 +1,2 @@
+# Handles a signal, and WASI sends a program none.
+not wasm32

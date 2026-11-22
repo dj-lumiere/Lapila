@@ -4,14 +4,20 @@
 # HEAP (the default heap: the checked heap with the heap check on, else the C library's heap), C_HEAP (HeapManagerByC,
 # plain malloc, realloc, and free in every build), and PAGES (PageManagerByOs, the operating system's pages). Each is the
 # table `m.to[MemoryManager]()` makes for an instance of its manager, written out here because a global's first value
-# is in the program image. The managers live in Heap.lpa and Pages.lpa. On a target without one none
-# of this is there.
+# is in the program image. The managers live in Heap.lpa and Pages.lpa. Under WASI, which has no C library, HEAP with
+# the heap check off and C_HEAP are the page heap (HeapManagerByPages), and PAGES lends WebAssembly pages. On a target
+# without an operating system none of this is there.
 
 module System/Memory
 
 ### The C library's heap that `C_HEAP`, and `HEAP` with the heap check off, hand out from.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 secret global C_HEAP_MANAGER: &HeapManagerByC
+
+### The page heap that `C_HEAP`, `HEAP` with the heap check off, and the checked heap hand out from under WASI, which
+### has no C library.
+@target(os: "wasip1")
+secret global PAGE_HEAP_MANAGER: &HeapManagerByPages
 
 ### The checked heap that `HEAP` hands out from with the heap check on.
 @target(os: not "none")
@@ -43,10 +49,20 @@ global HEAP: &MemoryManager <- (borrow_fn: forward_borrow[HeapManagerByCheckedHe
 ### The C library's malloc, realloc, and free in every build, with nothing in front of the blocks: for memory that C
 ### code frees or reallocates, or that comes from C's malloc and is freed here. An alignment past malloc's own comes
 ### from posix_memalign (still freed with free), and on Windows, whose free can't take such a block, it crashes.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 global C_HEAP: &MemoryManager <- (borrow_fn: forward_borrow[HeapManagerByC].to[Callable](), reborrow_fn: forward_reborrow[HeapManagerByC].to[Callable](), give_back_fn: forward_give_back[HeapManagerByC].to[Callable](), reserve_fn: none, commit_fn: none, release_fn: none, protect_fn: none, state: C_HEAP_MANAGER)
 
 ### The operating system's pages, ready before `start` runs: `reserve`, `commit`, `release`, and `protect`, and `borrow`
 ### of whole committed pages. Fibers' stacks come from it.
 @target(os: not "none")
 global PAGES: &MemoryManager <- (borrow_fn: forward_borrow[PageManagerByOs].to[Callable](), reborrow_fn: forward_reborrow[PageManagerByOs].to[Callable](), give_back_fn: forward_give_back[PageManagerByOs].to[Callable](), reserve_fn: forward_reserve[PageManagerByOs].to[Callable](), commit_fn: forward_commit[PageManagerByOs].to[Callable](), release_fn: forward_release[PageManagerByOs].to[Callable](), protect_fn: forward_protect[PageManagerByOs].to[Callable](), state: OS_PAGE_MANAGER)
+
+### The default heap of a WASI program with the heap check off: the page heap, blocks cut from WebAssembly pages, since
+### WASI has no C library.
+@target(os: "wasip1")
+@heap_check("off")
+global HEAP: &MemoryManager <- (borrow_fn: forward_borrow[HeapManagerByPages].to[Callable](), reborrow_fn: forward_reborrow[HeapManagerByPages].to[Callable](), give_back_fn: forward_give_back[HeapManagerByPages].to[Callable](), reserve_fn: none, commit_fn: none, release_fn: none, protect_fn: none, state: PAGE_HEAP_MANAGER)
+
+### `C_HEAP` of a WASI program: the page heap too. WASI has no C library, so no memory C code frees with its own free.
+@target(os: "wasip1")
+global C_HEAP: &MemoryManager <- (borrow_fn: forward_borrow[HeapManagerByPages].to[Callable](), reborrow_fn: forward_reborrow[HeapManagerByPages].to[Callable](), give_back_fn: forward_give_back[HeapManagerByPages].to[Callable](), reserve_fn: none, commit_fn: none, release_fn: none, protect_fn: none, state: PAGE_HEAP_MANAGER)

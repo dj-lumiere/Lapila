@@ -111,7 +111,16 @@ common routine ThreadManager.construct(
 ### A manager of the operating system's threads, with the workers and the work blocks from `manager`.
 ### :param manager: Where the workers and the work blocks come from.
 ### :returns: The manager, with no threads yet.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
+common routine ThreadManager.construct(manager: @MemoryManager) -> Me
+    return Me(launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0,
+        idle: Addr.zero(), manager, out: 0)
+
+### A manager of the operating system's threads, which a WASI program doesn't have.
+### :param manager: Where the workers and the work blocks come from.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("ThreadManager.construct(manager:) needs a second thread, and wasm32-wasip1-none runs one thread with no way to switch stacks: write the waiting work as a pausable routine and run it on a CoroutineManager (COROUTINES.get_pausing_fiber[T]())")
 common routine ThreadManager.construct(manager: @MemoryManager) -> Me
     return Me(launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0,
         idle: Addr.zero(), manager, out: 0)
@@ -141,7 +150,16 @@ routine @ThreadManager.destruct() -> None
 ### :returns: The ticket, with no work yet.
 ### :throws: Crashes with `TaskSpawnError` when the operating system starts no thread, and with
 ###     `OutOfMemoryError` when there is no memory for it.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
+@track_caller
+routine get_thread[T]() -> Thread[T]
+    return get_thread[T](manager: DEFAULT_THREADS)
+
+### A ticket for a thread of DEFAULT_THREADS, which a WASI program doesn't have.
+### :typeparam T: The type of the work's result, `Void` for none.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("get_thread needs a second thread, and wasm32-wasip1-none runs one thread with no way to switch stacks: write the waiting work as a pausable routine and run it on a CoroutineManager (COROUTINES.get_pausing_fiber[T]())")
 @track_caller
 routine get_thread[T]() -> Thread[T]
     return get_thread[T](manager: DEFAULT_THREADS)
@@ -181,7 +199,7 @@ needs AnyType T
 ### :typeparam T: The type of the state the call works on.
 ### :param work: The call that may block.
 ### :param arg: The state it works on, where it also leaves its result.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 @track_caller
 secret routine run_off_fiber[T](work: Callable[(@T,), None], arg: @T) -> None
 needs AnyType T
@@ -191,6 +209,16 @@ needs AnyType T
     t: Thread[None] <- get_thread[None]()
     t.put_callable(entry: work, args: arg)
     t.work_slot().wait()
+    return
+
+### Runs `work(arg)`: under WASI no fiber has a stack of its own, so the call is just made.
+### :typeparam T: The type of the state the call works on.
+### :param work: The call.
+### :param arg: The state it works on, where it also leaves its result.
+@target(os: "wasip1")
+secret routine run_off_fiber[T](work: Callable[(@T,), None], arg: @T) -> None
+needs AnyType T
+    work.call(arg)
     return
 
 ### An idle worker, or a new one on a thread of its own.
@@ -594,6 +622,23 @@ routine cpu_count() -> U64
     if n < 1
         return 1
     return n.to[U64]()
+
+# -- WASI --------------------------------------------------------------------------------------------------------
+
+### DEFAULT_THREADS' `launch_fn` under WASI, which starts no thread: a WASI program runs on one.
+### :param entry: The routine.
+### :param arg: What it is given.
+### :param state: Unused.
+### :returns: False.
+@target(os: "wasip1")
+secret routine os_launch_fn(entry: Callable[(Addr,), None], arg: Addr, state: Addr) -> Bool
+    return false
+
+### The number of processors a WASI program runs on: its one thread's.
+### :returns: 1.
+@target(os: "wasip1")
+routine cpu_count() -> U64
+    return 1
 
 # -- Windows -----------------------------------------------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 # Clock.now() reads the date and time, a Moment. Clock.monotonic() reads a clock that only goes forward, a Duration since
 # a start the operating system chooses: for measuring time and for deadlines. CpuClock.now() reads how much processor
 # time the process has used. clock_gettime on Linux and macOS, GetSystemTimePreciseAsFileTime,
-# QueryPerformanceCounter and GetProcessTimes on Windows.
+# QueryPerformanceCounter and GetProcessTimes on Windows, clock_time_get under WASI.
 
 module Hosted
 
@@ -97,6 +97,38 @@ common routine Clock.monotonic() -> Duration
 @target(os: ("linux", "macos"))
 common routine CpuClock.now() -> Duration
     return read_clock(clock_process_cputime())
+
+# -- WASI: clock_time_get ------------------------------------------------------------
+
+### A WASI clock's reading in nanoseconds as a Duration.
+### :param nanoseconds: The reading.
+### :returns: The duration.
+@target(os: "wasip1")
+secret routine of_nanoseconds(nanoseconds: U64) -> Duration
+    return Duration.from_parts(seconds: (nanoseconds // 1000000000).to[S64](),
+        nanoseconds: (nanoseconds % 1000000000).to[U32]())
+
+### Reads the date and time.
+### :returns: The current moment.
+@target(os: "wasip1")
+common routine Clock.now() -> Moment
+    return Moment.from_epoch(of_nanoseconds(wasi_clock(0).unwrap_or(0)))
+
+### Reads a clock that only goes forward: the time since a start the runtime chooses. For measuring time and
+### for deadlines (`Clock.monotonic() + 30ms`), not for the date.
+### :returns: The reading. Subtract two readings to get the time between them.
+@target(os: "wasip1")
+common routine Clock.monotonic() -> Duration
+    return of_nanoseconds(wasi_clock(1).unwrap_or(0))
+
+### Reads the processor time the program has used. A runtime without that clock gives the time since its start that
+### `Clock.monotonic()` reads, which the one thread a WASI program has spends running it or waiting.
+### :returns: The reading. Subtract two readings to get the processor time between them.
+@target(os: "wasip1")
+common routine CpuClock.now() -> Duration
+    when wasi_clock(2)
+        is U64 as used => return of_nanoseconds(used)
+        is None => return Clock.monotonic()
 
 # -- Windows -------------------------------------------------------------------------
 

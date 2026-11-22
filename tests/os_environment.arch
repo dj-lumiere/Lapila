@@ -1,0 +1,2 @@
+# Reads the working directory, and WASI has none.
+not wasm32

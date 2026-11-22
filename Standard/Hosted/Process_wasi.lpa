@@ -1,0 +1,29 @@
+# Lapila stdlib: processes under WASI (see Process.lpa)
+#
+# WASI can't start another program, so a WASI program has only its own process: `ProcessManager.exit_process` ends it,
+# and making one is a build error that names the target.
+
+module Hosted
+
+### Runs a command line through the platform shell, which WASI has none of.
+### :param command: The command line.
+### :param options: The directory, environment overrides, and standard streams.
+### :param manager: The memory manager for the captured output and the working memory.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI can't start another program, so wasm32-wasip1-none has no processes to make")
+common routine ProcessManager.create_shell_process(command: @[Byte], options: ProcessOptions,
+    manager: @MemoryManager) -> ProcessOutput
+    throw InvalidArgumentError()
+
+### Creates a process, which WASI can't do.
+### :param program: The program to run.
+### :param args: The arguments, not including the program name.
+### :param options: The directory, environment overrides, and standard streams.
+### :param manager: The memory manager for the captured output and the working memory.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI can't start another program, so wasm32-wasip1-none has no processes to make")
+common routine ProcessManager.create_process(program: @[Byte], args: @[@[Byte]],
+    options: ProcessOptions, manager: @MemoryManager) -> ProcessOutput
+    throw InvalidArgumentError()

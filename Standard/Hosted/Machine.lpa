@@ -163,3 +163,23 @@ routine physical_memory() -> ByteSize
     if c_global_memory_status_ex(status) != 0
         return ByteSize.construct(bytes: status.total_phys.peek())
     return 0b
+
+# -- WASI ------------------------------------------------------------------------------
+
+### The memory page size: a WebAssembly page, the unit linear memory grows by.
+### :returns: 64kib.
+@target(os: "wasip1")
+routine page_size() -> ByteSize
+    return 64kib
+
+### What a memory mapping's file offset must be a multiple of: the page size. WASI maps no files.
+### :returns: The granularity.
+@target(os: "wasip1")
+routine map_granularity() -> ByteSize
+    return page_size()
+
+### The physical memory, which WASI doesn't tell.
+### :returns: 0b.
+@target(os: "wasip1")
+routine physical_memory() -> ByteSize
+    return 0b

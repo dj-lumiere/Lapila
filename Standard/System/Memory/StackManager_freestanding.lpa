@@ -2,7 +2,8 @@
 #
 # The link script the builder writes from the board's memory map defines `__stack_top`, where the one stack starts
 # (the end of RAM), and `__stack_bottom`, the lowest address it may reach (the end of the globals). A program that
-# asks for StackManager.current() needs both.
+# asks for StackManager.current() needs both. A WASI program checks its one stack the same way (StackManager_hosted.lpa),
+# as WebAssembly closes no page below it.
 
 module System/Memory
 
@@ -29,12 +30,12 @@ secret global BOOT_STACK: &StackManager
 global RUNNING_STACK: &Addr
 
 ### Whether a stack that ran out has been reported: the report's own routines run inside the margin.
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret global STACK_OVERFLOWED: &Bool
 
 ### How far above the stack's bottom the stack pointer must stay when a routine starts: the room a routine's spills
 ### and the crash report of a stack that ran out still use.
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret preset STACK_MARGIN: U64 = 4096
 
 ### The stack ran out.
@@ -77,7 +78,7 @@ common routine StackManager.borrow_frame(size: U64) -> None
 ### Stops the program with `StackOverflowError`, once: the report runs on what is left of the stack, inside the
 ### margin, and its routines' own frame checks find the stack reported already.
 @noinline
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 infallible common routine StackManager.report_overflow() -> None
     if STACK_OVERFLOWED.load()
         return

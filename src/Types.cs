@@ -525,11 +525,27 @@ public sealed record BuildTarget(string Arch, string Os, string Abi, int Size, s
     /// `--feature`: features to add (`+name`) or remove (`-name`) on top of the CPU's.
     public IReadOnlyList<string> Features { get; init; } = [];
 
+    /// The operating system name of WASI preview 1, LLVM's spelling (wasm32-unknown-wasip1).
+    public const string WasiOs = "wasip1";
+
+    /// The one WebAssembly target: 32-bit WebAssembly under WASI preview 1.
+    public const string WasiTriple = "wasm32-wasip1-none";
+
+    /// Whether the target is WebAssembly under WASI: one thread, no stack switching, linear memory without pages to
+    /// protect, and the system reached through WASI's calls instead of a C library.
+    public bool IsWasi => Os == WasiOs;
+
     public static BuildTarget Parse(string triple)
     {
         var parts = triple.Split('-');
+        // LLVM and Rust spell WASI preview 1 with two parts (wasm32-wasip1) or with the vendor (wasm32-unknown-wasip1).
+        if (parts is ["wasm32", "wasip1" or "wasi"] or ["wasm32", "unknown", "wasip1" or "wasi"])
+            throw new ArgumentException($"target '{triple}' is written {WasiTriple} here: arch wasm32, os wasip1, abi none");
         if (parts.Length != 3) throw new ArgumentException($"target '{triple}' is not an arch-os-abi triple");
         var (arch, os, abi) = (parts[0], parts[1], parts[2]);
+        // WebAssembly runs only under WASI preview 1, which has no ABI variants, and WASI runs only WebAssembly.
+        if ((arch is "wasm32" or "wasm64" || os == WasiOs) && (arch, os, abi) != ("wasm32", WasiOs, "none"))
+            throw new ArgumentException($"target '{triple}' isn't supported: the WebAssembly target is {WasiTriple}");
 
         int size = arch switch
         {

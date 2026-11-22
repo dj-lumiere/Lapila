@@ -151,7 +151,7 @@ public sealed partial class Compiler
                 throw new CompileError(Li.EntryPoint, board.Pos, "when_power_on runs before start, and the program has no start: add 'routine start() -> None'");
             return;
         }
-        if (ProvidedSymbols.Contains("main") || ProvidedSymbols.Contains(WhenPowerOnName)) return;
+        if (ProvidedSymbols.Contains("main") || ProvidedSymbols.Contains("_start") || ProvidedSymbols.Contains(WhenPowerOnName)) return;
         if (!Target.HasOs && board is null)
             throw new CompileError(Li.EntryPoint, start.Pos,
                 $"{Target.Arch}-{Target.Os}-{Target.Abi} has no operating system, so the reset lands in the program's own "
@@ -166,9 +166,10 @@ public sealed partial class Compiler
     {
         CheckEntryPair();
         var start = EntryRoutine(StartName);
-        if (start is null || ProvidedSymbols.Contains("main") || ProvidedSymbols.Contains(WhenPowerOnName)) return;
+        if (start is null || ProvidedSymbols.Contains("main") || ProvidedSymbols.Contains("_start") || ProvidedSymbols.Contains(WhenPowerOnName)) return;
         var startInst = RequireInstance(start, new TypeEnv(start.File));
-        if (Target.HasOs) PlanHostedMain(start, startInst);
+        if (Target.IsWasi) PlanWasiStart(start, startInst);
+        else if (Target.HasOs) PlanHostedMain(start, startInst);
         else
         {
             var board = EntryRoutine(WhenPowerOnName)!;
@@ -215,6 +216,28 @@ public sealed partial class Compiler
         _entry.AppendLine($"  {EntryCall(startInst)}{(TraceFromStack ? " noinline" : "")}");
         _entry.AppendLine($"  %status = {EntryCall(exitCode)}");
         _entry.AppendLine("  ret i32 %status");
+        _entry.AppendLine("}");
+        _entry.AppendLine();
+    }
+
+    /// The entry of a WebAssembly program under WASI, the `_start` the runtime calls: `start`, then the exit status from
+    /// Hosted's exit_code handed to WASI's proc_exit, after Hosted's wasi_take_arguments keeps the arguments WASI's
+    /// args_get gives. The standard descriptors need no keeping: WASI hands out a new descriptor's number only above the ones
+    /// it opened the program with, and it opens no signals or faults to install handlers for.
+    private void PlanWasiStart(RoutineDecl start, Instance startInst)
+    {
+        var exitCode = EntryHelper(HostedModule, "exit_code", start.Pos);
+        var takeArguments = EntryHelper(HostedModule, "wasi_take_arguments", start.Pos);
+        var procExit = EntryHelper(HostedModule, "wasi_proc_exit", start.Pos);
+        if (ExposeDefinitions) NoteExposed("_start");
+        _entry.AppendLine("; The program's entry: the arguments kept, start, then the exit status set_exit_code stored, handed to WASI.");
+        _entry.AppendLine($"define void @_start() {EntryAttrs(start.Pos)} {{");
+        _entry.AppendLine("entry:");
+        _entry.AppendLine($"  {EntryCall(takeArguments)}");
+        _entry.AppendLine($"  {EntryCall(startInst)}{(TraceFromStack ? " noinline" : "")}");
+        _entry.AppendLine($"  %status = {EntryCall(exitCode)}");
+        _entry.AppendLine($"  call {procExit.CcPrefix(Target)}void @{Quote(procExit.Symbol)}(i32 %status)");
+        _entry.AppendLine("  unreachable");
         _entry.AppendLine("}");
         _entry.AppendLine();
     }

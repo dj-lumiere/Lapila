@@ -287,6 +287,68 @@ jobs:
             clang --target=${{ matrix.target }} -c -Wno-override-module "$test.ll" -o "$test.o"
           done
 
+  # WebAssembly under WASI preview 1 (wasm32-wasip1-none): the stdlib checks for it, and the golden tests build with
+  # clang and wasm-ld and run in a pinned wasmtime. A WASI program has one thread, no stack switching, no signals, no
+  # processes and no C library: the tests that need one of those say `not wasm32` in their .arch file and are skipped.
+  wasm32-wasi:
+    name: wasm32-wasi
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      WASMTIME_VERSION: v50.0.3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Ingrid's library (import Ingrid/Decimal) is part of every build, as the standard library is: the builder reads
+      # it from LAPILA_INGRID.
+      - name: Checkout Ingrid
+        uses: actions/checkout@v4
+        with:
+          repository: dj-lumiere/Ingrid
+          path: ingrid-checkout
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # lld-21 brings wasm-ld, which clang-21 finds in its own folder.
+      - name: Install LLVM 21
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 21
+          test -x /usr/bin/clang-21
+          test -x /usr/lib/llvm-21/bin/wasm-ld
+          sudo ln -sf /usr/bin/clang-21 /usr/local/bin/clang
+          clang --version | grep -q 'clang version 21' || { clang --version; echo 'clang is not LLVM 21'; exit 1; }
+          clang --version
+
+      - name: Install wasmtime
+        run: |
+          curl -fsSL -o wasmtime.tar.xz "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+          mkdir -p "$HOME/wasmtime"
+          tar -xJf wasmtime.tar.xz -C "$HOME/wasmtime" --strip-components=1
+          echo "$HOME/wasmtime" >> "$GITHUB_PATH"
+          "$HOME/wasmtime/wasmtime" --version
+
+      - name: Build
+        id: build
+        run: dotnet build Lapila.csproj --configuration Release
+
+      - name: Check the stdlib
+        run: dotnet bin/Release/net10.0/lapila.dll check --target wasm32-wasip1-none
+
+      # An untraced build's own declarations stand in for the trace's; check them too.
+      - name: Check the stdlib without the trace
+        run: dotnet bin/Release/net10.0/lapila.dll check --target wasm32-wasip1-none --no-trace
+
+      - name: Golden tests (debug)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 45
+        run: dotnet bin/Release/net10.0/lapila.dll test --target wasm32-wasip1-none tests examples
+
   # Targets without an operating system: the stdlib checks there (Standard/Os drops out), and the programs built for
   # one (tests/freestanding, and tests/freestanding_float, which uses every float operation and integer division; the
   # golden run skips both) leave nothing undefined: no C++ unwinding personality (every routine is nounwind), and no

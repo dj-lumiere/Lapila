@@ -65,6 +65,10 @@ public sealed class Instance(RoutineDecl decl, Compiler.TypeEnv env, string symb
             // A routine that is a C library routine (memcpy on a target without one): LLVM may not turn its loops
             // into calls to the C library, which would be calls to itself.
             if (Decl.AnnotationNamed("no_builtins") is not null) attrs.Add("\"no-builtins\"");
+            // `@import_module("wasi_snapshot_preview1")`: on WebAssembly the C routine is the host's, imported from that
+            // module under its symbol.
+            if (Decl.AnnotationNamed("import_module")?.First is { } module)
+                attrs.Add($"\"wasm-import-module\"=\"{module}\" \"wasm-import-name\"=\"{Symbol}\"");
             return " " + string.Join(" ", attrs);
         }
     }
@@ -119,7 +123,7 @@ public sealed partial class Compiler
     public string UnwindTable => Target.HasOs ? " uwtable" : "";
 
     private static readonly HashSet<string> KnownAnnotations =
-        ["external", "symbol", "callconv", "noreturn", "variadic", "template", "target", "feature", "llvm",
+        ["external", "symbol", "import_module", "callconv", "noreturn", "variadic", "template", "target", "feature", "llvm",
          "export", "derived", "inline", "noinline", "clobbers", "readonly", "pure", "naked", "source", "track_caller",
          "no_builtins", "untraced", "trace", "heap_check", "race_check", "unavailable", "refused", "reshaping", "positional", "throws", "uses_pool", "ends_stamped", "keeps", Dispatch.RoutineMark, ExpensiveCallLint.Annotation, BlockRule.Generated, Pausable.StateMark];
 
@@ -238,6 +242,8 @@ public sealed partial class Compiler
             throw new CompileError(Li.ExternalProblem, external.Pos, "only @external(\"c\"), @external(\"llvm\") and @external(\"asm\") are supported");
         if (asm && r.Blocks is null)
             throw new CompileError(Li.ExternalProblem, r.Pos, $"assembly routine '{r.DisplayName}' needs its instructions: a 'block entry()'");
+        if (r.AnnotationNamed("import_module") is { } import && (external is not { First: "c" } || import.First is null))
+            throw new CompileError(Li.ExternalProblem, import.Pos, $"@import_module(\"module\") names the WebAssembly module an @external(\"c\") routine comes from, and '{r.DisplayName}' isn't one");
         if (external is { First: "llvm" } && r.AnnotationNamed("template") is null)
             throw new CompileError(Li.ExternalProblem, r.Pos, $"@external(\"llvm\") routine '{r.DisplayName}' needs a @template");
         if (external is not null && !asm && r.Blocks is not null)

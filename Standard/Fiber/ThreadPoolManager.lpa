@@ -103,7 +103,21 @@ secret routine @PassableFiberSlot.destruct() -> None
 ### A pool that will run `threads` threads, or one per processor for 0. They start with the first passable fiber.
 ### :param threads: How many threads, or 0 for one per processor.
 ### :returns: The pool, with no threads yet.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
+common routine ThreadPoolManager.construct(threads: U64) -> Me
+    count: U64 = when
+        threads == 0 => cpu_count()
+        else => threads
+    return Me(guard: 0, first: Addr.zero(), last: Addr.zero(), idle: Addr.zero(), epoch: 0,
+        stopping: 0, count, threads: BorrowedSlice[Thread[None]].empty(manager: HEAP),
+        manager: HEAP, woken: RotatableList[@FiberState].construct(manager: HEAP),
+        fibers: Addr.zero(), spare: Addr.zero(), out: 0)
+
+### A pool of threads, which a WASI program can't have.
+### :param threads: How many threads, or 0 for one per processor.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("ThreadPoolManager needs a second thread, and wasm32-wasip1-none runs one thread: write the waiting work as a pausable routine and run it on a CoroutineManager (COROUTINES.get_pausing_fiber[T]())")
 common routine ThreadPoolManager.construct(threads: U64) -> Me
     count: U64 = when
         threads == 0 => cpu_count()
@@ -221,7 +235,7 @@ secret routine @ThreadPoolManager.start_threads() -> None
     threads.replace(value: BorrowedSlice[Thread[None]].construct(count, manager: me.manager.peek()))
 
     for i in 0 til count
-        t: Thread[None] <- get_thread[None]()
+        t: Thread[None] <- get_thread[None](manager: DEFAULT_THREADS)
         t.put_callable(entry: pool_thread.to[Callable](), args: me)
         threads.getslot(i).poke(steal t)
     then

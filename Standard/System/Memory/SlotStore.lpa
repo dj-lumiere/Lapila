@@ -162,6 +162,20 @@ secret routine slot_release(at: Addr, bytes: U64) -> None
     slot_discard_virtual_memory(at, bytes.to[CSize]())
     return
 
+### Memory for a page, aligned to the page size: from the page heap, as WASI has no C library.
+### :param bytes: The page's bytes, a multiple of the page size.
+### :returns: The page's memory, or null when there is none.
+@target(os: "wasip1")
+secret routine slot_page_memory(bytes: U64) -> Addr
+    return PAGE_HEAP_MANAGER.borrow(size: bytes, align: SLOT_PAGE_BYTES)
+
+### Keeps an emptied page's bytes: WebAssembly's linear memory can't give memory back.
+### :param at: The first byte.
+### :param bytes: How many bytes.
+@target(os: "wasip1")
+secret routine slot_release(at: Addr, bytes: U64) -> None
+    return
+
 ### Takes a lock word, waiting while another thread holds it.
 ### :param word: The lock word, 0 while free.
 @target(os: not "none")

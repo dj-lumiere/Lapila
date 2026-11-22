@@ -45,7 +45,7 @@ public sealed partial class Compiler
 
     /// Whether the target's C ABI for aggregates is implemented; elsewhere they pass as LLVM values, which is
     /// consistent between Lapila routines but not C's.
-    public bool AggregateAbiKnown => Target.Arch is "x86_64" or "x86" or "aarch64" or "arm" or "riscv64" or "riscv32";
+    public bool AggregateAbiKnown => Target.Arch is "x86_64" or "x86" or "aarch64" or "arm" or "riscv64" or "riscv32" or "wasm32";
 
     /// The C ABI lowering of a routine's parameters and return value. `@callconv("fast")` routines keep LLVM's own
     /// convention: every aggregate passes Direct.
@@ -66,6 +66,7 @@ public sealed partial class Compiler
                 ("aarch64", _) => Aapcs64(ps, ret, pos),
                 ("arm", _) => Aapcs32(ps, ret, pos),
                 ("riscv64" or "riscv32", _) => RiscV(ps, ret, pos),
+                ("wasm32", _) => Wasm32(ps, ret, pos),
                 _ => I386(ps, ret, pos),
             };
         return _abiSigs[key] = sig;
@@ -463,6 +464,20 @@ public sealed partial class Compiler
             outParams.Add(v);
         }
         return new AbiSig(r, outParams);
+    }
+
+    // ── wasm32 (clang's WebAssembly C ABI, one return value) ────────────────
+
+    /// An aggregate that is one scalar with nothing around it passes and returns as that scalar. Any other one passes
+    /// as a pointer to the caller's copy (byval) and returns through `sret`.
+    private AbiSig Wasm32(IReadOnlyList<DType> ps, DType ret, Pos pos)
+    {
+        AbiValue? Single(DType t) =>
+            Leaves(t, pos) is [var only] && only.Size == SizeAlign(t, pos).Size ? Coerce(new AbiPart(only.Llvm, 0)) : null;
+        AbiValue Param(DType p) =>
+            !IsAggregate(p) ? AbiValue.Direct(p) : Single(p) ?? ByVal(p, SizeAlign(p, pos).Align);
+        AbiValue r = !IsAggregate(ret) ? AbiValue.Direct(ret) : Single(ret) ?? SretValue(ret, pos);
+        return new AbiSig(r, ps.Select(Param).ToList());
     }
 
     // ── i386 ────────────────────────────────────────────────────────────────

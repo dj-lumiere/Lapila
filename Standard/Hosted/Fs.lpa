@@ -531,7 +531,7 @@ routine is_separator(b: Byte) -> Bool
 ### Whether b is a path separator: '/' on Linux and macOS.
 ### :param b: The byte to test.
 ### :returns: True for '/'.
-@target(os: ("linux", "macos"))
+@target(os: ("linux", "macos", "wasip1"))
 routine is_separator(b: Byte) -> Bool
     return b == Byte('/')
 
@@ -543,7 +543,7 @@ routine path_separator() -> Byte
 
 ### The separator the OS writes.
 ### :returns: '/' on Linux and macOS.
-@target(os: ("linux", "macos"))
+@target(os: ("linux", "macos", "wasip1"))
 routine path_separator() -> Byte
     return Byte('/')
 

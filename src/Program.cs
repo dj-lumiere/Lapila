@@ -1058,10 +1058,15 @@ static partial class Cli
         {
             if (manifest.IsLibrary)
                 throw new ToolError(Li.TargetMismatch, $"{manifest.Path} builds a library (it names no executable under [target]), which doesn't run on its own; use lapila build");
-            if (!manifest.Target.RunsHere)
+            if (!manifest.Target.RunsHere && !manifest.Target.IsWasi)
                 throw new ToolError(Li.TargetMismatch, $"{manifest.Path} builds for {manifest.Target.LlvmTriple}, which this machine can't run; use lapila build");
             var (built, code) = BuildThroughDaemon(manifest, files);
             if (built is null) return code;
+            if (manifest.Target.IsWasi)
+            {
+                var (runner, runnerArgs) = WasiCommand(built, programArgs);
+                return Exec(runner, captureOutput: false, programArgs: runnerArgs).Code;
+            }
             return Exec(built, captureOutput: false, programArgs: programArgs).Code;
         }
         var target = BuildTarget.Host();
@@ -1156,6 +1161,7 @@ static partial class Cli
             if (target is { Os: "windows", Abi: "gnu" }) psi.ArgumentList.Add("-static");
             // LLVM lowers a float remainder (frem) to C's fmod / fmodf, which glibc keeps in libm, not libc.
             if (target.Os == "linux") psi.ArgumentList.Add("-lm");
+            if (target.IsWasi) foreach (var a in WasiLinkArguments) psi.ArgumentList.Add(a);
             // The linker keeps the debug information (lld-link writes it to a .pdb next to the exe, MinGW's lld keeps
             // the DWARF in it).
             psi.ArgumentList.Add("-g");
@@ -1188,6 +1194,14 @@ static partial class Cli
             foreach (var f in made) TryDelete(f);
         }
     }
+
+    /// How a WebAssembly program links under WASI. No C library: the standard library reaches WASI's calls itself and
+    /// brings the compiler's helper routines (Standard/System/Numerics/SoftFloat/), so wasm-ld gets the program alone,
+    /// and an undefined symbol stays an error instead of becoming an import. The stack is 8 MiB, as on Linux, and lies
+    /// below the globals, so running off its end leaves the linear memory and stops the program instead of writing
+    /// over a global.
+    private static readonly string[] WasiLinkArguments =
+        ["-nostdlib", "-Wl,-z,stack-size=8388608", "-Wl,--stack-first"];
 
     /// What a failed link for a MinGW target says when the clang isn't the package's: that target needs llvm-mingw's C
     /// runtime, which a clang from LLVM for Windows lacks.
@@ -1304,6 +1318,10 @@ static partial class Cli
     /// How many times longer a test built with the race check may run. ThreadSanitizer watches every memory access
     /// and every lock, which makes a program several times slower.
     private const int RaceCheckSlowdown = 3;
+
+    /// How many times longer a test program may run in the WASI runtime: the 128-bit arithmetic is calls there and every
+    /// routine checks its frame against the stack's bottom, so a debug build runs several times slower than on the host.
+    private const int WasiSlowdown = 3;
 
     /// Runs exe. With captureOutput (a test), its standard input is input's bytes, or empty: a test never waits on
     /// the terminal, and it is stopped after limitSeconds.
@@ -1519,9 +1537,20 @@ static partial class Cli
 
     /// A <name>.arch file lists the architectures a test runs on, one per line (a test of an architecture-specific
     /// routine), each alone (`x86_64`) or with an operating system (`x86_64-linux`); on any other target it is skipped.
-    internal static bool RunsOn(string stem, BuildTarget target) =>
-        !File.Exists(stem + ".arch") || File.ReadAllLines(stem + ".arch").Select(l => l.Trim())
-            .Any(l => l == target.Arch || l == $"{target.Arch}-{target.Os}");
+    /// A line `not wasm32` (or `not wasm32-wasip1`) keeps a test off that target and runs it on every other one, which a
+    /// test that needs what the target lacks (a second thread, a signal, a process) says.
+    internal static bool RunsOn(string stem, BuildTarget target)
+    {
+        if (!File.Exists(stem + ".arch")) return true;
+        var lines = File.ReadAllLines(stem + ".arch").Select(l => l.Trim()).ToList();
+        bool Names(string l) => l == target.Arch || l == $"{target.Arch}-{target.Os}";
+        var excluded = lines.Where(l => l.StartsWith("not ", StringComparison.Ordinal)).Select(l => l[4..].Trim()).ToList();
+        // A file of `not` lines alone runs the test everywhere else. Any other file runs it only where a line names the
+        // target, so one with comments alone runs it nowhere.
+        bool onlyExclusions = excluded.Count > 0
+            && lines.All(l => l.Length == 0 || l.StartsWith('#') || l.StartsWith("not ", StringComparison.Ordinal));
+        return !excluded.Any(Names) && (onlyExclusions || lines.Any(Names));
+    }
 
     private static string Normalize(string s) => s.Replace("\r\n", "\n").TrimEnd('\n');
 
@@ -1599,6 +1628,13 @@ static partial class Cli
             if (command is null) return null;
             emulator = command;
         }
+        // A WebAssembly program runs in the WASI runtime. Where none is installed the test is skipped before it links.
+        if (target.IsWasi && WasiRunner() is null)
+        {
+            if (Interlocked.Exchange(ref _emulatorNoted, 1) == 0)
+                Console.Error.WriteLine("note: no WASI runtime was found (wasmtime on PATH, or LAPILA_WASI_RUNNER), so the tests are built and skipped");
+            return null;
+        }
 
         string exe = TempExe();
         // A program for a board links with the board's link script, written next to the temporary executable.
@@ -1620,7 +1656,12 @@ static partial class Cli
 
             byte[]? input = File.Exists(stem + ".input") ? File.ReadAllBytes(stem + ".input") : null;
             (int, string, string) result;
-            if (target.HasOs)
+            if (target.IsWasi)
+            {
+                var (runner, runnerArgs) = WasiCommand(exe, []);
+                result = Exec(runner, captureOutput: true, input, programArgs: runnerArgs, limitSeconds: TestSeconds * WasiSlowdown);
+            }
+            else if (target.HasOs)
                 result = Exec(exe, captureOutput: true, input,
                     limitSeconds: race ? TestSeconds * RaceCheckSlowdown : TestSeconds);
             else result = Emulate(emulator!, exe, input, stops: File.Exists(stem + ".stops"));
@@ -1645,6 +1686,22 @@ static partial class Cli
             DeleteTempExe(exe);
             if (script is not null) TryDelete(script);
         }
+    }
+
+    /// The WebAssembly runtime a WASI program runs in: the program LAPILA_WASI_RUNNER names when it is set, else
+    /// wasmtime on PATH, or null when there is none.
+    internal static string? WasiRunner() =>
+        Environment.GetEnvironmentVariable("LAPILA_WASI_RUNNER") is { Length: > 0 } named ? FindOnPath(named) : FindOnPath("wasmtime");
+
+    /// The command that runs a WASI program in wasmtime: the working directory opened as ".", the system's temporary
+    /// directory as "/tmp" (where `OsEnvironment.temp_directory()` points without TMPDIR), then the program's own
+    /// arguments.
+    private static (string Runner, string[] Args) WasiCommand(string wasm, string[] programArgs)
+    {
+        string runner = WasiRunner() ?? throw new ToolError(Li.ToolchainMissing,
+            $"a {BuildTarget.WasiTriple} program runs in a WASI runtime, and none was found: put wasmtime on PATH, or name the runtime in LAPILA_WASI_RUNNER");
+        string temp = Path.GetTempPath().TrimEnd('/', '\\');
+        return (runner, ["run", "--dir=.::.", $"--dir={temp}::/tmp", wasm, .. programArgs]);
     }
 
     /// Whether the note that an emulator is missing was written already: once per run.

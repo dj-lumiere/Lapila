@@ -7,7 +7,7 @@
 #
 # A reservation is space no page of which can be touched until it is committed. On Linux the space is mapped with
 # PROT_NONE and MAP_NORESERVE, and commit opens the pages (the memory is counted once touched). On Windows it is
-# MEM_RESERVE, and commit is MEM_COMMIT.
+# MEM_RESERVE, and commit is MEM_COMMIT. Under WASI the pages are WebAssembly's, of linear memory (below).
 
 module System/Memory
 
@@ -201,6 +201,116 @@ routine pages_protect(at: Addr, size: U64, access: PageAccess) -> Bool
     old: &U32 <- 0
 
     return c_virtual_protect(at, size.to[CSize](), windows_protection(access), old) != 0
+
+# -- WASI: linear memory ----------------------------------------------------------------
+#
+# WebAssembly has no virtual memory: linear memory is one range from address 0 that grows by pages of 64 KiB
+# (memory.grow) and never shrinks, and every byte of it can be read and written. So a reservation is committed from the
+# start, and a released run of pages stays in linear memory, kept in a list for the next reservation of its size or
+# less (the first run that is large enough, its rest kept). A run handed out again is zeroed first, as new pages are.
+
+### The first run of released pages, null for none.
+@target(os: "wasip1")
+secret global FREE_PAGE_RUNS: &Addr
+
+### A run of released pages, kept at its own start.
+@target(os: "wasip1")
+secret record PageRun
+    pages: U64
+    next: Addr
+
+### Grows linear memory by `pages` WebAssembly pages (`memory.grow`).
+### :param pages: How many pages of 64 KiB.
+### :returns: The size before, in pages, where the new pages start, or -1 when it can't grow.
+@external("llvm")
+@template("{result} = call i32 @llvm.wasm.memory.grow.i32(i32 0, i32 {pages})")
+@target(os: "wasip1")
+secret routine memory_grow(pages: U32) -> S32
+
+### Takes a run of pages out of the list of released ones.
+### :param previous: The run in front of it in the list, null when it is the first.
+### :param next: The run after it.
+@target(os: "wasip1")
+secret routine unlink_run(previous: Addr, next: Addr) -> None
+    if previous.is_hollow()
+        FREE_PAGE_RUNS.store(next)
+        return
+    previous.to[@PageRun]().next.poke(next)
+    return
+
+### The first released run of at least `pages` pages, its rest kept in the list, zeroed.
+### :param pages: How many pages.
+### :returns: The run, or null when no released run is large enough.
+@target(os: "wasip1")
+secret routine reuse_run(pages: U64) -> Addr
+    page: U64 = page_size().bytes()
+
+    until at.is_hollow() with previous: Addr = Addr.zero(), at: Addr = FREE_PAGE_RUNS.load()
+        run: @PageRun = at.to[@PageRun]()
+        have: U64 = run.pages.peek()
+        if have < pages
+            continue with previous: at, at: run.next.peek()
+        following: Addr = run.next.peek()
+        if have == pages
+            unlink_run(previous, next: following)
+        else
+            rest: Addr = at +% ByteSize.construct(bytes: pages * page)
+            rest.to[@PageRun]().poke(PageRun(pages: have - pages, next: following))
+            unlink_run(previous, next: rest)
+        ptr_zero_bytes(dst: at, bytes: pages * page)
+        return at
+    then
+        return Addr.zero()
+
+### Reserves `size` bytes of linear memory, rounded up to whole pages: a released run, or new pages. Every byte of it
+### can be used at once.
+### :param size: The number of bytes.
+### :returns: The reservation's start, or null when linear memory can't hold it.
+@target(os: "wasip1")
+@expensive("asks for address space")
+routine pages_reserve(size: U64) -> Addr
+    page: U64 = page_size().bytes()
+
+    # 65536 pages of 64 KiB are the 4 GiB a wasm32 memory holds.
+    if size > 65536 * page
+        return Addr.zero()
+    pages: U64 = ((size + page - 1) // page).max(1)
+    reused: Addr = reuse_run(pages)
+    if reused.is_not_hollow()
+        return reused
+    before: S32 = memory_grow(pages.to[U32]())
+    if before < 0
+        return Addr.zero()
+    return inttoptr[U64, Addr](before.to[U64]() * page)
+
+### Commits nothing: every byte of linear memory can be used once it is reserved.
+### :param at: The first page.
+### :param size: The number of bytes.
+### :returns: True.
+@target(os: "wasip1")
+routine pages_commit(at: Addr, size: U64) -> Bool
+    return true
+
+### Keeps a whole reservation for the next one: linear memory never shrinks.
+### :param at: The reservation's start.
+### :param size: The size it was reserved with.
+@target(os: "wasip1")
+routine pages_release(at: Addr, size: U64) -> None
+    page: U64 = page_size().bytes()
+    pages: U64 = ((size + page - 1) // page).max(1)
+
+    at.to[@PageRun]().poke(PageRun(pages, next: FREE_PAGE_RUNS.load()))
+    FREE_PAGE_RUNS.store(at)
+    return
+
+### Sets what pages allow, which WebAssembly can't change: every byte of linear memory can be read and written.
+### :param at: The first page.
+### :param size: The number of bytes.
+### :param access: What the pages allow.
+### :returns: True for `PageAccess.READ_WRITE`, which they allow already, false for any other.
+@target(os: "wasip1")
+routine pages_protect(at: Addr, size: U64, access: PageAccess) -> Bool
+    return access == PageAccess.READ_WRITE
 
 # -- shared ------------------------------------------------------------------------
 

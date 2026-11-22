@@ -1,0 +1,2 @@
+# Calls the C library, which a WASI program doesn't link.
+not wasm32

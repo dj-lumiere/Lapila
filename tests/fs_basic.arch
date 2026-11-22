@@ -1,0 +1,2 @@
+# Maps a file into memory, and WASI maps no files.
+not wasm32

@@ -140,7 +140,7 @@ public sealed record Manifest(
     public string OutputDirectory => System.IO.Path.Combine(Directory, "build");
 
     public string ExecutablePath =>
-        System.IO.Path.Combine(OutputDirectory, Executable + (Target.Os == "windows" ? ".exe" : ""));
+        System.IO.Path.Combine(OutputDirectory, Executable + (Target.Os == "windows" ? ".exe" : Target.IsWasi ? ".wasm" : ""));
 
     /// The manifest in `start` or the nearest directory above it, or null.
     public static string? Find(string start)

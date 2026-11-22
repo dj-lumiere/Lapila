@@ -812,6 +812,75 @@ secret routine stdin_read(buffer: @Byte, count: U64) -> U64
 secret routine stream_enable_colors(stream: StdStream) -> Bool
     return stream_is_terminal(stream)
 
+# -- WASI ------------------------------------------------------------------------------------
+
+### The descriptor of a standard stream under WASI, the same numbers as POSIX: 0 for input, 1 for output, 2 for error.
+### :param stream: The stream.
+### :returns: The descriptor.
+@target(os: "wasip1")
+secret routine wasi_fd_of(stream: StdStream) -> U32
+    when stream
+        StdStream.INPUT => return 0
+        StdStream.OUTPUT => return 1
+        StdStream.ERROR => return 2
+
+### Whether the stream is a terminal: a character device that can't seek, as WASI's runtime reports a terminal.
+### :param stream: The stream.
+### :returns: `true` for a terminal.
+@target(os: "wasip1")
+secret routine stream_is_terminal(stream: StdStream) -> Bool
+    stat: &Items[U64, 3]
+
+    if wasi_fd_fdstat_get(wasi_fd_of(stream), stat.getview().to[@U64]()) != 0
+        return false
+    # The kind is the first byte (2, a character device), the rights the second word: fd_seek is bit 2, fd_tell bit 5.
+    kind: U64 = stat.load()[0] & 0xFF
+    return kind == 2 and (stat.load()[1] & 0x24) == 0
+
+### Writes all `count` bytes to standard output or error, looping over partial writes and retrying after an interrupt.
+### :param stream: Standard output or error.
+### :param data: The bytes to write.
+### :param count: How many bytes there are.
+### :returns: `true` when every byte was written, `false` if WASI refused.
+@target(os: "wasip1")
+secret routine stream_write(stream: StdStream, data: @Byte, count: U64) -> Bool
+    written: &U32 <- 0
+
+    until remaining == 0 with at: @Byte = data, remaining: U64 = count
+        error: U16 = wasi_write_one(wasi_fd_of(stream), data: at,
+            count: remaining.min(1073741824).to[U32](), written)
+        wrote: U64 = written.load().to[U64]()
+        if error == 0 and wrote > 0
+            continue with at: at.stride(wrote), remaining: remaining - wrote
+        if error == WASI_INTERRUPTED
+            continue with at: at, remaining: remaining
+        return false
+    then
+        return true
+
+### Reads up to `count` bytes of standard input with one read, retrying after an interrupt.
+### :param buffer: Where the bytes go.
+### :param count: The most bytes to read.
+### :returns: How many bytes were read, 0 at its end, or the error Other when the read fails.
+@target(os: "wasip1")
+secret routine stdin_read(buffer: @Byte, count: U64) -> U64
+    read: &U32 <- 0
+
+    error: U16 = wasi_read_one(0, buffer, count: count.min(1073741824).to[U32](), read)
+    if error == 0
+        return read.load().to[U64]()
+    if error == WASI_INTERRUPTED
+        when check stdin_read(buffer, count)
+            is U64 as returned => return returned
+    throw IoError(code: 0)
+
+### Whether ANSI color sequences work on the stream: a terminal takes them as it is.
+### :param stream: The stream.
+### :returns: `true` when the stream is a terminal.
+@target(os: "wasip1")
+secret routine stream_enable_colors(stream: StdStream) -> Bool
+    return stream_is_terminal(stream)
+
 # -- Windows -----------------------------------------------------------------------------
 
 ### The unfinished UTF-8 sequence of standard output's last console write.

@@ -6,7 +6,8 @@
 # through the console: Console.show("x = {x}") for stdout, Console.alert for stderr,
 # and out.write(...) for any other Writer.
 #
-# CInt and S64 appear only on these externs. Lengths are U64.
+# CInt and S64 appear only on these externs. Lengths are U64. On WASI, which has no C library, the same three are
+# fd_write, fd_read and proc_exit (Wasi.lpa), with -1 for a call WASI refused.
 
 module Hosted
 
@@ -17,6 +18,7 @@ module Hosted
 ### :returns: The number of bytes written (possibly fewer than `count`), or -1 with `errno` set.
 @external("c")
 @symbol("write")
+@target(os: not "wasip1")
 routine c_write(fd: CInt, buf: @Byte, count: CSize) -> CSSize
 
 ### Binds the C `read` function, which reads bytes from a file descriptor.
@@ -26,6 +28,7 @@ routine c_write(fd: CInt, buf: @Byte, count: CSize) -> CSSize
 ### :returns: The number of bytes read (0 at end of input), or -1 with `errno` set.
 @external("c")
 @symbol("read")
+@target(os: not "wasip1")
 routine c_read(fd: CInt, buf: @Byte, count: CSize) -> CSSize
 
 ### Binds the C `exit` function, which ends the process after flushing C's streams and running `atexit` handlers.
@@ -33,4 +36,38 @@ routine c_read(fd: CInt, buf: @Byte, count: CSize) -> CSSize
 @external("c")
 @symbol("exit")
 @noreturn
+@target(os: not "wasip1")
 routine c_exit(status: CInt) -> None
+
+### Writes bytes to a file descriptor with WASI's `fd_write`, as C's `write` does elsewhere.
+### :param fd: The file descriptor to write to.
+### :param buf: The first byte to write.
+### :param count: How many bytes to write.
+### :returns: The number of bytes written (possibly fewer than `count`), or -1 when WASI refused.
+@target(os: "wasip1")
+routine c_write(fd: CInt, buf: @Byte, count: CSize) -> CSSize
+    written: &U32 <- 0
+
+    if wasi_write_one(fd.to[U32](), data: buf, count: count.to[U32](), written) != 0
+        return -1
+    return written.load().to[CSSize]()
+
+### Reads bytes from a file descriptor with WASI's `fd_read`, as C's `read` does elsewhere.
+### :param fd: The file descriptor to read from.
+### :param buf: Where the bytes go.
+### :param count: The most bytes to read.
+### :returns: The number of bytes read (0 at end of input), or -1 when WASI refused.
+@target(os: "wasip1")
+routine c_read(fd: CInt, buf: @Byte, count: CSize) -> CSSize
+    read: &U32 <- 0
+
+    if wasi_read_one(fd.to[U32](), buffer: buf, count: count.to[U32](), read) != 0
+        return -1
+    return read.load().to[CSSize]()
+
+### Ends the program with WASI's `proc_exit`, as C's `exit` does elsewhere: nothing is buffered to flush.
+### :param status: The exit status.
+@noreturn
+@target(os: "wasip1")
+routine c_exit(status: CInt) -> None
+    wasi_proc_exit(status.to[U32]())

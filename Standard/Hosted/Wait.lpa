@@ -228,3 +228,42 @@ routine wake_one(at: @U32) -> None
 routine wake_all(at: @U32) -> None
     c_wake_by_address_all(at)
     return
+
+# -- WASI: one thread ----------------------------------------------------------------------
+
+### Under WASI the program runs on one thread, so nothing else can change the word: when it still holds `expected`, the
+### wait would never end, and the program stops with `DeadlockError` instead of waiting forever. When the word already
+### differs this returns at once, as on every system.
+### :param at: The word to wait on.
+### :param expected: The value it must still hold for the thread to sleep.
+### :throws: Crashes with `DeadlockError` when the word holds `expected`.
+@target(os: "wasip1")
+routine wait_on(at: @U32, expected: U32) -> None
+    if at.peek_unbroken() != expected
+        return
+    throw DeadlockError(description: "The program waits for a value that only another thread could change, and a WASI program runs on one thread: wait for work with a pausable routine on a CoroutineManager instead.")
+
+### As {wait_on}, but gives up after `timeout`: under WASI, with one thread, nothing can wake it sooner, so it sleeps for
+### `timeout` when the word still holds `expected` and returns at once when it already differs.
+### :param at: The word to wait on.
+### :param expected: The value it must still hold for the thread to sleep.
+### :param timeout: The longest wait.
+@target(os: "wasip1")
+routine wait_on_for(at: @U32, expected: U32, timeout: Duration) -> None
+    if at.peek_unbroken() != expected
+        return
+    deadline: Duration = Clock.monotonic().add_clamp(timeout.max(0s))
+    wasi_sleep_until(deadline.nanoseconds_clamp().max(0).to[U64]())
+    return
+
+### Does nothing: under WASI no other thread sleeps on `at`.
+### :param at: The word the thread waits on.
+@target(os: "wasip1")
+routine wake_one(at: @U32) -> None
+    return
+
+### Does nothing: under WASI no other thread sleeps on `at`.
+### :param at: The word the threads wait on.
+@target(os: "wasip1")
+routine wake_all(at: @U32) -> None
+    return

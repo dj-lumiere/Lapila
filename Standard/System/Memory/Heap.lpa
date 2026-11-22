@@ -18,7 +18,7 @@ secret preset MALLOC_ALIGN: U64 = sizeof[Addr]().mul(2)
 ### that C code frees or reallocates, or that comes from C's malloc and is freed here. An alignment past malloc's own
 ### comes from posix_memalign (still freed with free), and on Windows, whose free can't take such a block, it crashes.
 ### `C_HEAP` is its table.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 entity HeapManagerByC
 obeys HeapManageable[HeapManagerByC]
     nothing
@@ -32,7 +32,7 @@ obeys HeapManageable[HeapManagerByCAligned]
 
 ### Makes the manager. It holds no values.
 ### :returns: The manager.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 common routine HeapManagerByC.construct() -> Me
     return Me()
 
@@ -55,7 +55,7 @@ secret routine fits_c_size(size: U64) -> Bool
 ### :returns: The new block, or null when the allocation fails.
 @external("c")
 @symbol("malloc")
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 secret routine c_malloc(size: CSize) -> Addr
 
 ### Binds the C `realloc` function, which resizes a block, keeping its contents up to the smaller size.
@@ -64,14 +64,14 @@ secret routine c_malloc(size: CSize) -> Addr
 ### :returns: The resized block (possibly moved), or null when the allocation fails and `ptr` is untouched.
 @external("c")
 @symbol("realloc")
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 secret routine c_realloc(ptr: Addr, size: CSize) -> Addr
 
 ### Binds the C `free` function, which gives a block back to the C heap.
 ### :param ptr: The block to free. Null does nothing.
 @external("c")
 @symbol("free")
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 secret routine c_free(ptr: Addr) -> None
 
 ### Binds the C `posix_memalign` function, which allocates a block aligned past malloc's own alignment.
@@ -189,7 +189,7 @@ routine @HeapManagerByC.reborrow(at: Addr, size: U64, align: U64) -> Addr
 
 ### Gives a block back with free.
 ### :param at: The block to free. Null does nothing.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 routine @HeapManagerByC.give_back(at: Addr) -> None
     c_free(at)
     return
@@ -291,7 +291,8 @@ crashable DoubleFreeError
 common routine HeapManagerByCheckedHeap.construct() -> Me
     return Me()
 
-### Allocates with malloc the header room, `size` bytes, and room to align, the header tagged LIVE.
+### Allocates with malloc (the page heap under WASI) the header room, `size` bytes, and room to align, the header
+### tagged LIVE.
 ### :param size: The number of bytes.
 ### :param align: The alignment, a power of two.
 ### :returns: The block after the header, null when malloc fails or the size can't hold a header too.
@@ -302,9 +303,7 @@ routine @HeapManagerByCheckedHeap.borrow(size: U64, align: U64) -> Addr
     total: Optional[U64] = try size.add(HEADER_ROOM.add(step))
     when total
         is U64 as bytes =>
-            if not fits_c_size(bytes)
-                return Addr.zero()
-            raw: Addr = c_malloc(bytes.to[CSize]())
+            raw: Addr = raw_heap_borrow(bytes)
             if raw.is_hollow()
                 return Addr.zero()
             # The first address HEADER_ROOM bytes in that is a multiple of the alignment.
@@ -380,10 +379,41 @@ secret routine release_block(block_start: Addr) -> None
             evicted: Addr = slot.swap_unbroken(header)
             if evicted.is_hollow()
                 return
-            c_free(evicted.to[@BlockHeader]().raw.peek())
+            raw_heap_give_back(evicted.to[@BlockHeader]().raw.peek())
             return
         was == FREED => heap_crash(error: DoubleFreeError())
         else => heap_crash(error: UnacceptedValueError(description: "The checked heap was asked to take back memory that isn't a block it lent."))
+
+### A block of `bytes` bytes for the checked heap to put a header and a block in: from malloc.
+### :param bytes: The number of bytes.
+### :returns: The block, null when malloc fails or `bytes` doesn't fit C's size_t.
+@target(os: not ("none", "wasip1"))
+secret routine raw_heap_borrow(bytes: U64) -> Addr
+    if not fits_c_size(bytes)
+        return Addr.zero()
+    return c_malloc(bytes.to[CSize]())
+
+### Gives a block of `raw_heap_borrow` back to malloc.
+### :param raw: The block.
+@target(os: not ("none", "wasip1"))
+secret routine raw_heap_give_back(raw: Addr) -> None
+    c_free(raw)
+    return
+
+### A block of `bytes` bytes for the checked heap to put a header and a block in: from the page heap, as WASI has no
+### malloc.
+### :param bytes: The number of bytes.
+### :returns: The block, null when the page heap has no room.
+@target(os: "wasip1")
+secret routine raw_heap_borrow(bytes: U64) -> Addr
+    return PAGE_HEAP_MANAGER.borrow(size: bytes, align: MALLOC_ALIGN)
+
+### Gives a block of `raw_heap_borrow` back to the page heap.
+### :param raw: The block.
+@target(os: "wasip1")
+secret routine raw_heap_give_back(raw: Addr) -> None
+    PAGE_HEAP_MANAGER.give_back(raw)
+    return
 
 ### Crashes at the place of the deallocate or reallocate call that reached the heap, when one was noted, else at the
 ### heap itself.
@@ -405,4 +435,169 @@ needs E obeys Crashable
 routine DoubleFreeError.message_into[TWriter](out: @TWriter) -> None
 needs TWriter obeys Writer
     out.write("This block was given back already: it was given back twice.")
+    return
+
+# -- WASI: the page heap ------------------------------------------------------------------------------------------
+#
+# A WASI program has no C library, so no malloc: its heap is HeapManagerByPages, whose memory is WebAssembly pages of
+# 64 KiB that the page layer (Pages.lpa) takes from linear memory with memory.grow, the same pages PAGES lends. A block
+# of 32 KiB or less comes from a page cut into blocks of one size, a power of two from 16 bytes on, which is aligned to
+# its size. A larger one is a run of whole pages of its own, given back to the page layer when it is freed. A table of
+# one word per page of linear memory (4 GiB holds 65536) says what each page holds: 0 nothing of the heap's, 1 to 12
+# a block size, or a run's length with the top bit set. A WASI program runs on one thread, so nothing is locked.
+
+### The first free block of each size, 16 bytes up to 32 KiB, null for none. A free block holds the next one's address.
+@target(os: "wasip1")
+secret global FREE_BLOCKS: &Items[Addr, 12]
+
+### What each page of linear memory holds: 0 nothing of the heap's, a block size's number plus one, or `RUN_MARK` and
+### the length of the run of pages it starts.
+@target(os: "wasip1")
+secret global PAGE_KINDS: &Items[U32, 65536]
+
+### The smallest block the page heap lends, and the step its sizes double from.
+@target(os: "wasip1")
+secret preset SMALLEST_BLOCK: U64 = 16
+### The largest block cut from a shared page: a larger one gets pages of its own.
+@target(os: "wasip1")
+secret preset LARGEST_SMALL_BLOCK: U64 = 32768
+### A WebAssembly page: what linear memory grows by.
+@target(os: "wasip1")
+secret preset WASM_PAGE: U64 = 65536
+### The bit of a page's table word that marks the first page of a run of pages.
+@target(os: "wasip1")
+secret preset RUN_MARK: U32 = 0x80000000
+
+### The heap of a WASI program: blocks cut from WebAssembly pages the page layer takes with memory.grow. `C_HEAP` is
+### its table, and `HEAP` is with the heap check off. Every alignment up to a page (64 KiB) is there.
+@target(os: "wasip1")
+entity HeapManagerByPages
+obeys HeapManageable[HeapManagerByPages]
+    nothing
+
+### Makes the manager. It holds no values: the heap's state is the module's.
+### :returns: The manager.
+@target(os: "wasip1")
+common routine HeapManagerByPages.construct() -> Me
+    return Me()
+
+### The number of the page an address is in.
+### :param at: The address.
+### :returns: The page's number, the address divided by 64 KiB.
+@target(os: "wasip1")
+secret routine page_number(at: Addr) -> U64
+    return ptrtoint[Addr, U64](at) >> 16
+
+### The number of the block size that holds `need` bytes: 0 for 16 bytes, 1 for 32, up to 11 for 32 KiB.
+### :param need: The bytes, from 16 to 32 KiB.
+### :returns: The size's number.
+@target(os: "wasip1")
+secret routine block_class(need: U64) -> U64
+    smallest: U64 = SMALLEST_BLOCK
+
+    until smallest << class >= need with class: U64 = 0
+        continue with class: class + 1
+    then
+        return class
+
+### Cuts a new page into free blocks of one size.
+### :param class: The size's number.
+### :returns: False when linear memory can't grow.
+@target(os: "wasip1")
+secret routine refill_blocks(class: U64) -> Bool
+    page: Addr = pages_reserve(WASM_PAGE)
+
+    if page.is_hollow()
+        return false
+    PAGE_KINDS.getslot(page_number(page)).poke((class + 1).to[U32]())
+    smallest: U64 = SMALLEST_BLOCK
+    size: U64 = smallest << class
+    count: U64 = WASM_PAGE // size
+    for i in 0 til count
+        cell: Addr = page +% ByteSize.construct(bytes: i * size)
+        next: Addr = when
+            i + 1 < count => cell +% ByteSize.construct(bytes: size)
+            else => FREE_BLOCKS.getslot(class).peek()
+        cell.to[@Addr]().poke(next)
+        continue
+    FREE_BLOCKS.getslot(class).poke(page)
+    return true
+
+### Lends `size` bytes aligned to `align`.
+### :param size: The number of bytes.
+### :param align: The alignment, a power of two.
+### :returns: The block, null when linear memory can't grow or `align` is past a page.
+@target(os: "wasip1")
+routine @HeapManagerByPages.borrow(size: U64, align: U64) -> Addr
+    if align > WASM_PAGE or size > U64.MAX - WASM_PAGE
+        return Addr.zero()
+    need: U64 = size.max(align).max(SMALLEST_BLOCK)
+    if need > LARGEST_SMALL_BLOCK
+        pages: U64 = (need + WASM_PAGE - 1) // WASM_PAGE
+        run: Addr = pages_reserve(pages * WASM_PAGE)
+        if run.is_hollow()
+            return Addr.zero()
+        PAGE_KINDS.getslot(page_number(run)).poke(RUN_MARK | pages.to[U32]())
+        return run
+    class: U64 = block_class(need)
+    head: @Addr = FREE_BLOCKS.getslot(class)
+    if head.peek().is_hollow() and not refill_blocks(class)
+        return Addr.zero()
+    cell: Addr = head.peek()
+    head.poke(cell.to[@Addr]().peek())
+    return cell
+
+### How many bytes a block of the page heap holds.
+### :param at: The block.
+### :returns: Its size: its block size, or its run's pages.
+### :throws: Crashes with `UnacceptedValueError` when `at` isn't a block of the page heap.
+@target(os: "wasip1")
+secret routine page_block_size(at: Addr) -> U64
+    kind: U32 = PAGE_KINDS.getslot(page_number(at)).peek()
+    if kind == 0
+        throw UnacceptedValueError(description: "The page heap was given memory that isn't a block it lent.")
+    if (kind & RUN_MARK) != 0
+        return (kind & ~RUN_MARK).to[U64]() * WASM_PAGE
+    smallest: U64 = SMALLEST_BLOCK
+    return smallest << (kind - 1).to[U64]()
+
+### A block of `size` bytes with the contents copied over (as many as both sizes allow), the old one given back. A
+### block that holds `size` already and would hold no smaller size stays where it is.
+### :param at: The block, from this manager, or null for a new one.
+### :param size: The new size in bytes.
+### :param align: The block's alignment.
+### :returns: The block, or null with the old one left as it was.
+@target(os: "wasip1")
+routine @HeapManagerByPages.reborrow(at: Addr, size: U64, align: U64) -> Addr
+    if at.is_hollow()
+        return me.borrow(size, align)
+    have: U64 = page_block_size(at)
+    need: U64 = size.max(align).max(SMALLEST_BLOCK)
+    if need <= have and (have == SMALLEST_BLOCK or need > have // 2)
+        return at
+    fresh: Addr = me.borrow(size, align)
+    if fresh.is_hollow()
+        return Addr.zero()
+    fresh.to[@Byte]().copy(src: at.to[@Byte](), count: have.min(size))
+    me.give_back(at)
+    return fresh
+
+### Gives a block back: a small one to its size's free blocks, a run of pages to the page layer.
+### :param at: The block, from this manager. Null does nothing.
+### :throws: Crashes with `UnacceptedValueError` when `at` isn't a block of the page heap.
+@target(os: "wasip1")
+routine @HeapManagerByPages.give_back(at: Addr) -> None
+    if at.is_hollow()
+        return
+    kind_slot: @U32 = PAGE_KINDS.getslot(page_number(at))
+    kind: U32 = kind_slot.peek()
+    if kind == 0
+        throw UnacceptedValueError(description: "The page heap was asked to take back memory that isn't a block it lent.")
+    if (kind & RUN_MARK) != 0
+        kind_slot.poke(0)
+        pages_release(at, size: (kind & ~RUN_MARK).to[U64]() * WASM_PAGE)
+        return
+    head: @Addr = FREE_BLOCKS.getslot((kind - 1).to[U64]())
+    at.to[@Addr]().poke(head.peek())
+    head.poke(at)
     return

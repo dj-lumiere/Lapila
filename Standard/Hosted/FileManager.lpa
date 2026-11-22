@@ -171,12 +171,27 @@ common routine OsFileManager.open_read_write(at: @File) -> FileHandle
 ### :param start: The first cell to map.
 ### :param count: The number of cells to map, or `U64.MAX` for the rest of the file.
 ### :returns: The {FileStorage}, or throws the {FsError} the OS reported (NotFoundError when nothing is there).
+@target(os: not "wasip1")
 @expensive("asks the operating system")
 common routine OsFileManager.storage[T](at: @File, write: Bool, start: U64,
     count: U64) -> FileStorage[T]
 needs T obeys StorageCell
     when check FileStorage[T].map(path: at.path.peek(), write, start, count)
         is FileStorage[T] as returned => return returned
+
+### The file as cells of `T` mapped into memory, which WASI can't do.
+### :typeparam T: The cell type, `Byte` or `Char`.
+### :param at: The file to map.
+### :param write: Whether stores to the cells reach the file.
+### :param start: The first cell to map.
+### :param count: The number of cells to map.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("WASI maps no files into memory, so wasm32-wasip1-none has no FileStorage: read the file with OsFileManager.read_all and write it with OsFileManager.write_all")
+common routine OsFileManager.storage[T](at: @File, write: Bool, start: U64,
+    count: U64) -> FileStorage[T]
+needs T obeys StorageCell
+    return FileStorage[T].empty()
 
 # -- deleting, moving, copying -------------------------------------------------------------
 

@@ -87,6 +87,26 @@ obeys UnbrokenMaskable[S8], UnbrokenMaskable[U8], UnbrokenMaskable[S16], Unbroke
 @target(arch: "x86")
 obeys UnbrokenFloatAddable[B32], UnbrokenFloatAddable[B64]
 
+# wasm32 under WASI runs one thread, so LLVM writes each of these as the plain load, store, or arithmetic it is.
+@target(arch: "wasm32")
+obeys UnbrokenStorable[S8], UnbrokenStorable[U8], UnbrokenStorable[S16], UnbrokenStorable[U16], UnbrokenStorable[S32], UnbrokenStorable[U32], UnbrokenStorable[S64], UnbrokenStorable[U64], UnbrokenStorable[CSize], UnbrokenStorable[CSSize], UnbrokenStorable[Byte], UnbrokenStorable[Addr], UnbrokenStorable[B32], UnbrokenStorable[B64]
+@target(arch: "wasm32")
+obeys UnbrokenStorable[@T] when AnyType T
+@target(arch: "wasm32")
+obeys UnbrokenStorable[@T?] when AnyType T
+@target(arch: "wasm32")
+obeys UnbrokenExchangeable[S8], UnbrokenExchangeable[U8], UnbrokenExchangeable[S16], UnbrokenExchangeable[U16], UnbrokenExchangeable[S32], UnbrokenExchangeable[U32], UnbrokenExchangeable[S64], UnbrokenExchangeable[U64], UnbrokenExchangeable[CSize], UnbrokenExchangeable[CSSize], UnbrokenExchangeable[Byte], UnbrokenExchangeable[Addr]
+@target(arch: "wasm32")
+obeys UnbrokenExchangeable[@T] when AnyType T
+@target(arch: "wasm32")
+obeys UnbrokenExchangeable[@T?] when AnyType T
+@target(arch: "wasm32")
+obeys UnbrokenAddable[S8], UnbrokenAddable[U8], UnbrokenAddable[S16], UnbrokenAddable[U16], UnbrokenAddable[S32], UnbrokenAddable[U32], UnbrokenAddable[S64], UnbrokenAddable[U64], UnbrokenAddable[CSize], UnbrokenAddable[CSSize]
+@target(arch: "wasm32")
+obeys UnbrokenMaskable[S8], UnbrokenMaskable[U8], UnbrokenMaskable[S16], UnbrokenMaskable[U16], UnbrokenMaskable[S32], UnbrokenMaskable[U32], UnbrokenMaskable[S64], UnbrokenMaskable[U64], UnbrokenMaskable[CSize], UnbrokenMaskable[CSSize], UnbrokenMaskable[Byte]
+@target(arch: "wasm32")
+obeys UnbrokenFloatAddable[B32], UnbrokenFloatAddable[B64]
+
 @target(arch: "aarch64")
 obeys UnbrokenStorable[S8], UnbrokenStorable[U8], UnbrokenStorable[S16], UnbrokenStorable[U16], UnbrokenStorable[S32], UnbrokenStorable[U32], UnbrokenStorable[S64], UnbrokenStorable[U64], UnbrokenStorable[CSize], UnbrokenStorable[CSSize], UnbrokenStorable[Byte], UnbrokenStorable[Addr], UnbrokenStorable[B32], UnbrokenStorable[B64]
 @target(arch: "aarch64")

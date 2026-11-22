@@ -49,13 +49,32 @@ common routine PausingFileOp[T].construct(path: BorrowedSlice[Byte], data: Borro
 ### :returns: The op. Its result is the file's bytes (drop them), its failure what `read_all` throws.
 ### :throws: Crashes with `OutOfMemoryError` when `manager` has no memory for the path, and with `TaskSpawnError`
 ###     when no thread starts.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 @track_caller
 @expensive("starts the read on another thread")
 common routine OsFileManager.pausing_read_all(at: @File,
     manager: @MemoryManager) -> PausingFileOp[BorrowedSlice[Byte]]
     path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
     t: Thread[BorrowedSlice[Byte]] <- get_thread[BorrowedSlice[Byte]]()
+    reading: Work[BorrowedSlice[Byte]] = read_all_at.to[Work](path: path.getslice(),
+        manager: manager)
+
+    t.put_work(reading)
+    return PausingFileOp[BorrowedSlice[Byte]](path: steal path, data: .empty(manager),
+        thread: steal t)
+
+### Reads the whole file on another thread, which a WASI program doesn't have.
+### :param at: The file to read.
+### :param manager: The memory manager for the bytes and the copy of the path.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("OsFileManager.pausing_read_all runs the file call on another thread, and wasm32-wasip1-none runs one thread: call OsFileManager.read_all, which finishes before it returns")
+@track_caller
+@expensive("starts the read on another thread")
+common routine OsFileManager.pausing_read_all(at: @File,
+    manager: @MemoryManager) -> PausingFileOp[BorrowedSlice[Byte]]
+    path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
+    t: Thread[BorrowedSlice[Byte]] <- get_thread[BorrowedSlice[Byte]](manager: DEFAULT_THREADS)
     reading: Work[BorrowedSlice[Byte]] = read_all_at.to[Work](path: path.getslice(),
         manager: manager)
 
@@ -73,13 +92,31 @@ common routine OsFileManager.pausing_read_all(at: @File,
 ### :returns: The op. Its failure is what `write_all` throws.
 ### :throws: Crashes with `OutOfMemoryError` when `manager` has no memory for the path, and with `TaskSpawnError`
 ###     when no thread starts.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 @track_caller
 @expensive("starts the write on another thread")
 common routine OsFileManager.pausing_write_all(at: @File, data: BorrowedSlice[Byte],
     manager: @MemoryManager) -> PausingFileOp[None]
     path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
     t: Thread[None] <- get_thread[None]()
+    writing: Work[None] = write_all_at.to[Work](path: path.getslice(), data: data.getslice())
+
+    t.put_work(writing)
+    return PausingFileOp[None](path: steal path, data: steal data, thread: steal t)
+
+### Writes the whole file on another thread, which a WASI program doesn't have.
+### :param at: The file to write.
+### :param data: The bytes that become the file, handed over with `steal`.
+### :param manager: The memory manager for the copy of the path.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("OsFileManager.pausing_write_all runs the file call on another thread, and wasm32-wasip1-none runs one thread: call OsFileManager.write_all, which finishes before it returns")
+@track_caller
+@expensive("starts the write on another thread")
+common routine OsFileManager.pausing_write_all(at: @File, data: BorrowedSlice[Byte],
+    manager: @MemoryManager) -> PausingFileOp[None]
+    path: &[Byte] <- .construct(values: at.path.peek(), times: 1, manager)
+    t: Thread[None] <- get_thread[None](manager: DEFAULT_THREADS)
     writing: Work[None] = write_all_at.to[Work](path: path.getslice(), data: data.getslice())
 
     t.put_work(writing)

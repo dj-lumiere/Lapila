@@ -59,6 +59,9 @@ public sealed class CpuModel
         return Cache.GetOrAdd(key, new CpuModel(target, cpu.Groups[1].Value, feats.Success ? feats.Groups[1].Value : ""));
     }
 
+    /// What clang says for WebAssembly about a feature name it doesn't know.
+    private const string UnknownWasmFeature = "cannot be specified with '-target-feature'";
+
     /// Whether the build has the feature. A name LLVM doesn't know for the target's arch is an error.
     public bool Has(string feature, Pos pos)
     {
@@ -67,7 +70,7 @@ public sealed class CpuModel
             if (_known.Contains(feature)) return false;
         // Not in the CPU's list: ask clang whether the name exists at all (it warns about one it doesn't know).
         var (_, err) = QueryClang(_target, [.._target.Features, "+" + feature], pos);
-        if (err.Contains("not a recognized feature", StringComparison.Ordinal))
+        if (err.Contains("not a recognized feature", StringComparison.Ordinal) || err.Contains(UnknownWasmFeature, StringComparison.Ordinal))
             throw new CompileError(Li.TargetCpuProblem, pos, $"'{feature}' is not a CPU feature of {_target.Arch}");
         lock (_known) _known.Add(feature);
         return false;
@@ -79,7 +82,8 @@ public sealed class CpuModel
     {
         var run = Run(target, features).GetAwaiter().GetResult()
                   ?? throw new CompileError(Li.TargetCpuProblem, pos, "clang is needed to resolve the target's CPU features and wasn't found: put it on PATH, or name it with LAPILA_CLANG");
-        if (run.ExitCode != 0)
+        // For WebAssembly clang stops at a feature name it doesn't know instead of warning, which Has reads the same way.
+        if (run.ExitCode != 0 && !run.Err.Contains(UnknownWasmFeature, StringComparison.Ordinal))
             throw new CompileError(Li.TargetCpuProblem, pos, $"clang rejected the CPU or features for {target.LlvmTriple}: {run.Err.Trim()}");
         return (run.Ir, run.Err);
     }

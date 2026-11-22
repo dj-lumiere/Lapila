@@ -130,6 +130,7 @@ routine ExitStatus.is_success() -> Bool
 ### :param options: The directory, environment overrides, and standard streams.
 ### :param manager: The memory manager for the captured output and the working memory.
 ### :returns: The {ProcessOutput}, or a {ProcessError} when the shell couldn't start.
+@target(os: not "wasip1")
 @expensive("starts a process")
 common routine ProcessManager.create_shell_process(command: @[Byte], options: ProcessOptions,
     manager: @MemoryManager) -> ProcessOutput

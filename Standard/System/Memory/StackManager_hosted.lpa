@@ -137,6 +137,41 @@ secret routine thread_stack_bounds() -> (Addr, Addr)
 ### here.
 ### :param size: The bytes of the frame's slots the builder knows of.
 @inline
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 common routine StackManager.borrow_frame(size: U64) -> None
+    return
+
+# -- WASI ---------------------------------------------------------------------------------------------------------
+
+### The lowest address the stack may reach (`__stack_low`, which wasm-ld defines), for StackManager.current().
+@external("c")
+@symbol("__stack_low")
+@target(os: "wasip1")
+global WASM_STACK_LOW: &Byte
+
+### The address the stack starts at (`__stack_high`, which wasm-ld defines), for StackManager.current().
+@external("c")
+@symbol("__stack_high")
+@target(os: "wasip1")
+global WASM_STACK_HIGH: &Byte
+
+### The one stack a WASI program runs on: the range wasm-ld puts below the globals.
+### :returns: The bottom and the top.
+@target(os: "wasip1")
+secret routine thread_stack_bounds() -> (Addr, Addr)
+    return (WASM_STACK_LOW.to[Addr](), WASM_STACK_HIGH.to[Addr]())
+
+### Borrows the running routine's frame from the stack, once the routine's prologue has made it: the builder calls it at
+### the start of every routine but one that calls no other routine and has at most 1 KiB of slots. WebAssembly closes no
+### page below the stack, so it reads the stack pointer and stops the program with `StackOverflowError` when it is less
+### than the margin above the stack's bottom, before the stack runs into memory below it.
+### :param size: The bytes of the frame's slots the builder knows of.
+@inline
+@target(os: "wasip1")
+common routine StackManager.borrow_frame(size: U64) -> None
+    sp: U64 = ptrtoint[Addr, U64](stack_pointer())
+    # Only builder steps here, no routine calls: every routine the check called would start with the check again.
+    low: U64 = ptrtoint[Addr, U64](WASM_STACK_LOW.to[Addr]())
+    if sp +% size >= low and sp < low +% STACK_MARGIN
+        Me.report_overflow()
     return

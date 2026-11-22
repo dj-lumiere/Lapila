@@ -319,7 +319,31 @@ secret routine release_fibers() -> None
 ### :typeparam T: The type of the work's result, `Void` for none.
 ### :returns: The ticket, with no work yet.
 ### :throws: Crashes with `OutOfMemoryError` when there is no memory for the fiber or its stack.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
+@track_caller
+routine @CoroutineManager.get_fiber[T]() -> Fiber[T]
+needs AnyType T
+    me.ensure()
+    held: @U8 <- me.inbox_guard.get_exclusive_access()
+    idle_or_none: @FiberState? = me.idle.peek().to[@FiberState?]()
+    if idle_or_none.is_absent()
+        drop held
+        fiber: @FiberState = me.make_fiber()
+        me.out.fetch_add_unbroken(1)
+        return Fiber[T](fiber, issued: 0)
+    idle: @FiberState = idle_or_none.unwrap()
+    me.idle.poke(idle.next_idle.peek())
+    drop held
+    idle.next_idle.poke(Addr.zero())
+    idle.slot.state.poke_unbroken(TICKET_EMPTY)
+    me.out.fetch_add_unbroken(1)
+    return Fiber[T](fiber: idle, issued: idle.slot.issued.peek())
+
+### A ticket for one of the manager's fibers, which a WASI program can't have.
+### :typeparam T: The type of the work's result, `Void` for none.
+### :returns: Never returns: every call is a build error.
+@target(os: "wasip1")
+@unavailable("get_fiber needs a fiber with a stack of its own, and wasm32-wasip1-none can't switch stacks: write the work as a pausable routine and run it with COROUTINES.get_pausing_fiber[T]()")
 @track_caller
 routine @CoroutineManager.get_fiber[T]() -> Fiber[T]
 needs AnyType T
@@ -505,7 +529,7 @@ secret routine @CoroutineManager.wake_word() -> @U32
 ### :typeparam T: The type of the state the call works on.
 ### :param work: The call that may block.
 ### :param arg: The state it works on.
-@target(os: not "none")
+@target(os: not ("none", "wasip1"))
 routine @CoroutineManager.run_blocking[T](work: Callable[(@T,), None], arg: @T) -> None
 needs AnyType T
     if me.current().is_absent()
@@ -514,6 +538,16 @@ needs AnyType T
     t: Thread[None] <- get_thread[None]()
     t.put_callable(entry: work, args: arg)
     t.work_slot().wait()
+    return
+
+### Runs work(arg): under WASI no fiber has a stack of its own, so the call is just made.
+### :typeparam T: The type of the state the call works on.
+### :param work: The call.
+### :param arg: The state it works on.
+@target(os: "wasip1")
+routine @CoroutineManager.run_blocking[T](work: Callable[(@T,), None], arg: @T) -> None
+needs AnyType T
+    work.call(arg)
     return
 
 # -- the tickets -------------------------------------------------------------------------------------------------

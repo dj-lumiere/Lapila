@@ -15,7 +15,10 @@
 #
 # The 128-bit division and float conversion helpers are exported on hosted 32-bit targets too, whose C runtime may
 # lack them (libgcc builds them only for 64-bit targets), and on 64-bit Windows, whose C runtime has none of them
-# (only clang's compiler-rt does, which an in-process JIT doesn't link).
+# (only clang's compiler-rt does, which an in-process JIT doesn't link). A WASI program links no C library and no
+# compiler-rt, so the half-float conversions, fmodf and fmod are exported there too, with the 128-bit multiply and
+# shift helpers WebAssembly calls (at the end of this file). Its BF16 arithmetic needs no helper: the builder works it
+# out in B32.
 
 module System/Numerics/SoftFloat
 
@@ -316,7 +319,7 @@ secret routine export_truncdfsf2(a: B64) -> B32
 ### :returns: The same value as a B32.
 @export("__extendhfsf2")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_extendhfsf2(a: B16) -> B32
     r: B32 = a.soft_to[B32]()
     return r
@@ -326,7 +329,7 @@ secret routine export_extendhfsf2(a: B16) -> B32
 ### :returns: The nearest B16.
 @export("__truncsfhf2")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_truncsfhf2(a: B32) -> B16
     r: B16 = a.soft_to[B16]()
     return r
@@ -336,7 +339,7 @@ secret routine export_truncsfhf2(a: B32) -> B16
 ### :returns: The nearest B16.
 @export("__truncdfhf2")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_truncdfhf2(a: B64) -> B16
     r: B16 = a.soft_to[B16]()
     return r
@@ -448,7 +451,7 @@ secret routine export_fixunsdfdi(a: B64) -> U64
 ### :returns: The integer part of the value.
 @export("__fixhfti")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_fixhfti(a: B16) -> S128
     r: S128 = a.soft_to[S128]()
     return r
@@ -458,7 +461,7 @@ secret routine export_fixhfti(a: B16) -> S128
 ### :returns: The integer part of the value.
 @export("__fixunshfti")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_fixunshfti(a: B16) -> U128
     r: U128 = a.soft_to[U128]()
     return r
@@ -550,7 +553,7 @@ secret routine export_floatundidf(x: U64) -> B64
 ### :returns: The nearest B16.
 @export("__floattihf")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_floattihf(x: S128) -> B16
     r: B16 = x.soft_to[B16]()
     return r
@@ -560,7 +563,7 @@ secret routine export_floattihf(x: S128) -> B16
 ### :returns: The nearest B16.
 @export("__floatuntihf")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_floatuntihf(x: U128) -> B16
     r: B16 = x.soft_to[B16]()
     return r
@@ -762,7 +765,7 @@ secret routine export_sqrt(a: B64) -> B64
 ### :returns: The remainder, with the sign of `a`.
 @export("fmodf")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_fmodf(a: B32, b: B32) -> B32
     r: B32 = .from_bits(soft_b32_mod(a: a.bits(), b: b.bits()))
     return r
@@ -773,7 +776,7 @@ secret routine export_fmodf(a: B32, b: B32) -> B32
 ### :returns: The remainder, with the sign of `a`.
 @export("fmod")
 @no_builtins
-@target(os: "none")
+@target(os: ("none", "wasip1"))
 secret routine export_fmod(a: B64, b: B64) -> B64
     r: B64 = .from_bits(soft_b64_mod(a: a.bits(), b: b.bits()))
     return r
@@ -1009,3 +1012,193 @@ secret routine export_clzsi2(x: U32) -> CInt
     count: U32 = soft_u32_leading_zeros(x)
     r: CInt = count.to_wrap[S32]()
     return r
+
+# -- 128-bit integer helpers of wasm32 -----------------------------------------
+#
+# WebAssembly has 64-bit integers only, so LLVM calls compiler-rt for a 128-bit multiply and for a 128-bit shift by an
+# amount it doesn't know at build time. A WASI program links no compiler-rt, so these are the ones it calls, built from
+# 64-bit halves and 32-bit products (a 64-bit by 64-bit product of their own would be a 128-bit multiply again).
+
+### The full product of two words: four products of their 32-bit halves.
+### :param a: The first factor.
+### :param b: The second factor.
+### :returns: The product's low word, then its high word.
+@no_builtins
+@target(arch: "wasm32")
+secret routine wide_product(a: U64, b: U64) -> (U64, U64)
+    a_low: U64 = a & 0xFFFFFFFF
+    a_high: U64 = a >>> 32
+    b_low: U64 = b & 0xFFFFFFFF
+    b_high: U64 = b >>> 32
+    low_low: U64 = a_low *% b_low
+    low_high: U64 = a_low *% b_high
+    high_low: U64 = a_high *% b_low
+    middle: U64 = (low_low >>> 32) +% (low_high & 0xFFFFFFFF) +% (high_low & 0xFFFFFFFF)
+    low: U64 = (low_low & 0xFFFFFFFF) | (middle << 32)
+    high: U64 = (a_high *% b_high) +% (low_high >>> 32) +% (high_low >>> 32) +% (middle >>> 32)
+    return (low, high)
+
+### The sum of two words and the carry out of it.
+### :param a: The first word.
+### :param b: The second word.
+### :returns: The sum's word, then 1 when it carried, else 0.
+@no_builtins
+@target(arch: "wasm32")
+secret routine carried_sum(a: U64, b: U64) -> (U64, U64)
+    sum: U64 = a +% b
+    carry: U64 = when
+        sum < a => 1
+        else => 0
+    return (sum, carry)
+
+### A 128-bit value's two words.
+### :param x: The value.
+### :returns: Its low word, then its high word.
+@no_builtins
+@target(arch: "wasm32")
+secret routine words_of(x: S128) -> (U64, U64)
+    return (low_word(x), high_word(x))
+
+### A 128-bit value's low word, as LLVM's truncation: no shift routine, which would call these helpers again.
+### :param x: The value.
+### :returns: Its low 64 bits.
+@external("llvm")
+@template("{result} = trunc i128 {x} to i64")
+@target(arch: "wasm32")
+secret routine low_word(x: S128) -> U64
+
+### A 128-bit value's high word, as LLVM's shift by a constant, which it writes without a call.
+### :param x: The value.
+### :returns: Its high 64 bits.
+@external("llvm")
+@template("{t0} = lshr i128 {x}, 64\n{result} = trunc i128 {t0} to i64")
+@target(arch: "wasm32")
+secret routine high_word(x: S128) -> U64
+
+### The 128-bit value of two words.
+### :param low: The low word.
+### :param high: The high word.
+### :returns: The value.
+@external("llvm")
+@template("{t0} = zext i64 {high} to i128\n{t1} = shl i128 {t0}, 64\n{t2} = zext i64 {low} to i128\n{result} = or i128 {t1}, {t2}")
+@target(arch: "wasm32")
+secret routine of_words(low: U64, high: U64) -> S128
+
+### Two words negated as one 128-bit value, wrapping.
+### :param low: The low word.
+### :param high: The high word.
+### :returns: The negation's low word, then its high word.
+@no_builtins
+@target(arch: "wasm32")
+secret routine negated_words(low: U64, high: U64) -> (U64, U64)
+    new_low: U64 = ~low +% 1
+    new_high: U64 = when
+        new_low == 0 => ~high +% 1
+        else => ~high
+    return (new_low, new_high)
+
+### `__multi3`: a 128-bit product, wrapped to 128 bits.
+### :param a: The first factor.
+### :param b: The second factor.
+### :returns: The product's low 128 bits.
+@export("__multi3")
+@no_builtins
+@target(arch: "wasm32")
+secret routine export_multi3(a: S128, b: S128) -> S128
+    a_low, a_high = words_of(a)
+    b_low, b_high = words_of(b)
+    low, high = wide_product(a: a_low, b: b_low)
+    return of_words(low, high: high +% (a_low *% b_high) +% (a_high *% b_low))
+
+### `__ashlti3`: a 128-bit value shifted left.
+### :param a: The value.
+### :param b: The amount, from 0 to 127.
+### :returns: The shifted value.
+@export("__ashlti3")
+@no_builtins
+@target(arch: "wasm32")
+secret routine export_ashlti3(a: S128, b: CInt) -> S128
+    n: U64 = b.to_wrap[U64]() & 127
+    low, high = words_of(a)
+    when
+        n == 0 => return a
+        n >= 64 => return of_words(low: 0, high: low << (n - 64))
+        else => return of_words(low: low << n, high: (high << n) | (low >>> (64 - n)))
+
+### `__lshrti3`: a 128-bit value shifted right, zeros coming in.
+### :param a: The value.
+### :param b: The amount, from 0 to 127.
+### :returns: The shifted value.
+@export("__lshrti3")
+@no_builtins
+@target(arch: "wasm32")
+secret routine export_lshrti3(a: S128, b: CInt) -> S128
+    n: U64 = b.to_wrap[U64]() & 127
+    low, high = words_of(a)
+    when
+        n == 0 => return a
+        n >= 64 => return of_words(low: high >>> (n - 64), high: 0)
+        else => return of_words(low: (low >>> n) | (high << (64 - n)), high: high >>> n)
+
+### `__ashrti3`: a 128-bit value shifted right, copies of its sign bit coming in.
+### :param a: The value.
+### :param b: The amount, from 0 to 127.
+### :returns: The shifted value.
+@export("__ashrti3")
+@no_builtins
+@target(arch: "wasm32")
+secret routine export_ashrti3(a: S128, b: CInt) -> S128
+    n: U64 = b.to_wrap[U64]() & 127
+    low, high = words_of(a)
+    signed_high: S64 = bitcast[U64, S64](high)
+    when
+        n == 0 => return a
+        n >= 64 => return of_words(low: bitcast[S64, U64](signed_high >> (n - 64).to[S64]()),
+            high: bitcast[S64, U64](signed_high >> 63))
+        else => return of_words(low: (low >>> n) | (high << (64 - n)),
+            high: bitcast[S64, U64](signed_high >> n.to[S64]()))
+
+### `__muloti4`: a 128-bit signed product wrapped to 128 bits, and whether the true product didn't fit.
+### :param a: The first factor.
+### :param b: The second factor.
+### :param overflow: Set to 1 when the product doesn't fit in S128, else 0.
+### :returns: The product's low 128 bits.
+@export("__muloti4")
+@no_builtins
+@target(arch: "wasm32")
+secret routine export_muloti4(a: S128, b: S128, overflow: @CInt) -> S128
+    raw_a_low, raw_a_high = words_of(a)
+    raw_b_low, raw_b_high = words_of(b)
+    a_negative: Bool = raw_a_high >>> 63 == 1
+    b_negative: Bool = raw_b_high >>> 63 == 1
+    a_words: (U64, U64) = when
+        a_negative => negated_words(low: raw_a_low, high: raw_a_high)
+        else => (raw_a_low, raw_a_high)
+    b_words: (U64, U64) = when
+        b_negative => negated_words(low: raw_b_low, high: raw_b_high)
+        else => (raw_b_low, raw_b_high)
+    a_low, a_high = a_words
+    b_low, b_high = b_words
+    # The four words of the magnitudes' product: r0 (low) to r3 (high).
+    r0, low_low_high = wide_product(a: a_low, b: b_low)
+    low_high_low, low_high_high = wide_product(a: a_low, b: b_high)
+    high_low_low, high_low_high = wide_product(a: a_high, b: b_low)
+    high_high_low, high_high_high = wide_product(a: a_high, b: b_high)
+    partial, carry_one = carried_sum(a: low_low_high, b: low_high_low)
+    r1, carry_two = carried_sum(a: partial, b: high_low_low)
+    r2_part, carry_three = carried_sum(a: low_high_high, b: high_low_high)
+    r2_more, carry_four = carried_sum(a: r2_part, b: high_high_low)
+    r2, carry_five = carried_sum(a: r2_more, b: carry_one +% carry_two)
+    r3: U64 = high_high_high +% carry_three +% carry_four +% carry_five
+    negative: Bool = a_negative != b_negative
+    # A magnitude of 2^127 fits only as the negative product.
+    top_set: Bool = r1 >>> 63 == 1
+    fits_top: Bool = not top_set or (negative and r1 == 0x8000000000000000 and r0 == 0)
+    if r2 != 0 or r3 != 0 or not fits_top
+        overflow.poke(1)
+    else
+        overflow.poke(0)
+    if negative
+        low, high = negated_words(low: r0, high: r1)
+        return of_words(low, high)
+    return of_words(low: r0, high: r1)

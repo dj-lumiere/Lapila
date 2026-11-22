@@ -1073,13 +1073,13 @@ public sealed partial class Compiler
         foreach (var sb in new[] { _typeDefs, failureTypes, globals, declares })
             if (sb.Length > 0) o.Append(sb).AppendLine();
         // A bfloat crosses between blocks as its bits (Bf16Blocks): -O0 would quiet a signaling NaN on the way.
-        string functions = Bf16Blocks.Rewrite(FunctionTexts());
+        string functions = Bf16Blocks.Rewrite(Target.Arch == "wasm32" ? Bf16Wasm.Rewrite(FunctionTexts()) : FunctionTexts());
         o.Append(MovesWaitingFibers ? TraceOutOfLine(functions) : functions);
         o.Append(ResetThreadLocals());
         o.Append(RaceCheckOptions());
         o.Append(_entry);
         o.Append(DebugTrailer());
-        return o.ToString();
+        return Target.Arch == "wasm32" ? Bf16Wasm.AsBits(o.ToString()) : o.ToString();
     }
 
     /// Whether the program runs ThreadPoolManager passable fibers, which may wake on another thread than the one they waited on.

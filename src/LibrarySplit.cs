@@ -239,11 +239,11 @@ public sealed partial class Compiler
         o.AppendLine();
         foreach (var sb in new[] { _typeDefs, new StringBuilder(failureTypes), globals, declares })
             if (sb.Length > 0) o.Append(sb).AppendLine();
-        functions = Bf16Blocks.Rewrite(functions);
+        functions = Bf16Blocks.Rewrite(Target.Arch == "wasm32" ? Bf16Wasm.Rewrite(functions) : functions);
         o.Append(MovesWaitingFibers ? TraceOutOfLine(functions) : functions);
         o.Append(tail);
         o.Append(MetadataFor(o.ToString(), trailer));
-        return o.ToString();
+        return Target.Arch == "wasm32" ? Bf16Wasm.AsBits(o.ToString()) : o.ToString();
     }
 
     private static readonly Regex MetaRef = new(@"!(\d+)", RegexOptions.Compiled);

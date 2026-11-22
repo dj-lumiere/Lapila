@@ -40,6 +40,37 @@ information in the `.exe`). `x86-windows-gnu` is the 32-bit one. The MSVC target
 the package's llvm-mingw) and Visual Studio's libraries, and write CodeView into a `.pdb`. A failed MinGW link with a
 clang that isn't the package's says how to get llvm-mingw or switch to MSVC.
 
+**WebAssembly.** `wasm32-wasip1-none` (`triple = "wasm32-wasip1-none"`, `--target wasm32-wasip1-none`) is 32-bit
+WebAssembly under WASI preview 1, LLVM's `wasm32-unknown-wasip1`. `wasm32-wasip1`, `wasm32-wasi` and
+`wasm32-unknown-wasip1` are build errors that name it, and wasm32 with any other os, or os `wasip1` with any other
+arch, is refused. It has an operating system, so it keeps `Hosted` (`@target(os: "wasip1")` selects its code), but it
+links no C library: clang and wasm-ld link the program alone (`-nostdlib`, nothing to install but LLVM with lld), the
+hosted layer calls WASI itself (`Standard/Hosted/Wasi.lpa`: `fd_write`, `fd_read`, `path_open`, `clock_time_get`,
+`random_get`, `args_get`, `environ_get`, `proc_exit` and the rest, each an `@external("c")` routine with
+`@import_module("wasi_snapshot_preview1")`), and the compiler-rt helpers WebAssembly calls (128-bit multiply and
+shifts, the half-float conversions, `fmod`) come from `System/Numerics/SoftFloat/Exports.lpa`. The builder writes the
+entry `_start`: the arguments from `args_get`, `start`, then `proc_exit` with `exit_code()`. The output is
+`build/<name>.wasm`. `run` and `test` run it in wasmtime (on PATH, or the program `LAPILA_WASI_RUNNER` names) with the
+working directory opened as `.` and the system's temporary directory as `/tmp`. Memory: `PAGES` lends WebAssembly
+pages (64 KiB) that `memory.grow` adds to linear memory, which never shrinks, so a released run of pages is kept for
+the next reservation (zeroed when it goes out again). `commit` does nothing and `protect` is true only for
+`READ_WRITE`. `HEAP` with the heap check off and `C_HEAP` are `HeapManagerByPages`: blocks of 16 bytes to 32 KiB cut
+from pages one size each, a larger block a run of pages of its own; the checked heap sits on it. The stack is 8 MiB,
+below the globals, and every routine checks its frame against its bottom (`StackOverflowError`), though wasmtime's
+own call depth limit may stop deep recursion first, as a trap. Files are reachable only below the directories the
+runtime opened: an absolute path in the one whose name is its longest prefix, a relative one in the one named `.`
+(else NotEnoughPermissionError). There is no working directory (`OsEnvironment.working_directory()` throws
+NotFoundError, `absolute` of a relative path too), no permission bits (`set_readonly` throws
+NotEnoughPermissionError, `Metadata.readonly` is false), and no creation time. BF16 arithmetic is worked out in B32 by
+the builder (`src/Bf16Wasm.cs`), as LLVM's WebAssembly backend can't convert bfloat. What WASI can't do is a build
+error that names the target (`@unavailable`): a second thread (`get_thread[T]()`, `ThreadManager.construct(manager:)`,
+`ThreadPoolManager`), a fiber with a stack of its own (`CoroutineManager.get_fiber`), `pausing_read_all` /
+`pausing_write_all`, a process (`ProcessManager.create_process`, `create_shell_process`), a signal handler
+(`CpuEventManager.when_terminated` / `when_interrupted` / `when_faulted`, `raise`), and a mapped file
+(`OsFileManager.storage`). Waiting work is a `pausable` routine on `COROUTINES.get_pausing_fiber[T]()`, on the one
+thread. `wait_on` on a word that still holds the value crashes with `DeadlockError` (nothing else could change it),
+and `wait_on_for` sleeps its timeout.
+
 Sources end in `.lpa`. A `.te` file given to the builder (or named by `executable`) is a build error that says to
 rename it to `.lpa`, and `[package] tessera-version` is a build error that names `lapila-version`: Lapila has no
 `migrate` command. A build error is printed as `error[LP-S007]: file:line:col: message`, a warning as `warning[LP-W305]: file:line:col: message` (see Diagnostics).
@@ -2219,6 +2250,9 @@ several tickets at once.
   in the tickets until `give_back_all()` or `drop` ends them, the same for a `List[Thread[None]]`), `give_back_all()` (drops every ticket and empties the list), `wait_any_finished() -> U64` (the position of a finished one,
   crashes on an empty list), `cancel_all()`, `take_finished()` / `take_finished(manager)` (moves finished tickets out
   into a new list, both keep their order), and `give_back_finished()`.
+- **On wasm32-wasip1-none** a program runs on one thread with no stack switching: thread tickets, fibers with stacks of
+  their own and `ThreadPoolManager` are build errors there that name the target and point to pausable routines
+  (`COROUTINES.get_pausing_fiber[T]()`), which run as everywhere.
 - **Threads** (`Standard/Hosted/Thread.lpa`, what both tickets share in `Work.lpa`, who waits in `Waiter.lpa`):
   `get_thread[T]()` borrows one from `DEFAULT_THREADS` (the hosted manager, OS threads,
   blocks from `HEAP`, stacks the OS's), and `get_thread[T](manager)` from another. A `ThreadManager` is a record of a launch routine,
@@ -3154,7 +3188,11 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 `tests/<name>.lpa` with `<name>.expected` (stdout), `<name>.exit` (exit code), or `<name>.error` (expected
 compile-error text). A test whose config.toml names a `board` runs in the emulator its `<name>.qemu` file names
 (one line, the emulator and its arguments, the program's path added last), its serial port's text compared with
-`<name>.expected`. Where the emulator isn't installed the test is skipped with a note (tests/rr_*: the
+`<name>.expected`. A `<name>.arch` file lists the architectures a test runs on (`x86_64`, or `x86_64-linux` with an
+OS), and a file of `not` lines alone (`not wasm32`) runs it everywhere but those: the tests that need a second thread,
+a fiber's stack, a signal, a process or the C library say `not wasm32`. `test --target wasm32-wasip1-none` runs the
+others in wasmtime, skipping them all with a note when no WASI runtime is found. Where the emulator isn't installed
+the test is skipped with a note (tests/rr_*: the
 ThreadManagerByRoundRobin on `qemu-virt-aarch64`, run by CI's freestanding job). A board test whose program ends by
 stopping its core (a crash: the emulator keeps running) has a `<name>.stops` file: the emulator is stopped after 3
 seconds, and that is the test's end. Programs in `examples/` carry `.expected` files too. The large tests are ordinary checked-in

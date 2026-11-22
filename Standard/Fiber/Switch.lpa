@@ -196,8 +196,18 @@ routine switch_stack(from: @Addr = R0, to: Addr = R1) -> None
 ### :param to: The stack pointer to resume.
 @external("c")
 @symbol("lapila_fibers_unsupported_on_this_target")
-@target(arch: not ("x86_64", "aarch64", "arm"))
+@target(arch: not ("x86_64", "aarch64", "arm", "wasm32"))
 routine switch_stack(from: @Addr, to: Addr) -> None
+
+### WebAssembly can't switch stacks: a WASI program has no fiber with a stack of its own to switch to
+### (`CoroutineManager.get_fiber` is a build error there), so a switch never runs, and one that did would stop the
+### program.
+### :param from: Where the current stack pointer would be saved.
+### :param to: The stack pointer to resume.
+### :throws: Crashes with `NotImplementedError`.
+@target(arch: "wasm32")
+routine switch_stack(from: @Addr, to: Addr) -> None
+    throw NotImplementedError(description: "WebAssembly can't switch to another stack.")
 
 ### Declared for a target without fiber support: a program that switches fibers fails to link, naming the unsupported
 ### target.

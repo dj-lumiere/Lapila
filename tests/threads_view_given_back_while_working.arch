@@ -1,0 +1,2 @@
+# Runs work on another thread or on a fiber with a stack of its own, and wasm32-wasip1-none has neither.
+not wasm32

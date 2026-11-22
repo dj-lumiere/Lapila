@@ -1,0 +1,2 @@
+# A routine of it has more locals in a debug build than wasmtime takes (50000).
+not wasm32
