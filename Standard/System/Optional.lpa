@@ -18,9 +18,9 @@ module System
 
 # -- Optional ---------------------------------------------------------------------
 
-### A value that may be absent: a `T`, or `Unit` when there is none. A `T` or `Unit()` goes where an `Optional[T]` is
-### expected as it is, and `when` observes which with `is T as value` / `is Unit`. `try` in front of a failable call
-### gives one. An `Optional[None]` can't exist (both branches would be `Unit`), nor an `Optional[Optional[T]]`.
+### A value that may be absent: a `T`, or `none` when there is none. A `T` or `none` goes where an `Optional[T]` is
+### expected as it is, and `when` observes which with `is T as value` / `is None`. `try` in front of a failable call
+### gives one. An `Optional[None]` can't exist (both branches would be `None`), nor an `Optional[Optional[T]]`.
 ### `Optional` is the one named type whose kind follows what it holds: for a value `T` it is a value laid out as
 ### `{ i1, T }`, and for an entity `T` it is one address of the place the entity lives in.
 ### :typeparam T: The type of the present value.
@@ -39,7 +39,7 @@ routine @Optional[T].destruct() -> None
 
 ### Whether `me` holds a value.
 ### :typeparam T: The type of the present value.
-### :returns: `true` for a `T`, `false` for `Unit`.
+### :returns: `true` for a `T`, `false` for `none`.
 routine Optional[T].is_present() -> Bool
     when me
         is T => return true
@@ -47,7 +47,7 @@ routine Optional[T].is_present() -> Bool
 
 ### Whether `me` holds no value.
 ### :typeparam T: The type of the present value.
-### :returns: `true` for `Unit`, `false` for a `T`.
+### :returns: `true` for `none`, `false` for a `T`.
 routine Optional[T].is_absent() -> Bool
     when me
         is T => return false
@@ -55,7 +55,7 @@ routine Optional[T].is_absent() -> Bool
 
 ### The value. Crashes if it's absent.
 ### :returns: The present value.
-### :throws: Throws `AbsentValueError` when `me` is `Unit`.
+### :throws: Throws `AbsentValueError` when `me` is `none`.
 @track_caller
 routine Optional[T].unwrap() -> T
     when steal me
@@ -63,7 +63,7 @@ routine Optional[T].unwrap() -> T
         is None => throw AbsentValueError()
 
 ### The value if present, otherwise `default`.
-### :param default: The value to return when `me` is `Unit`.
+### :param default: The value to return when `me` is `none`.
 ### :returns: The present value, or `default`.
 routine Optional[T].unwrap_or(default: T) -> T
     when me

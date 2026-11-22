@@ -24,7 +24,7 @@ module Hosted
 @target(os: not "none")
 global DEFAULT_THREADS: &ThreadManager <- (launch_fn: os_launch_fn.to[Callable](), state: Addr.zero(), guard: 0, idle: Addr.zero(), manager: HEAP, out: 0)
 
-### A ticket for a thread, from {get_thread}: it runs one piece of work at a time, whose result is a `T` (`Void` for
+### A ticket for a thread, from {get_thread}: it runs one piece of work at a time, whose result is a `T` (`None` when it gives
 ### none), until it is given back with `drop`.
 ### :typeparam T: The type of the work's result.
 entity Thread[T]
@@ -146,7 +146,7 @@ routine @ThreadManager.destruct() -> None
     return
 
 ### A ticket for a thread of DEFAULT_THREADS, the operating system's.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :returns: The ticket, with no work yet.
 ### :throws: Crashes with `TaskSpawnError` when the operating system starts no thread, and with
 ###     `OutOfMemoryError` when there is no memory for it.
@@ -156,7 +156,7 @@ routine get_thread[T]() -> Thread[T]
     return get_thread[T](manager: DEFAULT_THREADS)
 
 ### A ticket for a thread of DEFAULT_THREADS, which a WASI program doesn't have.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :returns: Never returns: every call is a build error.
 @target(os: "wasip1")
 @unavailable("get_thread needs a second thread, and wasm32-wasip1-none runs one thread with no way to switch stacks: write the waiting work as a pausable routine and run it on a CoroutineManager (COROUTINES.get_pausing_fiber[T]())")
@@ -165,7 +165,7 @@ routine get_thread[T]() -> Thread[T]
     return get_thread[T](manager: DEFAULT_THREADS)
 
 ### A ticket for a thread of `manager`: one it got back, or a new one.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :param manager: The manager.
 ### :returns: The ticket, with no work yet.
 ### :throws: Crashes with `TaskSpawnError` when the manager starts no thread, and with `OutOfMemoryError` when

@@ -70,7 +70,7 @@ secret entity PassableFiberSlot
     pool: @ThreadPoolManager
 
 ### A ticket for a passable fiber of a ThreadPoolManager, from {ThreadPoolManager.get_passable_fiber}: it runs one piece
-### of work at a time, whose result is a `T` (`Void` for none), until it is given back with `drop`.
+### of work at a time, whose result is a `T` (`None` when it gives nothing), until it is given back with `drop`.
 ### :typeparam T: The type of the work's result.
 entity PassableFiber[T]
     passable: @PassableFiberSlot?
@@ -193,7 +193,7 @@ routine @PassableFiber[T].destruct() -> None
     return
 
 ### A ticket for a passable fiber of the pool: one given back, or a new one. The pool's threads start with the first.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :returns: The ticket, with no work yet.
 ### :throws: Throws `OutOfMemoryError` when there is no memory for the passable fiber, and with
 ###     `TaskSpawnError` when the pool's threads can't start.

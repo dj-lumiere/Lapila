@@ -87,7 +87,7 @@ entity FiberState
     mold: Addr
 
 ### A ticket for a fiber, from {CoroutineManager.get_fiber}: it runs one piece of work at a time, whose result is a `T`
-### (`Void` for none), until it is given back with `drop`.
+### (`None` when it gives nothing), until it is given back with `drop`.
 ### :typeparam T: The type of the work's result.
 entity Fiber[T]
     fiber: @FiberState?
@@ -316,7 +316,7 @@ secret routine release_fibers() -> None
     return
 
 ### A ticket for one of the manager's fibers: one given back, or a new one with a stack of its own.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :returns: The ticket, with no work yet.
 ### :throws: Crashes with `OutOfMemoryError` when there is no memory for the fiber or its stack.
 @target(os: not ("none", "wasip1"))
@@ -340,7 +340,7 @@ needs AnyType T
     return Fiber[T](fiber: idle, issued: idle.slot.issued.peek())
 
 ### A ticket for one of the manager's fibers, which a WASI program can't have.
-### :typeparam T: The type of the work's result, `Void` for none.
+### :typeparam T: The type of the work's result, `None` when it gives nothing.
 ### :returns: Never returns: every call is a build error.
 @target(os: "wasip1")
 @unavailable("get_fiber needs a fiber with a stack of its own, and wasm32-wasip1-none can't switch stacks: write the work as a pausable routine and run it with COROUTINES.get_pausing_fiber[T]()")

@@ -13,7 +13,7 @@ preset SORTED: Items[S64, _] = [-8, -3, 0, 2, 7, 11, 19, 23, 42, 57]
 ### Looks for `target` in `data` by halving the range still to search.
 ### :param data: The values to search, sorted ascending.
 ### :param target: The value to look for.
-### :returns: `index` of a value equal to `target`, or `Unit` when no value equals it.
+### :returns: `index` of a value equal to `target`, or `none` when no value equals it.
 routine binary_search(data: @[S64], target: S64) -> Optional[U64]
     ### The target, if present, is in [lo, hi).
     until lo >= hi with lo: U64 = 0, hi: U64 = data.count

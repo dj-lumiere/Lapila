@@ -1,27 +1,25 @@
-# Lapila stdlib: None — the type with exactly one value
+# Lapila stdlib: None, the type with exactly one value
 #
-# Maps to the empty LLVM struct {} (zero size). Unlike None, None values
-# exist: they can be bound, passed, stored in fields, and used as a generic
-# argument. Its value is written none. It is the branch of Optional[T] that
-# holds nothing, and Check[None] is what `check` gives for a failable routine
-# that returns nothing.
+# Maps to the empty LLVM struct {} (zero size). Its one value is written none. It can be bound, passed, stored in
+# fields and used as a generic argument. A routine with nothing to return returns None, it is the branch of
+# Optional[T] that holds nothing, and Check[None] is what `check` gives for a failable routine that returns nothing.
 
 module System
 
-### The type with exactly one value, mapped to the empty LLVM struct `{}`. Unlike `Void` it can be bound, passed, and stored, so it fills a generic slot that needs no payload, such as `Optional[None]`.
+### The type with exactly one value, `none`, mapped to the empty LLVM struct `{}`. It can be bound, passed and stored, so it fills a generic slot that needs no payload, such as `Check[None]`.
 record None
 obeys Equatable[None], Hashable[None], Comparable[None]
     nothing
 
 # -- equality, hashing ---------------------------------------------------------
 
-### There is only one `Unit` value, so every pair is equal.
-### :param other: The other `Unit`.
+### There is only one `None` value, so every pair is equal.
+### :param other: The other `None`.
 ### :returns: Always `true`.
 routine None.eq(other: Me) -> Bool
     return true
 
-### Hashes the one `Unit` value. Every `Unit` hashes the same.
+### Hashes the one `None` value. Every `None` hashes the same.
 ### :returns: A constant 64-bit hash.
 routine None.hash() -> U64
     h: U64 = siphash24(value: 0, key: hash_key())

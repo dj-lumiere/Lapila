@@ -37,7 +37,7 @@ routine Bool.hash() -> U64
 ### value when `me` is true, None when false (Rust's bool/then_some).
 ### :typeparam T: The type of the value.
 ### :param value: The value to wrap.
-### :returns: `value` when `me` is true, else `Unit`.
+### :returns: `value` when `me` is true, else `none`.
 routine Bool.then_present[T](value: T) -> Optional[T]
 needs AnyType T
     if me
