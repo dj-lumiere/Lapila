@@ -6,7 +6,7 @@ import Hosted
 ### :param size: The bytes.
 ### :returns: The block, or zero.
 routine c_malloc(size: CSize) -> Addr
-    return C_HEAP.borrow(size: size.to[U64](), align: 16)
+    return C_HEAP.borrow(size: size.to[U64](), align: 8)
 
 ### Gives a block back to C_HEAP.
 ### :param ptr: The block.

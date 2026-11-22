@@ -15,10 +15,10 @@ record Counting
 obeys MemoryManageable[Counting]
 
 routine c_malloc(size: CSize) -> Addr
-    return C_HEAP.borrow(size: size.to[U64](), align: 16)
+    return C_HEAP.borrow(size: size.to[U64](), align: 8)
 
 routine c_realloc(ptr: Addr, size: CSize) -> Addr
-    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 16)
+    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 8)
 
 routine c_free(ptr: Addr) -> None
     C_HEAP.give_back(ptr)

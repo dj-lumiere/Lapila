@@ -17,14 +17,14 @@ obeys MemoryManageable[Budget]
 ### :param size: The bytes.
 ### :returns: The block, or zero.
 routine c_malloc(size: CSize) -> Addr
-    return C_HEAP.borrow(size: size.to[U64](), align: 16)
+    return C_HEAP.borrow(size: size.to[U64](), align: 8)
 
 ### C's realloc, through C_HEAP.
 ### :param ptr: The block.
 ### :param size: The bytes.
 ### :returns: The block, or zero.
 routine c_realloc(ptr: Addr, size: CSize) -> Addr
-    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 16)
+    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 8)
 
 ### C's free, through C_HEAP.
 ### :param ptr: The block.
