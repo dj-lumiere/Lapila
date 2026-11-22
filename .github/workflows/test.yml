@@ -314,15 +314,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # lld-21 brings wasm-ld, which clang-21 finds in its own folder.
-      - name: Install LLVM 21
+      # The release bundles LLVM 22, and LLVM 21's WebAssembly backend writes invalid code for half floats (B16), so
+      # this job builds with 22. lld-22 brings wasm-ld, which clang-22 finds in its own folder.
+      - name: Install LLVM 22
         run: |
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh 21
-          test -x /usr/bin/clang-21
-          test -x /usr/lib/llvm-21/bin/wasm-ld
-          sudo ln -sf /usr/bin/clang-21 /usr/local/bin/clang
-          clang --version | grep -q 'clang version 21' || { clang --version; echo 'clang is not LLVM 21'; exit 1; }
+          sudo bash llvm.sh 22
+          test -x /usr/bin/clang-22
+          test -x /usr/lib/llvm-22/bin/wasm-ld
+          sudo ln -sf /usr/bin/clang-22 /usr/local/bin/clang
+          clang --version | grep -q 'clang version 22' || { clang --version; echo 'clang is not LLVM 22'; exit 1; }
           clang --version
 
       - name: Install wasmtime
