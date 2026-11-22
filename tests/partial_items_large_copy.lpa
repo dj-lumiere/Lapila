@@ -1,0 +1,13 @@
+# A record of a hundred thousand places is copied with one memcpy, not one load and store per place, so building it
+# takes as long as building a small one.
+import Collections
+import Hosted
+
+routine start() -> None
+    stack: &PartialItems[S64, 100000] <- PartialItems[S64, 100000].construct()
+    stack.add_last(5)
+    stack.add_last(6)
+    copy: &PartialItems[S64, 100000] <- stack.load()
+    copy.add_last(7)
+    Console.show("{stack.count()} {copy.count()} {copy.getitem(2)} {copy.capacity()}")
+    return

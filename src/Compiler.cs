@@ -2499,10 +2499,23 @@ public sealed partial class Compiler
         return (aligner, size, align);
     }
 
+    /// The LLVM spelling and size of every record, variant and array at least `LargeCopies.Threshold` bytes long, which
+    /// a routine's IR copies with memcpy instead of as a value.
+    public readonly Dictionary<string, long> LargeTypes = new(StringComparer.Ordinal);
+
+    private void NoteLargeType(DType t)
+    {
+        if (t is not (ArrayType or VariantType or RecordType) || LargeTypes.ContainsKey(t.Llvm)) return;
+        if (t is RecordType r && (r.Decl.AnnotationNamed("llvm") is not null || r.TransparentField is not null)) return;
+        long size = SizeAlign(t, default).Size;
+        if (size >= LargeCopies.Threshold) LargeTypes[t.Llvm] = size;
+    }
+
     /// Makes sure every record type used in the IR has a definition.
     public void EnsureTypeDefined(DType t)
     {
         if (Prechecking) return;
+        NoteLargeType(t);
         switch (t)
         {
             case RecordType { TransparentField: { } field }:

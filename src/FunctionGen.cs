@@ -1790,6 +1790,7 @@ public sealed partial class FunctionGen
         string dbg = Debug ? $" !dbg !{_sp}" : "";
         var paramRecords = Debug ? ParamRecords() : [];
         string? push = _traced && !_c.TraceFromStack ? TracePush() : null;
+        int defineAt = _out.Length;
         _out.AppendLine($"define {linkage}{_inst.CcPrefix(_c.Target)}{_c.AbiRet(_inst, withAttrs: true)} @{Compiler.Quote(_inst.Symbol)}({string.Join(", ", ps)}){_inst.FnAttrs}{_c.RaceAttr}{_c.FramePointerAttr}{_c.UnwindTable} {CpuModel.For(_c.Target, _inst.Decl.Pos).FnAttrs}{comdat}{dbg} {{");
         _out.AppendLine("start:");
         foreach (var a in _allocas) _out.AppendLine($"  {a}");
@@ -1819,6 +1820,12 @@ public sealed partial class FunctionGen
             for (int i = 0; i < lb.Lines.Count; i++) _out.AppendLine($"  {lb.Lines[i]}{lb.Dbg[i]}");
         }
         _out.AppendLine("}");
+        if (_c.LargeTypes.Count > 0)
+        {
+            string written = _out.ToString(defineAt, _out.Length - defineAt);
+            string copied = LargeCopies.Rewrite(written, _c.LargeTypes, _c.DeclareMemcpy);
+            if (!ReferenceEquals(copied, written)) _out.Remove(defineAt, _out.Length - defineAt).Append(copied);
+        }
         _out.AppendLine();
     }
 
