@@ -1,28 +1,48 @@
 # B128Big, the 448-bit exact tier of B128's math functions (Standard/B128Big.lpa): each result's sign, exponent,
 # and mantissa in hex. Every one was checked against mpmath to within 2^-430 relative.
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> CInt
+import Hosted
 
-routine show(name: @Byte, v: B128Big) -> None
+routine show(name: @[Byte], v: B128Big) -> None
     m: &BigNat[16] <- v.mant
 
     count: U64 = m.count.peek()
-    c_printf("%s %d %lld ", name, v.negative.to[S32](), v.exponent)
+    Console.output().write("{name} {v.negative.to[S32]()} {v.exponent} ")
 
     until left == 0 with left: U64 = count
         i: U64 = left - 1
         limb: U64 = m.limbs[i]
-        c_printf("%016llx", limb)
+        write_hex(value: limb, digits: 16)
         continue with left: i
-    c_printf("\n")
+    Console.output().write("\n")
     return
 
 routine f(x: B64) -> B128Big
     r: B128Big = B128.to[B128Big](x.to[B128]())
     return r
+
+### Writes `value` in lowercase hex, zero-padded to `digits` digits.
+### :param value: The value.
+### :param digits: The fewest digits.
+routine write_hex(value: U64, digits: U64) -> None
+    out: @ConsoleOutput = Console.output()
+    needed: U64 = hex_digits(value).max(digits)
+    letters: @[Byte] = "0123456789abcdef"
+
+    for i in 0 til needed
+        nibble: U64 = (value >>> (4 * (needed - 1 - i))) & 15
+        out.write_bytes(data: letters.data.stride(nibble), count: 1)
+        continue
+    return
+
+### How many hex digits `value` takes, 1 for 0.
+### :param value: The value.
+### :returns: The count.
+routine hex_digits(value: U64) -> U64
+    until n == 16 or (value >>> (4 * n)) == 0 with n: U64 = 1
+        continue with n: n + 1
+    then
+        return n
 
 routine start() -> None
     show(name: "exp(1)", v: big_exp(f(1.0)))

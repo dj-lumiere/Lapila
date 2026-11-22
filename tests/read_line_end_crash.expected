@@ -1,4 +1,4 @@
 [one]
 [] count 0
 EndOfInputError: The input ended before Console.ask_line() found anything to read.
-at line 26
+at line 21

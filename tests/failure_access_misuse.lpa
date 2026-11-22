@@ -13,17 +13,15 @@ record Counting
 
 obeys MemoryManageable[Counting]
 
-@external("c")
-@symbol("malloc")
 routine c_malloc(size: CSize) -> Addr
+    return C_HEAP.borrow(size: size.to[U64](), align: 16)
 
-@external("c")
-@symbol("realloc")
 routine c_realloc(ptr: Addr, size: CSize) -> Addr
+    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 16)
 
-@external("c")
-@symbol("free")
 routine c_free(ptr: Addr) -> None
+    C_HEAP.give_back(ptr)
+    return
 
 ### A block from C, counted.
 ### :param size: The bytes.

@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Checks records crossing the C ABI through the C library's div and lldiv, and a WASI program links no C library.
 not wasm32

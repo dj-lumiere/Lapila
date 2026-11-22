@@ -20,10 +20,7 @@
 # slot, cast, and load to the payload binding of a `when` arm. Section 1 spells
 # that lowering out by hand to show the mechanism, not as the recommended Result.
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
+import Hosted
 
 # ============================================================
 # A generic two-way overlay. Stdlib could ship UnionTwo / UnionThree, or
@@ -82,13 +79,13 @@ routine @IntResult.print() -> None
             payload: @UnionTwo[S64, S32] = me.payload
             ok_view: @S64 = payload.to[@S64]()
             v: S64 = ok_view.peek()
-            c_printf("Ok(%lld)\n", v)
+            Console.show("Ok({v})")
             return
         IntResultTag.ERR =>
             payload: @UnionTwo[S64, S32] = me.payload
             err_view: @S32 = payload.to[@S32]()
             code: S32 = err_view.peek()
-            c_printf("Err(%lld)\n", code.to[S64]())
+            Console.show("Err({code.to[S64]()})")
             return
         else => unreachable
 
@@ -152,7 +149,10 @@ routine start() -> None
     int_ptr: &Number <- to_int
     flt_ptr: &Number <- to_float
 
-    c_printf("Number int view: %lld\n", int_ptr.to_int())
-    c_printf("Number float view: %f\n", flt_ptr.to_float())
+    Console.show("Number int view: {int_ptr.to_int()}")
+    out: @ConsoleOutput = Console.output()
+    out.write("Number float view: ")
+    flt_ptr.to_float().represent_fixed_into(out, digits: 6)
+    out.write("\n")
 
     return

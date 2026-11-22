@@ -1,5 +1,5 @@
 relaying
 crashed: AbsentValueError, 3 frames
-  0: at take (tests/trace_frames/src/main.lpa:34:21)
-  1: at relay (tests/trace_frames/src/main.lpa:50:12)
-  2: at start (tests/trace_frames/src/main.lpa:57:18)
+  0: at take (tests/trace_frames/src/main.lpa:29:21)
+  1: at relay (tests/trace_frames/src/main.lpa:45:12)
+  2: at start (tests/trace_frames/src/main.lpa:52:18)

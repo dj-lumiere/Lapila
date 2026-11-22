@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Protects pages, and WebAssembly's linear memory can't be protected.
 not wasm32

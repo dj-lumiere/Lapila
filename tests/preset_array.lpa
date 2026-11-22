@@ -1,17 +1,14 @@
 # Preset arrays are read-only static data. K[i] is a place you load from, K alone is its address, and the
 # Items methods work through that address.
 
+import Hosted
+
 preset PRIMES: Items[S64, 5] = [2, 3, 5, 7, 11]
 ### U32 elements take the whole unsigned range (as in SHA-256's round constants).
 preset WORDS: Items[U32, 3] = [0x428a2f98, 0xb5c0fbcf, 0xFFFFFFFF]
 preset GRID: Items[Items[S16, 3], 2] = [[1, 2, 3], [4, 5, 6]]
 preset HALVES: Items[B64, 2] = [0.5, -2.25]
 preset FLAGS: Items[Bool, 2] = [true, false]
-
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
 
 routine sum_primes() -> S64
     acc: &S64 <- 0
@@ -22,31 +19,56 @@ routine sum_primes() -> S64
     then
         return acc.load()
 
+### Writes `value` in lowercase hex, zero-padded to `digits` digits.
+### :param value: The value.
+### :param digits: The fewest digits.
+routine write_hex(value: U64, digits: U64) -> None
+    out: @ConsoleOutput = Console.output()
+    needed: U64 = hex_digits(value).max(digits)
+    letters: @[Byte] = "0123456789abcdef"
+
+    for i in 0 til needed
+        nibble: U64 = (value >>> (4 * (needed - 1 - i))) & 15
+        out.write_bytes(data: letters.data.stride(nibble), count: 1)
+        continue
+    return
+
+### How many hex digits `value` takes, 1 for 0.
+### :param value: The value.
+### :returns: The count.
+routine hex_digits(value: U64) -> U64
+    until n == 16 or (value >>> (4 * n)) == 0 with n: U64 = 1
+        continue with n: n + 1
+    then
+        return n
+
 routine start() -> None
-    c_printf("%lld\n", sum_primes())
+    Console.show("{sum_primes()}")
 
     w1: U32 = WORDS.getitem(1)
     w2: U32 = WORDS.getitem(2)
-    c_printf("%08x %d\n", w1, w2)
+    write_hex(value: w1.to[U64](), digits: 8)
+    # printf's %d reads the U32's bits as a signed int
+    Console.show(" {bitcast[U32, S32](w2)}")
 
     second_row: @Items[S16, 3] = GRID.getview().to[@Items[S16, 3]]().stride(1)
     g: S16 = second_row[2]
-    c_printf("%d\n", g.to[S32]())
+    Console.show("{g.to[S32]()}")
 
     h: B64 = HALVES.getitem(1)
-    c_printf("%g\n", h)
+    Console.show("{h}")
 
     flag: Bool = FLAGS.getitem(0)
-    c_printf("%d\n", flag.to[S32]())
+    Console.show("{flag.to[S32]()}")
 
     # the bare name is the address
     table: @Items[S64, 5] = PRIMES
     third: S64 = table[2]
     first: @S64 = PRIMES.getview().to[@S64]()
     two: S64 = first.peek()
-    c_printf("%lld %lld\n", third, two)
+    Console.show("{third} {two}")
 
     elem: @S64 = PRIMES.getview().to[@S64]().stride(4)
     last: S64 = elem.peek()
-    c_printf("%lld\n", last)
+    Console.show("{last}")
     return

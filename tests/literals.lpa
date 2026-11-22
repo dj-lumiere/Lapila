@@ -3,12 +3,10 @@
 
 import Hosted
 
-@external("c")
-@symbol("putchar")
-routine c_putchar(c: CInt) -> CInt
-
 routine put_byte(b: Byte) -> None
-    c_putchar(b.to[U8]().to[S32]())
+    cell: &Byte <- b
+
+    Console.output().write_bytes(data: cell, count: 1)
     return
 
 ### Maps a byte to a letter class through a when on byte literals.

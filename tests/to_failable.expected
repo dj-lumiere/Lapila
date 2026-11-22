@@ -4,4 +4,4 @@ none 2
 none
 none A
 IntegerOverflowError: Integer overflow: value does not fit in the target type.
-at line 39
+at line 34

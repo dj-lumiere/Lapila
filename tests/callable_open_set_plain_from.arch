@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Takes a C library routine (llabs) as a routine value, and a WASI program links no C library.
 not wasm32

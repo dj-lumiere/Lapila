@@ -2,28 +2,55 @@
 # a 32-bit target through the stdlib's own copies (System/Numerics/SoftFloat's integer-only conversions, which
 # Standard/SoftFloat/Exports.lpa exports there), and both must print the same.
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
+import Hosted
 
-routine show_u128(label: @Byte, v: U128) -> None
+routine show_u128(label: @[Byte], v: U128) -> None
     hi: U64 = (v >> 64).to_wrap[U64]()
     lo: U64 = v.to_wrap[U64]()
-    c_printf("%s %016llx%016llx\n", label, hi, lo)
+    Console.output().write("{label} ")
+    write_hex(value: hi, digits: 16)
+    write_hex(value: lo, digits: 16)
+    Console.output().write("\n")
     return
 
-routine show_s128(label: @Byte, v: S128) -> None
+routine show_s128(label: @[Byte], v: S128) -> None
     show_u128(label, v: v.to_wrap[U128]())
     return
 
-routine show_b64(label: @Byte, v: B64) -> None
-    c_printf("%s %016llx\n", label, v.bits())
+routine show_b64(label: @[Byte], v: B64) -> None
+    Console.output().write("{label} ")
+    write_hex(value: v.bits(), digits: 16)
+    Console.output().write("\n")
     return
 
-routine show_b32(label: @Byte, v: B32) -> None
-    c_printf("%s %08x\n", label, v.bits())
+routine show_b32(label: @[Byte], v: B32) -> None
+    Console.output().write("{label} ")
+    write_hex(value: v.bits().to[U64](), digits: 8)
+    Console.output().write("\n")
     return
+
+### Writes `value` in lowercase hex, zero-padded to `digits` digits.
+### :param value: The value.
+### :param digits: The fewest digits.
+routine write_hex(value: U64, digits: U64) -> None
+    out: @ConsoleOutput = Console.output()
+    needed: U64 = hex_digits(value).max(digits)
+    letters: @[Byte] = "0123456789abcdef"
+
+    for i in 0 til needed
+        nibble: U64 = (value >>> (4 * (needed - 1 - i))) & 15
+        out.write_bytes(data: letters.data.stride(nibble), count: 1)
+        continue
+    return
+
+### How many hex digits `value` takes, 1 for 0.
+### :param value: The value.
+### :returns: The count.
+routine hex_digits(value: U64) -> U64
+    until n == 16 or (value >>> (4 * n)) == 0 with n: U64 = 1
+        continue with n: n + 1
+    then
+        return n
 
 routine start() -> None
     # float to integer: truncation, the exact top of the range, clamping

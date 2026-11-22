@@ -19,7 +19,7 @@ dotnet run -- version                    # the builder's version; help prints ev
 ```
 
 `build` and `run` take files and nothing else: every setting is in config.toml (`[target] mode = "release"`,
-`triple`, `board`, `cpu`, `features`, `use-daemon`, `[debug] trace = false`, `race-check`, `heap-check`, `emit-llvm`, `show-pausable`). A flag
+`triple`, `board`, `cpu`, `features`, `use-daemon`, `runner`, `[debug] trace = false`, `race-check`, `heap-check`, `emit-llvm`, `show-pausable`). A flag
 config.toml can say is an error that names the key ("`--mode` isn't an option: write `mode = \"release\"` under
 [target] in config.toml"). The output is named after the entry file (`build/main` for `executable = "main.lpa"`). A
 config.toml with no `executable` builds a library linked into another program: its `sources` files as LLVM IR,
@@ -50,8 +50,9 @@ hosted layer calls WASI itself (`Standard/Hosted/Wasi.lpa`: `fd_write`, `fd_read
 `@import_module("wasi_snapshot_preview1")`), and the compiler-rt helpers WebAssembly calls (128-bit multiply and
 shifts, the half-float conversions, `fmod`) come from `System/Numerics/SoftFloat/Exports.lpa`. The builder writes the
 entry `_start`: the arguments from `args_get`, `start`, then `proc_exit` with `exit_code()`. The output is
-`build/<name>.wasm`. `run` and `test` run it in wasmtime (on PATH, or the program `LAPILA_WASI_RUNNER` names) with the
-working directory opened as `.` and the system's temporary directory as `/tmp`. Memory: `PAGES` lends WebAssembly
+`build/<name>.wasm`. `run` and `test` run it in the program `runner` under `[target]` in config.toml names (`run`: the
+program's config.toml, `test`: a test's own, else the one of the folder it runs in or above), else wasmtime on PATH,
+with the working directory opened as `.` and the system's temporary directory as `/tmp`. Memory: `PAGES` lends WebAssembly
 pages (64 KiB) that `memory.grow` adds to linear memory, which never shrinks, so a released run of pages is kept for
 the next reservation (zeroed when it goes out again). `commit` does nothing and `protect` is true only for
 `READ_WRITE`. `HEAP` with the heap check off and `C_HEAP` are `HeapManagerByPages`: blocks of 16 bytes to 32 KiB cut

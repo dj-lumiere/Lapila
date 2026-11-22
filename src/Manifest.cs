@@ -133,6 +133,11 @@ public sealed record Manifest(
     /// between builds. Off unless the manifest turns it on.
     public bool UseDaemon { get; init; }
 
+    /// `[target] runner`: the program that runs a build this machine can't run by itself, wasmtime for
+    /// wasm32-wasip1-none. A name is looked up on PATH, a path is taken from the config.toml's folder. Null when the key
+    /// is absent, and `run` and `test` then look for wasmtime on PATH.
+    public string? Runner { get; init; }
+
     /// Where a library build writes its IR: `build/<package name>.ll`.
     public string LibraryPath => System.IO.Path.Combine(OutputDirectory, Executable + ".ll");
 
@@ -157,7 +162,7 @@ public sealed record Manifest(
     {
         ["package"] = ["name", "version", "description", "authors", "license", "repository", "lapila-version"],
         ["target"] = ["executable", "triple", "cpu", "features", "mode", "module-paths", "sources", "c-libraries", "library-paths", "board",
-            "use-daemon"],
+            "use-daemon", "runner"],
         ["debug"] = ["emit-llvm", "trace", "heap-check", "race-check", "trace-frames", "failure-traces",
             "deadlock-check", "access-order", "show-pausable"],
         ["crash"] = ["message-size"],
@@ -277,6 +282,7 @@ public sealed record Manifest(
             RootFiles = rootFiles,
             IsLibrary = entry is null,
             UseDaemon = Bool(target, "use-daemon", path) ?? false,
+            Runner = RunnerOf(target, path),
             Trace = Bool(debug, "trace", path),
             HeapCheck = Bool(debug, "heap-check", path) ?? false,
             RaceCheckSetting = Bool(debug, "race-check", path),
@@ -402,6 +408,23 @@ public sealed record Manifest(
 
     private static TomlTable? Section(TomlTable root, string name, string path) =>
         root.TryGetValue(name, out var v) ? v as TomlTable : null;
+
+    /// The `runner` of a `[target]` table: a name as it is (looked up on PATH), a path from the config.toml's folder.
+    private static string? RunnerOf(TomlTable target, string path) =>
+        Str(target, "runner", path) is not { Length: > 0 } runner ? null
+        : runner.Contains('/') || runner.Contains('\\') ? System.IO.Path.GetFullPath(runner, System.IO.Path.GetDirectoryName(path)!)
+        : runner;
+
+    /// The `[target] runner` of the config.toml at `path`, read alone: `test` takes it from the config.toml of the
+    /// folder it runs in (or one above), which needs no program of its own.
+    public static string? RunnerSetting(string path)
+    {
+        path = System.IO.Path.GetFullPath(path);
+        var doc = Toml.Parse(File.ReadAllText(path), path);
+        if (doc.HasErrors)
+            throw new ManifestError(Li.ManifestSyntax, path, string.Join("; ", doc.Diagnostics.Select(d => d.ToString())));
+        return doc.ToModel().TryGetValue("target", out var t) && t is TomlTable target ? RunnerOf(target, path) : null;
+    }
 
     private static string? Str(TomlTable t, string key, string path) =>
         !t.TryGetValue(key, out var v) ? null

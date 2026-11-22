@@ -26,11 +26,6 @@ needs TWriter obeys Writer
     out.write("the input isn't a number")
     return
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Prints the crash's name, message, and the failure's traces, where the golden test sees them, and exits with status 3.
 ### :param name: The crash kind.
 ### :param message: The crash message.
@@ -40,7 +35,7 @@ routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) 
     Console.show("{name}: {message.text()}", end: "")
     write_failure_trace(seq: message.failure.peek(), out: Console.output())
     Console.show("")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 routine parse(n: S64) -> S64
     if n < 0

@@ -22,13 +22,6 @@
 
 import Hosted
 
-# ── C FFI ─────────────────────────────────────────────────────────────────────
-
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
-
 # ── Tokens ────────────────────────────────────────────────────────────────────
 
 choice TokenKind: U8
@@ -394,8 +387,8 @@ routine eval(e: @Expr) -> S64
 # ── Driver ────────────────────────────────────────────────────────────────────
 
 routine calculate(source: @[Byte], manager: @MemoryManager) -> None
-    src: @Byte = source.data
-    c_printf("%-34s ", src)
+    write_padded(text: source, width: 34)
+    Console.output().write(" ")
     parsed: Check[@Expr] = check parse(source, manager)
     error: CalcError = when parsed
         is @Expr as tree =>
@@ -403,14 +396,26 @@ routine calculate(source: @[Byte], manager: @MemoryManager) -> None
             free_expr(e: tree, manager)
             when result
                 is S64 as value =>
-                    c_printf("= %lld\n", value)
+                    Console.show("= {value}")
                     return
                 is CalcError as error =>
                     becomes error
         is CalcError as error => error
     pos: U64 = error.pos
     message: @Byte = error.message
-    c_printf("error at column %llu: %s\n", pos + 1, message)
+    Console.show("error at column {pos + 1}: {message.to[CStrView]().getview()}")
+    return
+
+### Writes `text`, then spaces up to `width` characters.
+### :param text: The text.
+### :param width: The fewest characters.
+routine write_padded(text: @[Byte], width: U64) -> None
+    out: @ConsoleOutput = Console.output()
+
+    out.write("{text}")
+    for i in text.count() til width
+        out.write(" ")
+        continue
     return
 
 routine start() -> None

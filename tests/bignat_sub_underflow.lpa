@@ -3,11 +3,6 @@
 
 import Hosted
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Reports the crash and the caller's line on stdout, where the golden test sees them, and exits with status 3.
 ### :param name: The crash kind.
 ### :param message: The crash message.
@@ -15,7 +10,7 @@ routine exit(status: CInt) -> None
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("crashed: {name} at line {place.line.peek()}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 routine start() -> None
     a: &BigNat[4]

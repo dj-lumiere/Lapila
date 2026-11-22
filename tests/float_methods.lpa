@@ -1,64 +1,46 @@
 # The Rust-level float methods on B16, BF16, B32 and B64, checked against a Python model of Rust's
 # semantics.
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> CInt
+import Hosted
 
-routine show_f(label: @Byte, v: B64) -> None
+routine show_f(label: @[Byte], v: B64) -> None
     if v.is_nan()
-        c_printf("%s NaN\n", label)
+        Console.show("{label} NaN")
         return
     else
-        c_printf("%s %.17g\n", label, v)
+        Console.show("{label} {v}")
         return
 
-routine show_f6(label: @Byte, v: B64) -> None
+routine show_f6(label: @[Byte], v: B64) -> None
     if v.is_nan()
-        c_printf("%s NaN\n", label)
+        Console.show("{label} NaN")
         return
     else
-        c_printf("%s %.6g\n", label, v)
+        Console.show("{label} {v}")
         return
 
-routine show_b(label: @Byte, v: Bool) -> None
-    c_printf("%s %d\n", label, v.to[S32]())
+routine show_b(label: @[Byte], v: Bool) -> None
+    Console.show("{label} {v.to[S32]()}")
     return
 
-routine show_s(label: @Byte, v: S128) -> None
+routine show_s(label: @[Byte], v: S128) -> None
     show_int(label, negative: v < 0, mag: v.abs_diff(0))
     return
 
-routine show_u(label: @Byte, v: U128) -> None
+routine show_u(label: @[Byte], v: U128) -> None
     show_int(label, negative: false, mag: v)
     return
 
-# Integers up to 128 bits: a sign and the magnitude in base-10^18 limbs.
-routine show_int(label: @Byte, negative: Bool, mag: U128) -> None
-    sign: @Byte = sign_text(negative)
-    top: U128 = mag // 1000000000000000000000000000000000000
-    rest: U128 = mag % 1000000000000000000000000000000000000
-    mid: U64 = (rest // 1000000000000000000).to[U64]()
-    low: U64 = (rest % 1000000000000000000).to[U64]()
-
-    when
-        top != 0 =>
-            top_digits: U64 = top.to[U64]()
-            c_printf("%s %s%llu%018llu%018llu\n", label, sign, top_digits, mid, low)
-            return
-        mid != 0 =>
-            c_printf("%s %s%llu%018llu\n", label, sign, mid, low)
-            return
-        else =>
-            c_printf("%s %s%llu\n", label, sign, low)
-            return
-
-routine sign_text(negative: Bool) -> @Byte
+### Writes a label and an integer of up to 128 bits.
+### :param label: The label.
+### :param negative: Whether the integer is below zero.
+### :param mag: Its magnitude.
+routine show_int(label: @[Byte], negative: Bool, mag: U128) -> None
     if negative
-        return "-"
-    else
-        return ""
+        Console.show("{label} -{mag}")
+        return
+    Console.show("{label} {mag}")
+    return
 
 routine part0() -> None
     f0: B16 = 0.0

@@ -4,15 +4,10 @@
 
 import Hosted
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("{name}: {message.text()}\nat line {place.line.peek()}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 ### The value as a T, or None when it doesn't fit.
 ### :typeparam T: The type converted to.

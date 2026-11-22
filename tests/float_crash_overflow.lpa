@@ -4,11 +4,6 @@
 
 import Hosted
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Reports the crash and whether it names this file's line, on stdout, and exits with status 3.
 ### :param name: The crash kind.
 ### :param message: The crash message.
@@ -18,7 +13,7 @@ routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) 
     file: @[Byte] = place.file.peek()
     here: Bool = file.has_suffix("float_crash_overflow.lpa")
     Console.show("crashed: {name}: {message.text()} (this file {here}, line {place.line.peek()})")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 routine start() -> None
     Crash.report_with(on_crash.to[Callable]())

@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Declares a C library routine (abs) with @external, and a WASI program links no C library.
 not wasm32

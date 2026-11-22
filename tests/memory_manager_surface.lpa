@@ -9,11 +9,6 @@ record Plain
 
 obeys MemoryManageable[Plain]
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Reports the crash on stdout and exits with status 3.
 ### :param name: The crash kind.
 ### :param message: The crash message.
@@ -21,7 +16,7 @@ routine exit(status: CInt) -> None
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("crashed: {name}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 ### Whether `at` is a multiple of `align`.
 ### :param at: The address.

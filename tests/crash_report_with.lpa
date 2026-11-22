@@ -16,23 +16,18 @@ needs TWriter obeys Writer
     out.write("The configuration file is missing.")
     return
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Reports with "first".
 @untraced
 routine first(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("first: {name}: {message.text()}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 ### Reports with "second", and the line.
 @untraced
 routine second(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     line: U32 = place.line.peek()
     Console.show("second: {name}: {message.text()} (line {line})")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 routine start() -> None
     was: Callable[(@[Byte], @CrashMessage, @SourceLocation), None]? = Crash.report_with(first.to[Callable]())

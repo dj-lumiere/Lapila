@@ -11,11 +11,6 @@ variant Reading
     S64
     None
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Reports the crash on stdout and exits with status 3.
 ### :param name: The crash kind.
 ### :param message: The crash message.
@@ -23,7 +18,7 @@ routine exit(status: CInt) -> None
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("crashed: {name}: {message.text()}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 routine start() -> None
     maybe: &Reading <- 7

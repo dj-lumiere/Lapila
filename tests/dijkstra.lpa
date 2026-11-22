@@ -16,11 +16,6 @@ import Hosted
 
 # ── C FFI ─────────────────────────────────────────────────────────────────────
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
-
 # ── Types ─────────────────────────────────────────────────────────────────────
 
 preset INF: S64 = S64.MAX  # the sentinel for "unreachable"
@@ -139,11 +134,11 @@ routine start() -> None
     dist: @S64 = distances.to[@S64]()
     dijkstra(graph, source: 0, dist, manager)
 
-    c_printf("Shortest distances from node 0:\n")
+    Console.show("Shortest distances from node 0:")
 
     for i: U64 in 0 til 6
         d: S64 = distances[i]
-        c_printf("  node %llu  dist %lld\n", i, d)
+        Console.show("  node {i}  dist {d}")
     drop graph
     drop distances
     return

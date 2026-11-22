@@ -330,7 +330,6 @@ jobs:
           curl -fsSL -o wasmtime.tar.xz "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
           mkdir -p "$HOME/wasmtime"
           tar -xJf wasmtime.tar.xz -C "$HOME/wasmtime" --strip-components=1
-          echo "$HOME/wasmtime" >> "$GITHUB_PATH"
           "$HOME/wasmtime/wasmtime" --version
 
       - name: Build
@@ -344,10 +343,15 @@ jobs:
       - name: Check the stdlib without the trace
         run: dotnet bin/Release/net10.0/lapila.dll check --target wasm32-wasip1-none --no-trace
 
+      # test takes the WASI runtime from `runner` under [target] in the config.toml of the folder it runs in. The job
+      # writes one in the checkout's root after the checks, which read no config.toml, and runs the tests from there,
+      # so the paths in their expected output stay relative.
       - name: Golden tests (debug)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         timeout-minutes: 45
-        run: dotnet bin/Release/net10.0/lapila.dll test --target wasm32-wasip1-none tests examples
+        run: |
+          printf '[target]\nrunner = "%s"\n' "$HOME/wasmtime/wasmtime" > config.toml
+          dotnet bin/Release/net10.0/lapila.dll test --target wasm32-wasip1-none tests examples
 
   # Targets without an operating system: the stdlib checks there (Standard/Os drops out), and the programs built for
   # one (tests/freestanding, and tests/freestanding_float, which uses every float operation and integer division; the

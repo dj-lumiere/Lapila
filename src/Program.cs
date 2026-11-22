@@ -1064,7 +1064,7 @@ static partial class Cli
             if (built is null) return code;
             if (manifest.Target.IsWasi)
             {
-                var (runner, runnerArgs) = WasiCommand(built, programArgs);
+                var (runner, runnerArgs) = WasiCommand(manifest.Runner, built, programArgs);
                 return Exec(runner, captureOutput: false, programArgs: runnerArgs).Code;
             }
             return Exec(built, captureOutput: false, programArgs: programArgs).Code;
@@ -1629,10 +1629,13 @@ static partial class Cli
             emulator = command;
         }
         // A WebAssembly program runs in the WASI runtime. Where none is installed the test is skipped before it links.
-        if (target.IsWasi && WasiRunner() is null)
+        string? wasiRunner = target.IsWasi ? manifest?.Runner ?? _testRunner.Value : null;
+        if (target.IsWasi && WasiRunner(wasiRunner) is null)
         {
+            if (wasiRunner is not null)
+                return $"[target] runner names {wasiRunner}, which isn't there";
             if (Interlocked.Exchange(ref _emulatorNoted, 1) == 0)
-                Console.Error.WriteLine("note: no WASI runtime was found (wasmtime on PATH, or LAPILA_WASI_RUNNER), so the tests are built and skipped");
+                Console.Error.WriteLine("note: no WASI runtime was found (runner under [target] in config.toml, or wasmtime on PATH), so the tests are built and skipped");
             return null;
         }
 
@@ -1658,7 +1661,7 @@ static partial class Cli
             (int, string, string) result;
             if (target.IsWasi)
             {
-                var (runner, runnerArgs) = WasiCommand(exe, []);
+                var (runner, runnerArgs) = WasiCommand(wasiRunner, exe, []);
                 result = Exec(runner, captureOutput: true, input, programArgs: runnerArgs, limitSeconds: TestSeconds * WasiSlowdown);
             }
             else if (target.HasOs)
@@ -1688,18 +1691,23 @@ static partial class Cli
         }
     }
 
-    /// The WebAssembly runtime a WASI program runs in: the program LAPILA_WASI_RUNNER names when it is set, else
-    /// wasmtime on PATH, or null when there is none.
-    internal static string? WasiRunner() =>
-        Environment.GetEnvironmentVariable("LAPILA_WASI_RUNNER") is { Length: > 0 } named ? FindOnPath(named) : FindOnPath("wasmtime");
+    /// The runner `[target] runner` of the config.toml in the folder `test` runs in, or one above, for the tests that
+    /// have no config.toml of their own: CI names its wasmtime there.
+    private static readonly Lazy<string?> _testRunner = new(() =>
+        Manifest.Find(Directory.GetCurrentDirectory()) is { } config ? Manifest.RunnerSetting(config) : null);
 
-    /// The command that runs a WASI program in wasmtime: the working directory opened as ".", the system's temporary
+    /// The WebAssembly runtime a WASI program runs in: the program `[target] runner` names (null when the key is
+    /// absent), else wasmtime on PATH, or null when there is none.
+    internal static string? WasiRunner(string? configured) => FindOnPath(configured ?? "wasmtime");
+
+    /// The command that runs a WASI program in its runtime: the working directory opened as ".", the system's temporary
     /// directory as "/tmp" (where `OsEnvironment.temp_directory()` points without TMPDIR), then the program's own
     /// arguments.
-    private static (string Runner, string[] Args) WasiCommand(string wasm, string[] programArgs)
+    private static (string Runner, string[] Args) WasiCommand(string? configured, string wasm, string[] programArgs)
     {
-        string runner = WasiRunner() ?? throw new ToolError(Li.ToolchainMissing,
-            $"a {BuildTarget.WasiTriple} program runs in a WASI runtime, and none was found: put wasmtime on PATH, or name the runtime in LAPILA_WASI_RUNNER");
+        string runner = WasiRunner(configured) ?? throw new ToolError(Li.ToolchainMissing, configured is not null
+            ? $"[target] runner in config.toml names {configured}, which isn't there"
+            : $"a {BuildTarget.WasiTriple} program runs in a WASI runtime, and none was found: name it with runner = \"wasmtime\" (or its path) under [target] in config.toml, or put wasmtime on PATH");
         string temp = Path.GetTempPath().TrimEnd('/', '\\');
         return (runner, ["run", "--dir=.::.", $"--dir={temp}::/tmp", wasm, .. programArgs]);
     }

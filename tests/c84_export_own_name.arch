@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# C's abs calls the routine exported under its own C name, and a WASI program links no C library.
 not wasm32

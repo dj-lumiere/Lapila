@@ -1,6 +1,8 @@
 # Buildtime sizeof / alignof must match what LLVM lays out at run time. Probe[T] copies T's layout from the
 # buildtime values (an @aligned field over a byte array). The runtime sizeof / alignof of both must agree.
 
+import Hosted
+
 preset LARGER: S64 = max(sizeof[S32](), sizeof[S16]())
 
 record Probe[T]
@@ -33,12 +35,7 @@ record FieldAligned
     @aligned(16)
     b: S8
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
-
-routine check[T](name: @Byte) -> None
+routine check[T](name: @[Byte]) -> None
     size: U64 = sizeof[T]()
     align: U64 = alignof[T]()
     probe_size: U64 = sizeof[Probe[T]]()
@@ -47,11 +44,10 @@ routine check[T](name: @Byte) -> None
     size_ok: Bool = size == probe_size
     align_ok: Bool = align == probe_align
     if size_ok and align_ok
-        c_printf("%s ok\n", name)
+        Console.show("{name} ok")
         return
     else
-        c_printf("%s: runtime %llu/%llu, compile time %llu/%llu\n", name, size, align, probe_size,
-            probe_align)
+        Console.show("{name}: runtime {size}/{align}, compile time {probe_size}/{probe_align}")
         return
 
 routine start() -> None
@@ -79,5 +75,5 @@ routine start() -> None
     a32_align: U64 = alignof[Aligned32]()
     fa_size: U64 = sizeof[FieldAligned]()
     larger: U64 = sizeof[Items[S8, LARGER]]()
-    c_printf("%llu %llu %llu %llu\n", a32_size, a32_align, fa_size, larger)
+    Console.show("{a32_size} {a32_align} {fa_size} {larger}")
     return

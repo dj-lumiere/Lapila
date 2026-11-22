@@ -6,15 +6,10 @@
 
 import Hosted
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
     Console.show("{name}: {message.text()}\nat {place.file.peek()} line {place.line.peek()}")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 ### Makes `into` a second holder of the memory in `slot`: the holder's bytes copied one by one, which the build doesn't
 ### follow, so both hold the same memory.

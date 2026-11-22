@@ -13,26 +13,24 @@ entity Box
 
 obeys MemoryManageable[Budget]
 
-### C's malloc.
+### C's malloc, through C_HEAP.
 ### :param size: The bytes.
 ### :returns: The block, or zero.
-@external("c")
-@symbol("malloc")
 routine c_malloc(size: CSize) -> Addr
+    return C_HEAP.borrow(size: size.to[U64](), align: 16)
 
-### C's realloc.
+### C's realloc, through C_HEAP.
 ### :param ptr: The block.
 ### :param size: The bytes.
 ### :returns: The block, or zero.
-@external("c")
-@symbol("realloc")
 routine c_realloc(ptr: Addr, size: CSize) -> Addr
+    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 16)
 
-### C's free.
+### C's free, through C_HEAP.
 ### :param ptr: The block.
-@external("c")
-@symbol("free")
 routine c_free(ptr: Addr) -> None
+    C_HEAP.give_back(ptr)
+    return
 
 ### Takes one call from the budget.
 ### :returns: Whether one was left.

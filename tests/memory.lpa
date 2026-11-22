@@ -1,14 +1,18 @@
-# claimed stack slots, heap buffers through libc malloc, indexed loads and stores.
+# claimed stack slots, heap buffers from C_HEAP (malloc, or WASI's page heap), indexed loads and stores.
 
 import Hosted
 
-@external("c")
-@symbol("malloc")
+### A block from C_HEAP.
+### :param size: The bytes.
+### :returns: The block, or zero.
 routine c_malloc(size: CSize) -> Addr
+    return C_HEAP.borrow(size: size.to[U64](), align: 16)
 
-@external("c")
-@symbol("free")
+### Gives a block back to C_HEAP.
+### :param ptr: The block.
 routine c_free(ptr: Addr) -> None
+    C_HEAP.give_back(ptr)
+    return
 
 ### Fills data[i] = i * i for i in 0..len, then sums it through a stack slot.
 routine sum_of_squares(len: U64) -> U64

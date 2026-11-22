@@ -22,11 +22,6 @@ import Hosted
 
 # ── C FFI ─────────────────────────────────────────────────────────────────────
 
-@external("c")
-@symbol("printf")
-@variadic
-routine c_printf(fmt: @Byte) -> S32
-
 # ── Types ─────────────────────────────────────────────────────────────────────
 
 preset MILLION: U64 = 1000000
@@ -271,16 +266,17 @@ routine sha256(data: @Byte, len: U64, digest: @U32) -> None
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
-routine print_digest(label: @Byte, digest: @U32) -> None
-    c_printf("%-9s ", label)
+routine print_digest(label: @[Byte], digest: @U32) -> None
+    write_padded(text: label, width: 9)
+    Console.output().write(" ")
 
     for i: U64 in 0 til 8
         word: U32 = digest.stride(i).peek()
-        c_printf("%08x", word)
-    c_printf("\n")
+        write_hex(value: word.to[U64](), digits: 8)
+    Console.output().write("\n")
     return
 
-routine hash_and_print(label: @Byte, data: @Byte, len: U64) -> None
+routine hash_and_print(label: @[Byte], data: @Byte, len: U64) -> None
     digest_buf: &Items[U32, 8]
 
     digest: @U32 = digest_buf.getview().to[@U32]()
@@ -288,13 +284,48 @@ routine hash_and_print(label: @Byte, data: @Byte, len: U64) -> None
     print_digest(label, digest)
     return
 
-routine hash_string(label: @Byte, message: @[Byte]) -> None
+routine hash_string(label: @[Byte], message: @[Byte]) -> None
     data: @Byte = message.data
     len: U64 = message.count
     hash_and_print(label, data, len)
     return
 
 # ── start ─────────────────────────────────────────────────────────────────────
+
+### Writes `value` in lowercase hex, zero-padded to `digits` digits.
+### :param value: The value.
+### :param digits: The fewest digits.
+routine write_hex(value: U64, digits: U64) -> None
+    out: @ConsoleOutput = Console.output()
+    needed: U64 = hex_digits(value).max(digits)
+    letters: @[Byte] = "0123456789abcdef"
+
+    for i in 0 til needed
+        nibble: U64 = (value >>> (4 * (needed - 1 - i))) & 15
+        out.write_bytes(data: letters.data.stride(nibble), count: 1)
+        continue
+    return
+
+### How many hex digits `value` takes, 1 for 0.
+### :param value: The value.
+### :returns: The count.
+routine hex_digits(value: U64) -> U64
+    until n == 16 or (value >>> (4 * n)) == 0 with n: U64 = 1
+        continue with n: n + 1
+    then
+        return n
+
+### Writes `text`, then spaces up to `width` characters.
+### :param text: The text.
+### :param width: The fewest characters.
+routine write_padded(text: @[Byte], width: U64) -> None
+    out: @ConsoleOutput = Console.output()
+
+    out.write("{text}")
+    for i in text.count() til width
+        out.write(" ")
+        continue
+    return
 
 routine start() -> None
     lateinit many: &[Byte]

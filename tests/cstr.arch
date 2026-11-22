@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Checks C text against the C library's strlen and wcslen, and a WASI program links no C library.
 not wasm32

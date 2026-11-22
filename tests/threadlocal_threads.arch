@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Runs work on threads it starts with pthread_create, and wasm32-wasip1-none has none.
 not wasm32

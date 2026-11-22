@@ -6,17 +6,15 @@
 import Collections
 import Hosted
 
-@external("c")
-@symbol("malloc")
 routine c_malloc(size: CSize) -> Addr
+    return C_HEAP.borrow(size: size.to[U64](), align: 16)
 
-@external("c")
-@symbol("realloc")
 routine c_realloc(ptr: Addr, size: CSize) -> Addr
+    return C_HEAP.reborrow(at: ptr, size: size.to[U64](), align: 16)
 
-@external("c")
-@symbol("free")
 routine c_free(ptr: Addr) -> None
+    C_HEAP.give_back(ptr)
+    return
 
 # -- the budgeted memory manager: a manager that allows `left` more calls, then fails -----------------------------------
 

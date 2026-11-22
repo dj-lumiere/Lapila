@@ -1,2 +1,2 @@
-# Calls the C library, which a WASI program doesn't link.
+# Reads a C library variable (environ), and a WASI program links no C library.
 not wasm32

@@ -1,8 +1,14 @@
-# Recursive and loop-based Fibonacci, printed through libc putchar.
+# Recursive and loop-based Fibonacci, printed one character at a time.
 
-@external("c")
-@symbol("putchar")
-routine c_putchar(c: CInt) -> CInt
+import Hosted
+
+### Writes one character to standard output.
+### :param code: The character's code, below 128.
+routine put_code(code: U64) -> None
+    cell: &Byte <- bitcast[U8, Byte](code.to[U8]())
+
+    Console.output().write_bytes(data: cell, count: 1)
+    return
 
 ### Prints n in decimal: digits above the last one first, by recursion.
 routine print_decimal(n: U64) -> None
@@ -11,12 +17,12 @@ routine print_decimal(n: U64) -> None
         print_decimal(rest)
     digit: U64 = n % 10
     ch: U64 = digit + Byte('0').to[U8]().to[U64]()
-    c_putchar(ch.to[S32]())
+    put_code(ch)
     return
 
 routine println_decimal(n: U64) -> None
     print_decimal(n)
-    c_putchar(10)
+    put_code(10)
     return
 
 routine fib_rec(n: U64) -> U64

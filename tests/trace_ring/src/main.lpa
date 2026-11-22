@@ -15,11 +15,6 @@ needs TWriter obeys Writer
     out.write("The recursion reached the bottom.")
     return
 
-@external("c")
-@symbol("exit")
-@noreturn
-routine exit(status: CInt) -> None
-
 ### Writes the trace as the default handler does, then exits with status 3.
 @untraced
 routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) -> None
@@ -36,7 +31,7 @@ routine on_crash(name: @[Byte], message: @CrashMessage, place: @SourceLocation) 
         column: U32 = at.column
         Console.show("  {back}: at {label} ({file}:{line}:{column})")
     Console.show("  ... ({depth} frames total)")
-    exit(3)
+    ProcessManager.exit_process(3)
 
 ### Recurses n more times, then crashes.
 routine descend(n: U32) -> U32
