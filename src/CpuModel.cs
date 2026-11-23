@@ -81,7 +81,9 @@ public sealed class CpuModel
     private static (string Ir, string Err) QueryClang(BuildTarget target, IEnumerable<string> features, Pos pos)
     {
         var run = Run(target, features).GetAwaiter().GetResult()
-                  ?? throw new CompileError(Li.TargetCpuProblem, pos, "clang is needed to resolve the target's CPU features and wasn't found: put it on PATH, or name it with LAPILA_CLANG");
+                  ?? throw new CompileError(Li.TargetCpuProblem, pos, BrowserTarget.Active
+                      ? BrowserTarget.NeedsClang("the CPU features")
+                      : "clang is needed to resolve the target's CPU features and wasn't found: put it on PATH, or name it with LAPILA_CLANG");
         // For WebAssembly clang stops at a feature name it doesn't know instead of warning, which Has reads the same way.
         if (run.ExitCode != 0 && !run.Err.Contains(UnknownWasmFeature, StringComparison.Ordinal))
             throw new CompileError(Li.TargetCpuProblem, pos, $"clang rejected the CPU or features for {target.LlvmTriple}: {run.Err.Trim()}");
@@ -119,8 +121,10 @@ public sealed class CpuModel
         var args = new List<string> { "--target=" + target.LlvmTriple };
         args.AddRange(ClangCpuArguments(target, features));
         args.AddRange(["-x", "c", "-S", "-emit-llvm", "-o", "-", "-"]);
-        return Runs.GetOrAdd(string.Join("\n", args), _ => new Lazy<Task<ClangRun?>>(() =>
-            Task.Factory.StartNew(() => Execute(args), CancellationToken.None, TaskCreationOptions.LongRunning,
+        bool known = target.IsWasi && target.Cpu is null && !features.Any();
+        return Runs.GetOrAdd(string.Join("\n", args), _ => new Lazy<Task<ClangRun?>>(() => BrowserTarget.Active
+            ? Task.FromResult(known ? new ClangRun(BrowserTarget.WasiCpuIr, "", 0) : null)
+            : Task.Factory.StartNew(() => Execute(args), CancellationToken.None, TaskCreationOptions.LongRunning,
                 TaskScheduler.Default))).Value;
     }
 

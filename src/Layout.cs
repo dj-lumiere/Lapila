@@ -291,7 +291,9 @@ public sealed class DataLayout
     {
         if (Cache.TryGetValue(target.LlvmTriple, out var cached)) return cached;
         string text = Query(target.LlvmTriple).GetAwaiter().GetResult()
-                      ?? throw new CompileError(Li.LayoutProblem, pos, $"cannot get the data layout for {target.LlvmTriple} from clang");
+                      ?? throw new CompileError(Li.LayoutProblem, pos, BrowserTarget.Active
+                          ? BrowserTarget.NeedsClang("the data layout")
+                          : $"cannot get the data layout for {target.LlvmTriple} from clang");
         return Cache.GetOrAdd(target.LlvmTriple, Parse(text));
     }
 
@@ -299,8 +301,10 @@ public sealed class DataLayout
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> Queries = new();
 
     private static Task<string?> Query(string triple) =>
-        Queries.GetOrAdd(triple, t => new Lazy<Task<string?>>(() => Task.Factory.StartNew(() => QueryClang(t),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default))).Value;
+        Queries.GetOrAdd(triple, t => new Lazy<Task<string?>>(() => BrowserTarget.Active
+            ? Task.FromResult(BrowserTarget.Layout(t))
+            : Task.Factory.StartNew(() => QueryClang(t),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default))).Value;
 
     /// Starts the clang query for the target's data layout, so it goes on while the sources are read.
     public static void Prefetch(BuildTarget target) => _ = Query(target.LlvmTriple);

@@ -906,7 +906,8 @@ public sealed partial class Compiler
     private List<CompileError> ExportsNamingCLibrarySymbols()
     {
         var exports = _userRoutines.Where(r => r.AnnotationNamed("export") is { First: not null }).ToList();
-        if (exports.Count == 0 || !Target.HasOs) return [];
+        // A WASI program links no C library (the link is -nostdlib), so no name of one can be taken.
+        if (exports.Count == 0 || !Target.HasOs || Target.IsWasi) return [];
         var symbols = CLibrarySymbols.For(Target, LinkArguments);
         var errors = new List<CompileError>();
         foreach (var r in exports)
