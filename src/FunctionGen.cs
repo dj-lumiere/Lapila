@@ -4963,6 +4963,29 @@ public sealed partial class FunctionGen
         }
     }
 
+    /// A value written to a writer (a template hole, `Console.show(x)`) whose name or call is unknown is reported as
+    /// that. Written as it is, `x.represent_into(out)` with no `x` would be read as a call with the writer for its
+    /// receiver, and the error would be about the writer.
+    private void UnknownInWritten(Expr value, Pos at)
+    {
+        // A name another block binds isn't seen here: say so, rather than what the name would be as a preset.
+        if (value is PresetRef { Owner: null, Path: null } named && ResolvePreset(named) is null && BoundInRoutine(named.Name))
+            throw Err(Li.UnknownName, at, NotVisible(named.Name, fromNextLine: true));
+        if (value is PresetRef { Owner: null, Path: null } unknown && ResolvePreset(unknown) is null
+            && _c.FindFree(unknown.Name, _env.File, at, null) is null)
+            throw Err(Li.UnknownName, at, ScriptBinding(unknown.Name) ?? $"unknown name '{unknown.Name}'");
+        // A call to no routine at all is reported as that, not as a missing method of the writer it would be handed to.
+        if (value is CallExpr unknownCall && Infer(value) is null && PlanCall(value, null) is null)
+            throw Err(Li.UnknownName, at, UnknownCall(unknownCall));
+        // A value with no type of its own (`x + 1` with no `x`) has nothing here to give it one: a name inside it that
+        // nothing binds is the reason. A value that has a type keeps its bare names (`marks.has(MINE)`), which take
+        // their type from where they go.
+        if (value is PresetRef || InferQuiet(value) is not null) return;
+        foreach (var part in ExprTree.All(value).Skip(1))
+            if (part is PresetRef { Owner: null, Path: null })
+                UnknownInWritten(part, part.Pos);
+    }
+
     /// The value `Console.show(x)` shows, written with its represent_into: a type without one is a build error that says so.
     /// A memory cell shows itself (MemoryCellWrite), never the value it holds.
     private void WriteShown(Expr writer, Expr shown, string shower)
@@ -4976,6 +4999,7 @@ public sealed partial class FunctionGen
             finally { _values.Remove(name); }
             return;
         }
+        UnknownInWritten(shown, shown.Pos);
         if (InferQuiet(shown) is { } t and not PtrType && ManagedMemory(t) is null && !IsPointedSlice(t)
             && _c.FindMethod(t, "represent_into", _env.File, shown.Pos) is null)
             throw Err(Li.ShowNotAvailable, shown.Pos, $"'{t}' has no represent_into, so {shower} can't show it");
@@ -5181,17 +5205,7 @@ public sealed partial class FunctionGen
                 _values[flagsHole] = Eval(value, holeFlags);
                 value = new ValueRef(flagsHole, value.Pos);
             }
-            // A name another block binds isn't seen here: say so, rather than what the name would be as a preset.
-            if (value is PresetRef { Owner: null, Path: null } named && ResolvePreset(named) is null && BoundInRoutine(named.Name))
-                throw Err(Li.UnknownName, at, NotVisible(named.Name, fromNextLine: true));
-            // A name nothing binds is said to be unknown: written to the writer, it would be read as a call with the
-            // writer for its receiver, and the error would be about the writer.
-            if (value is PresetRef { Owner: null, Path: null } unknown && ResolvePreset(unknown) is null
-                && _c.FindFree(unknown.Name, _env.File, at, null) is null)
-                throw Err(Li.UnknownName, at, ScriptBinding(unknown.Name) ?? $"unknown name '{unknown.Name}'");
-            // A call to no routine at all is reported as that, not as a missing method of the writer it would be handed to.
-            if (value is CallExpr unknownCall && Infer(value) is null && PlanCall(value, null) is null)
-                throw Err(Li.UnknownName, at, UnknownCall(unknownCall));
+            UnknownInWritten(value, at);
             value = DefaultLiterals(value);
             Flush();
             _templateHole = source.Trim();

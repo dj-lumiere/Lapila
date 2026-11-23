@@ -1,0 +1,7 @@
+# A name nothing binds, shown by Console.show, is reported as unknown, not as a method the line writer lacks.
+
+import Hosted
+
+routine start() -> None
+    Console.show(nosuch)
+    return

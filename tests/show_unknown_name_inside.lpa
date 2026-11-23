@@ -1,0 +1,7 @@
+# A name nothing binds, inside a value Console.show shows, is reported as unknown.
+
+import Hosted
+
+routine start() -> None
+    Console.show(nosuch + 1)
+    return
