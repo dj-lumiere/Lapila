@@ -144,6 +144,12 @@ public static class Li
     public static readonly Code ThrowsListIncomplete = S(712, "ThrowsListIncomplete", "A @throws list that leaves out a crashable the routine can throw.", shared: true);
     public static readonly Code ThrowsListMisplaced = S(713, "ThrowsListMisplaced", "A @throws list on a routine that cannot fail, or naming a type that is not a crashable.", shared: true);
     public static readonly Code StoredSelfCall = S(715, "StoredSelfCall", "A routine of a protocol that takes or gives Me, called on a stored value of the protocol.", shared: true);
+    public static readonly Code PropertyShape = S(717, "PropertyShape", "A @property that is not a routine on a type taking nothing but me and giving a result.", shared: true);
+    public static readonly Code PropertyChangesMe = S(718, "PropertyChangesMe", "A @property whose lines change me.", shared: true);
+    public static readonly Code PropertyNameTaken = S(719, "PropertyNameTaken", "A type with a member variable and a @property of the same name.", shared: true);
+    public static readonly Code PropertyCalled = S(720, "PropertyCalled", "A @property called with parentheses.", shared: true);
+    public static readonly Code PropertyWritten = S(721, "PropertyWritten", "A write into a @property.", shared: true);
+    public static readonly Code PropertyConformanceMismatch = S(722, "PropertyConformanceMismatch", "A protocol's @property met by a plain routine, or a plain requirement met by a @property.", shared: true);
     public static readonly Code UnreachableStatement = S(786, "UnreachableStatement", "A line that can never run.", shared: true);
     public static readonly Code ExternalSignatureMismatch = S(811, "ExternalSignatureMismatch", "Two declarations of one C symbol that disagree.", shared: true);
     public static readonly Code RecursiveValueRecord = S(960, "RecursiveValueRecord", "A type that contains itself by value.", shared: true);

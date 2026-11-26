@@ -1,0 +1,15 @@
+# A @property takes nothing but me: one with a parameter is a build error.
+
+### A point.
+record Point
+    x: S64
+
+### Says it is a property, and takes a parameter.
+### :param by: The factor.
+### :returns: The scaled x.
+@property
+routine Point.scaled(by: S64) -> S64
+    return me.x * by
+
+routine start() -> None
+    return

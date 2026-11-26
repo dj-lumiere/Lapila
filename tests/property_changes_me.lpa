@@ -1,0 +1,19 @@
+# A @property only reads me: changing me inside one is a build error.
+import Hosted
+
+### A counter.
+record Counter
+    count: S64
+
+### Says it is a property, and changes the counter.
+### :returns: The new count.
+@property
+routine @Counter.bumped() -> S64
+    me.count.poke(me.count.peek() + 1)
+    return me.count.peek()
+
+routine start() -> None
+    c: &Counter <- (count: 0)
+    n: S64 = c.bumped
+    Console.show("{n}")
+    return

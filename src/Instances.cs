@@ -125,7 +125,7 @@ public sealed partial class Compiler
     private static readonly HashSet<string> KnownAnnotations =
         ["external", "symbol", "import_module", "callconv", "noreturn", "variadic", "template", "target", "feature", "llvm",
          "export", "derived", "inline", "noinline", "clobbers", "readonly", "pure", "naked", "source", "track_caller",
-         "no_builtins", "untraced", "trace", "heap_check", "race_check", "unavailable", "refused", "reshaping", "positional", "throws", "uses_pool", "ends_stamped", "keeps", Dispatch.RoutineMark, ExpensiveCallLint.Annotation, BlockRule.Generated, Pausable.StateMark];
+         "no_builtins", "property", "untraced", "trace", "heap_check", "race_check", "unavailable", "refused", "reshaping", "positional", "throws", "uses_pool", "ends_stamped", "keeps", Dispatch.RoutineMark, ExpensiveCallLint.Annotation, BlockRule.Generated, Pausable.StateMark];
 
     /// Annotations a type, a field or a preset takes, besides those a routine takes.
     private static readonly HashSet<string> TypeAnnotations = ["aggregate", "aligned", "layout", "union", "threadlocal", "derive", "none_is_zero", "entity_link", Dispatch.PlaceMark];

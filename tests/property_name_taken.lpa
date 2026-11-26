@@ -1,0 +1,14 @@
+# A type has no member variable and @property of the same name.
+
+### A slime.
+record Slime
+    hp: S64
+
+### Says it is a property named like the member variable.
+### :returns: The hit points.
+@property
+routine Slime.hp() -> S64
+    return me.hp
+
+routine start() -> None
+    return

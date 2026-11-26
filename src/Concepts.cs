@@ -676,6 +676,12 @@ public sealed partial class Compiler
         // routine that promises not to fail too.
         if (req.IsInfallible && !method.IsInfallible && method.Blocks is not null)
             throw new CompileError(Li.ProtocolRoutineMismatch, at, $"{claim}: the protocol's {req.Name} is infallible, and {where} isn't: write it infallible routine");
+        // A property is read without parentheses and a plain routine is called with them: one never meets the other.
+        if (Properties.Is(req) != Properties.Is(method))
+            throw new CompileError(Li.PropertyConformanceMismatch, at, Properties.Is(req)
+                ? $"{claim}: the protocol's {req.Name} is a @property, read as x.{req.Name}, and {where} is a plain routine: mark it @property"
+                : $"{claim}: the protocol's {req.Name} is a plain routine, called as x.{req.Name}(), and {where} is a @property: drop @property "
+                  + "there, or make the protocol's one a @property");
         bool ownTypeParams = req.TypeParams.Count > 0 || method.TypeParams.Count > 0;
         if (req.TypeParams.Count != method.TypeParams.Count)
             throw new CompileError(Li.ProtocolRoutineMismatch, at, $"{claim}: {where} takes {method.TypeParams.Count} type parameter(s); the protocol wants {req.TypeParams.Count}");

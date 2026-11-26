@@ -1,0 +1,1 @@
+'Point.scaled' is @property and takes 'by': a property is read without parentheses, x.scaled, so it takes nothing but me

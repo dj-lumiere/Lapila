@@ -1229,8 +1229,10 @@ public static partial class LanguageServer
                     break;
                 case FieldExpr field:
                     Expr(field.Base);
+                    // A read of a @property shows the routine it reads.
                     Mark(field.Pos, field.Name, "property",
-                        Field(field.Base, field.Name) is var (record, decl) ? FieldHover(record, decl) : null);
+                        Field(field.Base, field.Name) is var (record, decl) ? FieldHover(record, decl)
+                        : CallHover(field.Pos, field.Name, MethodOn(WrittenType(field.Base), field.Name) is { } read && Properties.Is(read) ? read : null));
                     break;
                 case IndexExpr index:
                     Expr(index.Base);

@@ -1631,7 +1631,9 @@ public sealed partial class FunctionGen
             // A `%T` parameter, and the me of a `@readonly` routine, only read.
             if (p.Type.ReadOnly)
                 _readOnlyWhy[p.Name] = p.Name == "me" && p.Implicit
-                    ? $"the me of the @readonly routine '{_decl.DisplayName}', which only reads"
+                    ? Properties.Is(_decl) && _decl.AnnotationNamed(Dispatch.RoutineMark) is null
+                        ? $"{PropertyMe} '{_decl.DisplayName}', which only reads"
+                        : $"the me of the @readonly routine '{_decl.DisplayName}', which only reads"
                     : $"a {p.Type}, a view that only reads";
             RecordValue(p.Pos, _inst.Params[i]);
         }
@@ -2257,6 +2259,7 @@ public sealed partial class FunctionGen
 
     private void EmitStmt(Stmt s)
     {
+        s = WithPropertyReads(s);
         int mark = _statementTemps.Count;
         int outerMark = _statementMark;
         _statementMark = mark;
@@ -2806,7 +2809,11 @@ public sealed partial class FunctionGen
     {
         var fields = _c.Fields(s);
         int i = fields.FindIndex(f => f.Name == name);
-        if (i < 0) throw Err(Li.FieldNotFound, pos, $"{s} has no field '{name}'");
+        // A routine of the name that isn't a @property is called with parentheses.
+        if (i < 0)
+            throw Err(Li.FieldNotFound, pos, $"{s} has no field '{name}'" + (_c.MethodsNamed(s, name).FirstOrDefault(m => Compiler.HasReceiver(m) && !Properties.Is(m)) is { } plain
+                ? $": '{plain.DisplayName}' is a routine, called with parentheses, .{name}()"
+                : ""));
         CheckFieldVisible(s, s.Decl.Fields[i], pos);
         return (i, fields[i].Type);
     }
@@ -5206,7 +5213,7 @@ public sealed partial class FunctionGen
                 value = new ValueRef(flagsHole, value.Pos);
             }
             UnknownInWritten(value, at);
-            value = DefaultLiterals(value);
+            value = PropertyReads(DefaultLiterals(value));
             Flush();
             _templateHole = source.Trim();
             try
@@ -5481,6 +5488,7 @@ public sealed partial class FunctionGen
 
     private Expr Desugar(Expr e)
     {
+        if (e is FieldExpr) e = PropertyReads(e);
         if (e is MethodCallExpr onPlace && StackPlaceCall(onPlace) is { } placeCall) return placeCall;
         if (e is CallExpr typeCall && NumberTypeCall(typeCall) is { } typed) return typed;
         switch (e)
@@ -6537,6 +6545,17 @@ public sealed partial class FunctionGen
     };
 
     private CallPlan? PlanMethod(MethodCallExpr m, DType? expected)
+    {
+        var plan = PlanMethodCore(m, expected);
+        // A property is read like a member variable: `foe.alive`, never `foe.alive()`. The builder's own calls of one
+        // (a stored value's dispatch) are exempt.
+        if (plan is { Decl: var d } && Properties.Is(d) && !m.PropertyRead && !m.Builder && _decl.AnnotationNamed(Dispatch.RoutineMark) is null)
+            throw Err(Li.PropertyCalled, m.Pos, $"'{d.DisplayName}' is a @property, read like a member variable without parentheses: "
+                + $"write {Spelled(m.Receiver)}.{m.Name}");
+        return plan;
+    }
+
+    private CallPlan? PlanMethodCore(MethodCallExpr m, DType? expected)
     {
         if (StackPlaceCall(m) is MethodCallExpr onPlace) m = onPlace;
         // `xs.count()` of an Items value or preset is its type's count, `Items[T, N].count()`.

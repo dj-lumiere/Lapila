@@ -1,0 +1,1 @@
+'Point.length2' is a @property, read like a member variable without parentheses: write p.length2

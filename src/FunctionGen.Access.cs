@@ -280,6 +280,18 @@ public sealed partial class FunctionGen
     private string ReachedAs(Expr e) =>
         e is ValueRef r && (_readOnlyWhy.ContainsKey(r.Name) || _readOnlyViews.Contains(r.Name)) || ReadOnlyResult(e) is not null ? "is" : "is reached through";
 
+    /// How the reason a view only reads starts when the view is the me of a property.
+    private const string PropertyMe = "the me of the @property";
+
+    /// Whether a reason a view only reads is that it is the me of a property.
+    private static bool IsPropertyMe(string why) => why.StartsWith(PropertyMe, StringComparison.Ordinal);
+
+    /// The code of a write through a view that only reads: a property's me has its own.
+    private static Code ReadOnlyCode(string why) => IsPropertyMe(why) ? Li.PropertyChangesMe : Li.ReadOnlyViewWrite;
+
+    /// What a message about a property that changes me says to do.
+    private const string PropertyFix = "a @property only reads me, so drop @property and call the routine to change it";
+
     /// The written type of a field when it is a `%T` or `%[T]`, else null.
     private TypeRef? ReadOnlyField(FieldExpr f)
     {
@@ -295,8 +307,8 @@ public sealed partial class FunctionGen
         if (ReadOnlyReason(value) is not { } why) return;
         string spelled = $"{Spelled(value)} {ReachedAs(value)}";
         string narrow = into.Name == "PointedCell" && into.Args is [TypeArgType held] ? $"%{held.Type}" : into.Args is [TypeArgType elems] ? $"%[{elems.Type}]" : "%T";
-        throw Err(Li.ReadOnlyViewWrite, value.Pos, $"{spelled} {why}, and {where}, which could write through it: a {narrow} becomes no "
-            + $"{into} (write {narrow} there, or take a view that writes)");
+        throw Err(ReadOnlyCode(why), value.Pos, $"{spelled} {why}, and {where}, which could write through it: a {narrow} becomes no "
+            + $"{into} ({(IsPropertyMe(why) ? PropertyFix : $"write {narrow} there, or take a view that writes")})");
     }
 
     /// A binding of a view: `v: %T = ...` only reads, a view of a read-only one is read only too, and `v: @T = ...` of
@@ -336,8 +348,8 @@ public sealed partial class FunctionGen
             throw why.StartsWith("the view of a shared read access", StringComparison.Ordinal)
                 ? Err(Li.SharedAccessWrite, plan.Pos, $"{Spelled(written)} is the view of a shared read access, which reads only: take exclusive access "
                     + "to write (m: @T <- p.get_exclusive_access(), or @[T] for a run of values)")
-                : Err(Li.ReadOnlyViewWrite, plan.Pos, $"{Spelled(written)} {ReachedAs(written)} {why}, and '{(plan.Decl.IsLibrary ? plan.Decl.Name : plan.Decl.DisplayName)}' writes through it: "
-                    + "take a @T (or a @[T]) to write");
+                : Err(ReadOnlyCode(why), plan.Pos, $"{Spelled(written)} {ReachedAs(written)} {why}, and '{(plan.Decl.IsLibrary ? plan.Decl.Name : plan.Decl.DisplayName)}' writes through it: "
+                    + (IsPropertyMe(why) ? PropertyFix : "take a @T (or a @[T]) to write"));
         // A view that only reads, handed where a routine of the program takes a view that writes. The address a `when`
         // over a stored value of a protocol reads is the builder's, and the view it makes reads only there.
         if (!plan.Decl.IsLibrary && plan.Decl.Name != Dispatch.AddressRoutine)
@@ -361,9 +373,9 @@ public sealed partial class FunctionGen
             Expr? arg = index == 0 && plan.Receiver is not null ? plan.Receiver
                 : index - offset >= 0 && index - offset < plan.Args.Count ? plan.Args[index - offset] : null;
             if (arg is not null && ReadOnlyReason(arg) is { } moved)
-                throw Err(moved.StartsWith("the view of a shared read access", StringComparison.Ordinal) ? Li.SharedAccessWrite : Li.ReadOnlyViewWrite,
+                throw Err(moved.StartsWith("the view of a shared read access", StringComparison.Ordinal) ? Li.SharedAccessWrite : ReadOnlyCode(moved),
                     plan.Pos, $"'{plan.Decl.DisplayName}' may move the memory of {Spelled(arg)} (it is @reshaping), and "
-                    + $"{Spelled(arg)} {ReachedAs(arg)} {moved}: take a view that writes to change it");
+                    + $"{Spelled(arg)} {ReachedAs(arg)} {moved}: {(IsPropertyMe(moved) ? PropertyFix : "take a view that writes to change it")}");
         }
     }
 

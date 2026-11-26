@@ -1,0 +1,152 @@
+### Properties: routines read like member variables, on a record value, through a view and a place, on an entity,
+### in a generic routine, on stored values of a protocol, and filled by a member variable a protocol asks for.
+import Collections
+import Hosted
+
+### A point on a grid.
+record Point
+    x: S64
+    y: S64
+
+entity Slime
+obeys Foe[Slime]
+    hp: S64
+
+record Bat
+obeys Foe[Bat]
+    hp: S64
+    wings: S64
+
+entity Arena
+    boss: Foe
+
+record Square
+obeys Shape[Square]
+    side: S64
+
+record Tile
+obeys Shape[Tile]
+    area: S64
+
+### Something that fights.
+### :typeparam T: The fighter's type.
+protocol Foe[T]
+    ### The hit points left.
+    ### :returns: The hit points.
+    @property
+    routine @Me.hp() -> S64
+
+    ### Whether it still stands.
+    ### :returns: True while it has hit points.
+    @property
+    routine @Me.alive() -> Bool
+
+### A shape with an area.
+### :typeparam T: The shape's type.
+protocol Shape[T]
+    ### The area.
+    ### :returns: The area.
+    @property
+    routine Me.area() -> S64
+
+### The squared distance from the origin.
+### :returns: x * x + y * y.
+@property
+routine Point.length2() -> S64
+    return me.x * me.x + me.y * me.y
+
+### The point twice as far out.
+### :returns: The point.
+@property
+routine Point.doubled() -> Me
+    return Me(x: me.x * 2, y: me.y * 2)
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Whether the slime still stands.
+### :returns: True while it has hit points.
+@property
+routine @Slime.alive() -> Bool
+    return me.hp.peek() > 0
+
+### Whether the bat still flies.
+### :returns: True while it has hit points.
+@property
+routine @Bat.alive() -> Bool
+    return me.hp.peek() > 0
+
+### An arena with its boss.
+### :param boss: The boss, taken over.
+### :returns: The arena.
+common routine Arena.construct(boss: Foe) -> Me
+    return Me(boss: steal boss)
+
+### The area of the square.
+### :returns: The area.
+@property
+routine Square.area() -> S64
+    return me.side * me.side
+
+### Shows a slime it only reads.
+### :param s: The slime.
+routine show_slime(s: %Slime) -> None
+    Console.show("slime {s.hp.peek()} alive {s.alive}")
+    return
+
+### Reports any foe, built for the type it is given.
+### :typeparam T: The foe's type.
+### :param foe: The foe.
+routine report[T](foe: @T) -> None
+needs T obeys Foe
+    Console.show("foe {foe.hp} alive {foe.alive}")
+    return
+
+### The area of any shape.
+### :typeparam T: The shape's type.
+### :param s: The shape.
+### :returns: The area.
+routine area_of[T](s: T) -> S64
+needs T obeys Shape
+    return s.area
+
+routine start() -> None
+    p: Point = Point(x: 3, y: 4)
+    Console.show("length2 {p.length2} doubled {p.doubled.x} {p.doubled.length2}")
+    total: S64 = p.length2 + p.doubled.length2
+    Console.show("total {total}")
+    if p.length2 > 20
+        Console.show("far")
+    slime: &Slime <- .construct(hp: 3)
+    show_slime(slime)
+    Console.show("place {slime.alive}")
+    report(slime)
+    bat: &Bat <- Bat(hp: 0, wings: 2)
+    report(bat)
+    foes: &List[Foe] <- .construct(HEAP)
+    first: &Slime <- .construct(hp: 7) from HEAP
+    foes.add_last(steal first)
+    second: &Bat <- Bat(hp: 2, wings: 2) from HEAP
+    foes.add_last(steal second)
+    for i in 0 til foes.count()
+        Console.show("stored {foes.getslot(i).hp} {foes.getslot(i).alive}")
+    report(foes.getslot(1))
+    boss: &Slime <- .construct(hp: 40) from HEAP
+    arena: &Arena <- .construct(boss: steal boss)
+    Console.show("boss {arena.boss.hp} {arena.boss.alive}")
+    sq: Square = Square(side: 5)
+    tile: Tile = Tile(area: 6)
+    Console.show("areas {sq.area} {tile.area} {area_of(sq)} {area_of(tile)}")
+    shapes: &List[Shape] <- .construct(HEAP)
+    s1: &Square <- sq from HEAP
+    shapes.add_last(steal s1)
+    s2: &Tile <- tile from HEAP
+    shapes.add_last(steal s2)
+    for i in 0 til shapes.count() with sum: S64 = 0
+        continue with sum: sum + shapes.getslot(i).area
+    then
+        Console.show("sum {sum}")
+    return

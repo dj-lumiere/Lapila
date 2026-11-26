@@ -1,0 +1,1 @@
+me.count is reached through the me of the @property 'Counter.bumped', which only reads, and 'poke' writes through it: a @property only reads me

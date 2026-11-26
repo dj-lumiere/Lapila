@@ -152,9 +152,10 @@ public static class Dispatch
         var ownerRef = new TypeRef(c.Name, rest.Select(n => (TypeArg)new TypeArgType(TypeRef.Simple(n, c.Pos))).ToList(), c.Pos);
         foreach (var (r, kind) in routines)
         {
-            var annotations = r.Annotations.Where(a => a.Name is "readonly").ToList();
-            if (kind is "value" or "self" && annotations.Count == 0) annotations.Add(new Annotation("readonly", [], r.Pos));
-            var me = new Param("me", new TypeRef("PointedCell", [new TypeArgType(ownerRef)], r.Pos) { ReadOnly = annotations.Count > 0 }, r.Pos)
+            // A property stays one on the stored value: `x.hp` reads it there too, and it only reads.
+            var annotations = r.Annotations.Where(a => a.Name is "readonly" or Properties.Mark).ToList();
+            if ((kind is "value" or "self" || Properties.Is(r)) && !annotations.Any(a => a.Name == "readonly")) annotations.Add(new Annotation("readonly", [], r.Pos));
+            var me = new Param("me", new TypeRef("PointedCell", [new TypeArgType(ownerRef)], r.Pos) { ReadOnly = annotations.Any(a => a.Name == "readonly") }, r.Pos)
                 { Implicit = true };
             annotations.Add(new Annotation(RoutineMark, [new AnnotationArg(null, kind, false)], r.Pos));
             annotations.Add(implicitMark);

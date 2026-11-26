@@ -1,0 +1,22 @@
+# A @property gives a value: writing into one is a build error.
+
+### A counter.
+entity Counter
+    count: S64
+
+### Makes a counter.
+### :param count: Where it starts.
+### :returns: The counter.
+common routine Counter.construct(count: S64) -> Me
+    return Me(count: count)
+
+### The count doubled.
+### :returns: The doubled count.
+@property
+routine @Counter.doubled() -> S64
+    return me.count.peek() * 2
+
+routine start() -> None
+    c: &Counter <- .construct(count: 1)
+    c.doubled.poke(4)
+    return

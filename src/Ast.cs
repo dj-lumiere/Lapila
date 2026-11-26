@@ -601,6 +601,10 @@ public sealed record MethodCallExpr(Expr Receiver, string Name, List<TypeRef> Ty
     /// A peek or poke the builder wrote itself (a place read or written by a line that spells no call): the rule that
     /// a `&T` place is read with load() and written with store(v) applies to the program's own spelling only.
     public bool Builder { get; init; }
+
+    /// `foe.alive` written without parentheses: the read of a `@property` routine, which the builder turns into this
+    /// call before it builds the line.
+    public bool PropertyRead { get; init; }
 }
 
 /// `a + b`, `a == b`, `a and b`, ...: an operator, sugar for the routine of that name on the left operand

@@ -1,0 +1,32 @@
+# A protocol's @property is met by a @property: a plain routine of that name is a build error.
+import Hosted
+
+record Square
+obeys Shape[Square]
+    side: S64
+
+### A shape with an area.
+### :typeparam T: The shape's type.
+protocol Shape[T]
+    ### The area.
+    ### :returns: The area.
+    @property
+    routine Me.area() -> S64
+
+### The area, as a plain routine.
+### :returns: The area.
+routine Square.area() -> S64
+    return me.side * me.side
+
+### The area of any shape.
+### :typeparam T: The shape's type.
+### :param s: The shape.
+### :returns: The area.
+routine area_of[T](s: T) -> S64
+needs T obeys Shape
+    return s.area
+
+routine start() -> None
+    a: S64 = area_of(Square(side: 2))
+    Console.show("{a}")
+    return

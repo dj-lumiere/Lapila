@@ -142,7 +142,7 @@ public static class Derive
     /// declaration does.
     private static readonly ConditionalWeakTable<Decl, Dictionary<(string Source, bool Implicitly), List<Decl>>> ParsedFor = new();
 
-    private static List<Decl> Parse(Decl type, string source, bool implicitly)
+    internal static List<Decl> Parse(Decl type, string source, bool implicitly)
     {
         var known = ParsedFor.GetOrCreateValue(type);
         lock (known)

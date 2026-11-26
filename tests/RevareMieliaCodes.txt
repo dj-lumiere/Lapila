@@ -344,6 +344,12 @@ S 713 ThrowsListMisplaced
 S 714 DispatchTypeHashCollision
 S 715 ProtocolRoutineNotDispatchable
 S 716 TypeParameterValueIntoProtocolPlace
+S 717 PropertyShape
+S 718 PropertyChangesMe
+S 719 PropertyNameTaken
+S 720 PropertyCalled
+S 721 PropertyWritten
+S 722 PropertyConformanceMismatch
 S 752 VariantGenerationError
 S 754 ErrorHandlingTypeAsParameter
 S 755 ErrorHandlingTypeAsMemberVariable
@@ -395,6 +401,7 @@ S 851 NativeOutsideDanger
 S 852 UnknownIntrinsic
 S 853 InvalidIntrinsicArguments
 S 854 UncheckedOperatorOutsideDanger
+S 900 WorkNeedsStackOnTarget
 S 950 BuilderQueryImportRequired
 S 951 UnresolvedRoutineBody
 S 952 BuilderExpansionImportRequired

@@ -822,6 +822,8 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
         if (readOnlyMe && (owner is null || isCommon))
             throw new CompileError(Li.RoutineHeaderSyntax, annotations.First(a => a.Name == "readonly").Pos,
                 $"@readonly takes me as a view that only reads, %Me, and '{name}' takes no me: drop it");
+        // A `@property` that takes me by its address takes it as `%Me` too: a property only reads.
+        if (receiverAt is not null && owner is not null && !isCommon && annotations.Any(a => a.Name == "property")) readOnlyMe = true;
         if (owner is not null && !isCommon)
             parameters.Insert(0, new Param("me", receiverAt is { } meAt || readOnlyMe
                 ? new TypeRef("PointedCell", [new TypeArgType(new TypeRef("Me", [], receiverAt ?? first.Pos))], receiverAt ?? first.Pos) { ReadOnly = readOnlyMe }
@@ -1303,12 +1305,21 @@ public sealed class Parser(List<Token> tokens, string file, bool isLibrary = fal
         // Required routines are written `routine Me.name(...)`, `routine T.name(...)` with one of the concept's
         // parameters (a multi-type concept), or, indented under the concept, on a fixed type with the concept's
         // parameters as its type arguments (`routine Bytes.to_result[T](...)`). They have no body.
+        // A required routine may have annotation lines of its own above it, indented with it: `@property`.
         var routines = new List<RoutineDecl>();
-        while (ConceptRoutineNext(typeParams) is var (isRoutine, common, infallible) && isRoutine)
+        while (true)
         {
+            var reqAnnotations = AtAnnotation() && Cur.Pos.Col > 1 ? ParseAnnotations() : [];
+            if (ConceptRoutineNext(typeParams) is not (true, var common, var infallible))
+            {
+                if (reqAnnotations.Count > 0)
+                    throw new CompileError(Li.AnnotationPlacement, reqAnnotations[0].Pos,
+                        $"@{reqAnnotations[0].Name} inside protocol '{name.Text}' goes on the line above one of its routines");
+                break;
+            }
             if (infallible) Next();
             if (common) Next();
-            routines.Add(ParseRoutine([], inConcept: true, conceptParams: typeParams, isCommon: common) with { IsInfallible = infallible });
+            routines.Add(ParseRoutine(reqAnnotations, inConcept: true, conceptParams: typeParams, isCommon: common) with { IsInfallible = infallible });
         }
         return new ConceptDecl(file, annotations, name.Text, typeParams, clauses, routines, pos);
     }

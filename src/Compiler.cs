@@ -147,7 +147,7 @@ public sealed partial class Compiler
         RaceCheck = raceCheck;
         var targetForms = new Dictionary<string, RoutineDecl>();
         var given = Pausable.Lower(decls.ToList(), out _shownPausables);
-        foreach (var d in Derive.Routines(given).Concat(Dispatch.Declarations(given)))
+        foreach (var d in Derive.Routines(given).Concat(Dispatch.Declarations(given)).Concat(Properties.Declarations(given)))
         {
             // A type's construct and destruct count on every target, even where only another target keeps them.
             if (d is RoutineDecl { Owner: not null, Name: "construct" or "destruct" } life) _lifeRoutines.Add(life);
@@ -233,6 +233,7 @@ public sealed partial class Compiler
         RejectPointerReceiverClashes();
         CheckAliases();
         CheckLifecycle();
+        CheckProperties();
     }
 
     /// The declarations the builder made of the program's pausable routines, as Lapila source (Pausable.Lower).

@@ -1,0 +1,18 @@
+# A @property is read without parentheses: calling it with them is a build error.
+import Hosted
+
+### A point.
+record Point
+    x: S64
+    y: S64
+
+### The squared distance from the origin.
+### :returns: x * x + y * y.
+@property
+routine Point.length2() -> S64
+    return me.x * me.x + me.y * me.y
+
+routine start() -> None
+    p: Point = Point(x: 3, y: 4)
+    Console.show("{p.length2()}")
+    return

@@ -1,0 +1,13 @@
+length2 25 doubled 6 100
+total 125
+far
+slime 3 alive true
+place true
+foe 3 alive true
+foe 0 alive false
+stored 7 true
+stored 2 true
+foe 2 alive true
+boss 40 true
+areas 25 6 25 6
+sum 31

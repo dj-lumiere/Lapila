@@ -563,6 +563,20 @@ routine start() -> None
   routine's result. What a `when` takes out of a `%T` is read only too, so a stamp peeked through one fetches a view that only
   reads. `%T` is written where a parameter, a binding, a result or a field is a view, not inside another type (`%S64?` and
   `List[%T]` are build errors that say to write the `@` form). In a value, `%count` stays the old spelling and is refused.
+- **`@property`.** A routine on a type marked `@property` is read like a member variable, without parentheses:
+  `@property routine Point.length2() -> S64`, read as `p.length2` (and `p.doubled.x` when it gives a record). A plain
+  routine is always called with parentheses, so each routine has one spelling: `p.length2()` on a property is `LP-S720`
+  ("write p.length2"), and `p.twice` on a plain routine says to call it. A property takes nothing but `me`, gives a
+  value and isn't `common` (`LP-S717`). It doesn't change `me`: `routine Point.x()` takes a copy, and
+  `@property routine @Slime.alive()` takes `me` as `%Me`, so a write through it is `LP-S718` (only its own lines are
+  checked). A type with a member variable and a property of one name is `LP-S719`, and a write into a property
+  (`c.doubled.poke(4)`, `steal`, `<-`) is `LP-S721`: change what it reads with a routine. A read works wherever the call
+  does: a value, a `@T` / `%T` / `&T`, an entity, a generic body (`needs T obeys Foe` reads `foe.hp`), and a stored value
+  of a protocol (`foes.getslot(i).hp`, `arena.boss.hp`). A protocol may ask for one, `@property` on the line above its
+  routine: `@property routine @Me.hp() -> S64`. A member variable `hp: S64` of a type that obeys it meets it (the builder
+  writes the property that reads it, taking `%Me` for an entity or a `@Me` requirement), so `foe.hp` in a generic body
+  and on a stored value reads the field. A plain routine meeting a property, or a property meeting a plain routine, is
+  `LP-S722`.
 - **What thread work changes.** Work on a thread or a passable fiber (`t.put_work(work)` on a `Thread` or a
   `PassableFiber` ticket) runs on another thread, next to the routine that started it and other work. The memory it
   changes (in its own body or in the program's routines it calls) is one of three, else it is a build error: memory it
@@ -3021,6 +3035,12 @@ S1100 memory and access, S1120 work, S1130 failures, S1150 control flow, S1180 e
 - `LP-S712`: A @throws list that leaves out a crashable the routine can throw.
 - `LP-S713`: A @throws list on a routine that cannot fail, or naming a type that is not a crashable.
 - `LP-S715`: A routine of a protocol that takes or gives Me, called on a stored value of the protocol.
+- `LP-S717`: A @property that is not a routine on a type taking nothing but me and giving a result.
+- `LP-S718`: A @property whose lines change me.
+- `LP-S719`: A type with a member variable and a @property of the same name.
+- `LP-S720`: A @property called with parentheses.
+- `LP-S721`: A write into a @property.
+- `LP-S722`: A protocol's @property met by a plain routine, or a plain requirement met by a @property.
 - `LP-S786`: A line that can never run.
 - `LP-S811`: Two declarations of one C symbol that disagree.
 - `LP-S960`: A type that contains itself by value.
