@@ -1490,7 +1490,7 @@ public sealed partial class FunctionGen
 
     /// Whether this routine's calls and values are recorded for the language server: it isn't generic, so they mean the
     /// same in every use.
-    private bool Recorded => _env.All.All(kv => kv.Key == "Me");
+    private bool Recorded => _env.All.All(kv => kv.Key == "Me" || Dispatch.IsHoldsKey(kv.Key));
 
     private void RecordValue(Pos pos, DType t)
     {
@@ -1619,6 +1619,7 @@ public sealed partial class FunctionGen
             }
             if (!_routineParams.TryAdd(p.Name, given))
                 throw Err(Li.DuplicateParameter, p.Pos, $"parameter '{p.Name}' is declared twice");
+            if (_inst.Env.Get(Dispatch.HoldsKey(p.Name)) is { } knownHeld) _knownHeld[given.Op] = knownHeld;
             if (p.Type is { Name: "PointedCell" or "PointedSlice", Path: null } && !p.Implicit) _viewNamesWritten.Add(p.Name);
             // A parameter a caller hands an access to with steal holds it: its drop gives it back.
             // A routine that writes `steal p` of its own view parameter hands on an access it took over, so it is one too.
@@ -1784,7 +1785,11 @@ public sealed partial class FunctionGen
                 ps.Add($"{carrier} {name}.bits");
                 unpack.Add($"{name} = bitcast {carrier} {name}.bits to {_inst.Params[i].Llvm}");
             }
-            else ps.Add($"{_inst.Params[i].Llvm}{_inst.ParamExt(_c.Target, i)} {name}");
+            // A place known to hold one type (Dispatch.HoldsKey) isn't changed while this routine runs: its value changes only
+            // when the place itself is handed over with steal, which ends the view the caller handed in. So LLVM reads its
+            // address once, not again after every write through it.
+            else ps.Add($"{_inst.Params[i].Llvm}{_inst.ParamExt(_c.Target, i)}"
+                        + $"{(i < _decl.Params.Count && _inst.Env.Has(Dispatch.HoldsKey(_decl.Params[i].Name)) ? " noalias" : "")} {name}");
         }
         CheckBuildErrors();
         FillSharedStops();
@@ -2321,6 +2326,7 @@ public sealed partial class FunctionGen
                 var (lowered, stack) = LowerBorrow(borrow);
                 if (lowered.TakesAccess) _accessBound.Add(lowered.Name);
                 EmitStmtCore(lowered);
+                NoteKnownPlace(borrow, lowered.Name);
                 if (stack && !_cur.Terminated) RegisterStackPlace(lowered.Name, lowered.Pos);
                 // An access the name took: the builder gives it back at every exit of the body, unless the program
                 // dropped it or returned it first.
@@ -7248,6 +7254,7 @@ public sealed partial class FunctionGen
         plan = Recovering(plan);
         BindFailingCallables(plan);
         BindTicketWork(plan);
+        BindKnownPlaces(plan);
         if (Recorded)
             _c.CallUses.TryAdd((plan.Pos, plan.Decl.Name), new Compiler.CallUse(plan.Decl, [.. plan.Env.All.Select(kv => (kv.Key, kv.Value))]));
         var sig = _c.Signature(plan.Decl, plan.Env);

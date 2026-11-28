@@ -432,6 +432,21 @@ public sealed partial class Compiler
         return recovering + "B" + Source($"failing_{h:x8}");
     }
 
+    /// An ABI tag for an instance built for the types its place parameters are known to hold (Dispatch.HoldsKey), so it
+    /// doesn't share its symbol with the instance that tests the type id.
+    private string HoldsTag(RoutineDecl r, TypeEnv env)
+    {
+        var given = r.Params.Select(p => env.Get(Dispatch.HoldsKey(p.Name)) is { } held ? $"{p.Name}={held.Key}" : null).OfType<string>().ToList();
+        if (given.Count == 0) return "";
+        uint h = 2166136261;
+        foreach (char c in string.Join(";", given))
+        {
+            h ^= c;
+            h *= 16777619;
+        }
+        return "B" + Source($"holds_{h:x8}");
+    }
+
     /// The routines put in the Crash service's slot (`Crash.report_with(r.to[Callable]())`), with where each was handed
     /// over: what they call is checked for a general memory manager.
     private readonly Dictionary<string, Pos> _reportingRoutines = [];

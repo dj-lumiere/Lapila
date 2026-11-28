@@ -11,7 +11,7 @@ public sealed class Instance(RoutineDecl decl, Compiler.TypeEnv env, string symb
 
     /// How a message names this instance: the routine, and what its type parameters stand for
     /// (`keep with T = BorrowedSlice[S64]`).
-    public string Readable => Env.All.Where(kv => kv.Key != "Me").ToList() is { Count: > 0 } bound
+    public string Readable => Env.All.Where(kv => kv.Key != "Me" && !Dispatch.IsHoldsKey(kv.Key)).ToList() is { Count: > 0 } bound
         ? $"{Decl.DisplayName} with {string.Join(", ", bound.Select(kv => $"{kv.Key} = {kv.Value}"))}"
         : Decl.DisplayName;
 

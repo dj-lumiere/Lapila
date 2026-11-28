@@ -1,0 +1,102 @@
+### A place whose value went in with steal from a `&T` holds a T: a routine handed a view of it is built for that type and
+### calls the type's routines without testing the type id, and so is a routine it hands the view on to. A place whose
+### type isn't known (an element of a list) reaches the instance that tests the type id. Each answers the same.
+import Collections
+import Hosted
+
+entity Slime
+obeys Enemy[Slime]
+    hp: S64
+
+entity Goblin
+obeys Enemy[Goblin]
+    hp: S64
+
+### Something that moves each turn.
+### :typeparam T: The enemy type.
+protocol Enemy[T]
+    ### Moves one step.
+    routine @Me.update() -> None
+
+    ### The hit points left.
+    ### :returns: The hit points.
+    routine @Me.health() -> S64
+
+### A slime.
+### :param hp: The hit points.
+### :returns: The slime.
+common routine Slime.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the slime.
+routine @Slime.update() -> None
+    me.hp.poke(me.hp.peek() + 1)
+    return
+
+### The slime's hit points.
+### :returns: The hit points.
+routine @Slime.health() -> S64
+    return me.hp.peek()
+
+### Ends the slime.
+routine @Slime.destruct() -> None
+    Console.show("slime {me.hp.peek()} ends")
+    return
+
+### A goblin.
+### :param hp: The hit points.
+### :returns: The goblin.
+common routine Goblin.construct(hp: S64) -> Me
+    return Me(hp: hp)
+
+### Moves the goblin.
+routine @Goblin.update() -> None
+    me.hp.poke(me.hp.peek() - 2)
+    return
+
+### The goblin's hit points.
+### :returns: The hit points.
+routine @Goblin.health() -> S64
+    return me.hp.peek()
+
+### Ends the goblin.
+routine @Goblin.destruct() -> None
+    Console.show("goblin {me.hp.peek()} ends")
+    return
+
+### Says what an enemy is.
+### :param e: The enemy.
+routine describe(e: @Enemy) -> None
+    when e
+        is Slime as s => Console.show("a slime with {s.hp.peek()} hp")
+        is Goblin as g => Console.show("a goblin with {g.hp.peek()} hp")
+        else => Console.show("something else")
+    return
+
+### Runs n turns of an enemy and says what it is after them.
+### :param e: The enemy.
+### :param n: The turns.
+### :returns: The sum of the hit points after each turn.
+@noinline
+routine run(e: @Enemy, n: S64) -> S64
+    total: &S64 <- 0
+    for i in 0 til n
+        e.update()
+        total.store(total.load() + e.health())
+    describe(e)
+    return total.load()
+
+routine start() -> None
+    s: &Slime <- .construct(hp: 1) from HEAP
+    x: &Enemy <- steal s
+    g: &Goblin <- .construct(hp: 20)
+    y: &Enemy <- steal g
+    Console.show("slime total {run(x, 3)}")
+    Console.show("goblin total {run(y, 3)}")
+    enemies: &List[Enemy] <- .construct(HEAP)
+    other: &Slime <- .construct(hp: 7) from HEAP
+    enemies.add_last(steal other)
+    Console.show("listed total {run(enemies.getslot(0), 2)}")
+    drop enemies
+    Console.show("the end")
+    return

@@ -9,6 +9,52 @@ public sealed partial class FunctionGen
     /// slot's address, so the escape check follows the slot, not what it held.
     private readonly HashSet<Pos> _stackIntoPlace = [];
 
+    /// The type each protocol place of this routine is known to hold, by the place's slot (or the parameter's value): a
+    /// local place whose value went in with steal from a `&T`, and a place parameter the instance was built for. A name is
+    /// bound once and a place's value changes only when the place itself is handed over with steal, which ends the name.
+    private readonly Dictionary<string, DType> _knownHeld = [];
+
+    /// The type of the `&T` each `steal x` into a protocol place handed over, by the steal's position.
+    private readonly Dictionary<Pos, DType> _intoPlaceHeld = [];
+
+    /// The type the place `e` names is known to hold, or null.
+    private DType? KnownHeld(Expr e) =>
+        e is ValueRef v && _values.TryGetValue(v.Name, out var val) && _knownHeld.TryGetValue(val.Op, out var held) ? held : null;
+
+    /// After a binding `x: &P <- steal t` of a protocol P: x holds t's type.
+    private void NoteKnownPlace(BindStmt b, string name)
+    {
+        if (b.Value is StealExpr st && _intoPlaceHeld.TryGetValue(st.Pos, out var held) && _values.TryGetValue(name, out var slot)
+            && slot.Type is PtrType { Pointee: var pointee } && Dispatch.PlaceOf(pointee) is not null)
+            _knownHeld[slot.Op] = held;
+    }
+
+    /// Binds each place parameter of the call's routine that is handed a view of a place known to hold one type, so the
+    /// instance is built for that type and calls its routines without testing the type id (Dispatch.HoldsKey).
+    private void BindKnownPlaces(CallPlan plan)
+    {
+        var r = plan.Decl;
+        if (r.Blocks is null || r.AnnotationNamed("external") is not null || r.AnnotationNamed("export") is not null
+            || r.AnnotationNamed("template") is not null || Compiler.IsAsm(r)
+            || r.AnnotationNamed(Dispatch.RoutineMark) is { First: not ("address" or "value") }) return;
+        // A library routine takes a place only through a type parameter (zeroinit of a PointedCell[T]): nothing in it
+        // calls the protocol's routines.
+        if (r.IsLibrary && r.AnnotationNamed(Dispatch.RoutineMark) is null) return;
+        int offset = r.Params.Count - plan.Args.Count;
+        if (offset < 0) return;
+        var given = plan.Args.Select((a, i) => (Param: r.Params[i + offset], Arg: a)).ToList();
+        if (plan.Receiver is { } receiver && offset > 0 && r.Params[0].Name == "me") given.Add((r.Params[0], receiver));
+        foreach (var (param, arg) in given)
+        {
+            if (KnownHeld(arg) is not { } held || plan.Env.Has(Dispatch.HoldsKey(param.Name))) continue;
+            DType declared;
+            try { declared = _c.ResolveParam(r, param, plan.Env); }
+            catch (CompileError) { continue; }
+            if (declared is PtrType { Pointee: var pointee } && Dispatch.PlaceOf(pointee) is not null)
+                plan.Env.Bind(Dispatch.HoldsKey(param.Name), held);
+        }
+    }
+
     /// `name` with its article: an Enemy, a Slime.
     private static string An(string name) => ("AEIOU".Contains(name[0]) ? "an " : "a ") + name;
 
@@ -63,6 +109,7 @@ public sealed partial class FunctionGen
             throw Err(Li.ProtocolNotHeld, s.Pos, $"'{x.Name}' holds {An(held.Name)}, and {An(place.Name)} place holds only a type that obeys "
                 + $"{place.Name}: {why}");
         _c.NoteReaching(place, held, s.Pos);
+        _intoPlaceHeld[s.Pos] = held;
         string id = Dispatch.Id(_c.TypeId(held, s.Pos));
         _c.EnsureTypeDefined(place);
         string at, manager;

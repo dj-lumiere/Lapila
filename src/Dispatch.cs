@@ -31,6 +31,13 @@ public static class Dispatch
     /// The names the reaching types are bound to while a dispatch body is built.
     public const string ReachPrefix = "TReach";
 
+    /// The name under which an instance keeps the type a place parameter is known to hold: the caller handed a view of a
+    /// place whose value went in with steal from a `&T` of that type, so the instance calls T's routines directly.
+    public static string HoldsKey(string param) => "$holds " + param;
+
+    /// Whether an instance's binding is one of the known held types.
+    public static bool IsHoldsKey(string key) => key.StartsWith("$holds ", StringComparison.Ordinal);
+
     /// Whether a declaration is the entity of a protocol's places.
     public static bool IsPlaceDecl(Decl d) => d.AnnotationNamed(PlaceMark) is not null;
 
@@ -174,7 +181,9 @@ public static class Dispatch
     /// in the routine's environment. `kind` is the routine's (RoutineMark), `name` its name, `typeArgs` its own type
     /// parameters, `args` its parameters but me, each with whether it is handed on with steal, `returns` whether it gives
     /// a value.
-    public static string Body(string kind, string name, string protocol, List<string> typeArgs, List<(string Name, bool Steal)> args, bool returns, int count)
+    /// With `known` the place holds `TReach0` for certain, and the body calls its routine without a test.
+    public static string Body(string kind, string name, string protocol, List<string> typeArgs, List<(string Name, bool Steal)> args, bool returns, int count,
+        bool known = false)
     {
         // The header names the parameters only so the lines see them: the routine's own header stays.
         var sb = new StringBuilder($"routine @DispatchOwner.dispatch_body({string.Join(", ", args.Select(a => $"{a.Name}: U8"))}) -> None\n");
@@ -204,6 +213,11 @@ public static class Dispatch
         for (int i = 0; i < count; i++)
         {
             string call = $"me.at.peek().to[@{ReachPrefix}{i}](){(kind == "value" ? ".peek()" : "")}.{name}{typeArgText}({argText})";
+            if (known)
+            {
+                sb.Append(returns ? $"    return {call}\n" : $"    {call}\n    return\n");
+                return sb.ToString();
+            }
             sb.Append($"    if dispatch_id == typeid[{ReachPrefix}{i}]()\n");
             sb.Append(returns ? $"        return {call}\n" : $"        {call}\n        return\n");
         }
@@ -287,14 +301,16 @@ public sealed partial class Compiler
     public TypeEnv PrepareDispatch(Instance inst, Func<DType, bool> handedOn)
     {
         var place = PlaceThroughParam(inst) ?? throw new CompileError(Li.TypeMismatch, inst.Decl.Pos, "a dispatch routine without its place");
-        var types = Reaching(place);
-        _dispatchSeen[inst.Symbol] = ReachKey(types);
-        var env = inst.Env.Clone();
-        for (int i = 0; i < types.Count; i++) env.Bind($"{Dispatch.ReachPrefix}{i}", types[i]);
         var decl = inst.Decl;
         string kind = decl.AnnotationNamed(Dispatch.RoutineMark)!.First!;
+        // A receiver known to hold one type (BindKnownPlaces) calls that type's routine, whatever else reaches the place.
+        var known = kind is "address" or "value" ? inst.Env.Get(Dispatch.HoldsKey("me")) : null;
+        var types = known is not null ? [known] : Reaching(place);
+        if (known is null) _dispatchSeen[inst.Symbol] = ReachKey(types);
+        var env = inst.Env.Clone();
+        for (int i = 0; i < types.Count; i++) env.Bind($"{Dispatch.ReachPrefix}{i}", types[i]);
         var args = decl.Params.Skip(1).Select((p, i) => (p.Name, handedOn(inst.Params[i + 1]))).ToList();
-        string text = Dispatch.Body(kind, decl.Name, place.Name, decl.TypeParams, args, inst.Ret is not VoidType, types.Count);
+        string text = Dispatch.Body(kind, decl.Name, place.Name, decl.TypeParams, args, inst.Ret is not VoidType, types.Count, known is not null);
         var tokens = new Lexer(decl.File, text, decl.Pos.Line, decl.Pos.Col).Lex();
         var body = (RoutineDecl)new Parser(tokens, decl.File, decl.IsLibrary, acceptLegacy: true).ParseModule().Decls.Single(d => d is RoutineDecl);
         decl.Blocks!.Clear();

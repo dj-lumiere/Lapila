@@ -577,6 +577,7 @@ public sealed partial class FunctionGen
                             {
                                 BindFailingCallables(plan);
                                 BindTicketWork(plan);
+                                BindKnownPlaces(plan);
                                 var inst = _c.RequireInstance(plan.Decl, plan.Env);
                                 if (inst.IsFailable)
                                 {
